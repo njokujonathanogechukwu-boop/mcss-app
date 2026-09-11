@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-paper text-ink font-sans antialiased;
+    font-feature-settings: "tnum" 1, "cv05" 1;
+  }
+  /* Figures line up in every column of every ledger. */
+  table, .tnum, input[type="number"] {
+    font-variant-numeric: tabular-nums;
+  }
+  h1, h2, h3 {
+    @apply font-serif;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-pine ring-offset-2 ring-offset-paper rounded-sm;
+  }
+}
+
+@layer components {
+  .field-label {
+    @apply block text-xs font-medium text-ink-soft mb-1.5;
+  }
+  .field-input {
+    @apply w-full rounded border border-rule-strong bg-surface px-3 py-2 text-sm
+           placeholder:text-ink-faint focus:border-pine focus:outline-none
+           focus:ring-1 focus:ring-pine disabled:bg-paper disabled:text-ink-faint;
+  }
+  .field-hint {
+    @apply mt-1 text-xs text-ink-faint;
+  }
+  .field-error {
+    @apply mt-1 text-xs text-clay;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
