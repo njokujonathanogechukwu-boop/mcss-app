@@ -91,7 +91,8 @@ export const privilegeSchema = z.object({
 
 export const assignmentSchema = z.object({
   publisherId: z.string().min(1, "Choose a publisher"),
-  privilegeId: z.string().min(1, "Choose a privilege"),
+  privilegeId: z.string().min(1, "Choose a department"),
+  role: z.enum(["OVERSEER", "ASSISTANT", "SERVANT", "ASSIGNEE"]),
   startDate: optionalDate,
   notes: optionalString,
 });

@@ -77,22 +77,20 @@ export default async function BoePage() {
                     </p>
                     {item.notes && <p className="mt-1 text-xs text-ink-soft">{item.notes}</p>}
 
-                    <form action={setDecisionStatus} className="mt-3 flex flex-wrap items-center gap-2 border-t border-rule pt-3">
-                      <input type="hidden" name="id" value={item.id} />
+                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-rule pt-3">
                       <span className="text-xs text-ink-faint">Move to</span>
                       {(["IN_PROGRESS", "COMPLETED", "DEFERRED"] as const)
                         .filter((s) => s !== item.status)
                         .map((s) => (
-                          <button
-                            key={s}
-                            name="status"
-                            value={s}
-                            className="rounded border border-rule-strong px-2 py-1 text-xs text-ink-soft hover:border-pine hover:text-pine"
-                          >
-                            {DECISION_LABELS[s]}
-                          </button>
+                          <form key={s} action={setDecisionStatus}>
+                            <input type="hidden" name="id" value={item.id} />
+                            <input type="hidden" name="status" value={s} />
+                            <button className="rounded border border-rule-strong px-2 py-1 text-xs text-ink-soft hover:border-pine hover:text-pine">
+                              {DECISION_LABELS[s]}
+                            </button>
+                          </form>
                         ))}
-                    </form>
+                    </div>
                   </Panel>
                 </li>
               );

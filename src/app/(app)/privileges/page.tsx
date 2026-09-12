@@ -2,27 +2,36 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
-import { formatDate, displayName } from "@/lib/format";
-import { PageHeader, Section, EmptyState } from "@/components/shell";
-import { Button, Badge } from "@/components/ui";
-import { AssignForm, NewPrivilegeForm, CATEGORY_LABELS } from "./forms";
+import { formatDate } from "@/lib/format";
+import { PageHeader, Section, EmptyState, DataTable, Th, Td } from "@/components/shell";
+import { Button } from "@/components/ui";
+import { AssignForm, NewPrivilegeForm, ROLE_LABELS } from "./forms";
 import { endAssignment, retirePrivilege } from "./actions";
+import type { PrivilegeRole } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
+
+const ROLES: PrivilegeRole[] = ["OVERSEER", "ASSISTANT", "SERVANT", "ASSIGNEE"];
+
+/** Short form of a name for the table, as the assignment sheet writes it: "J. Njoku". */
+function shortName(p: { firstName: string; lastName: string }) {
+  const initial = p.firstName.trim().charAt(0).toUpperCase();
+  return initial ? `${initial}. ${p.lastName}` : p.lastName;
+}
 
 export default async function PrivilegesPage() {
   const user = await requirePermission("privilege:read");
   const canWrite = can(user.role, "privilege:write");
 
-  const [privileges, publishers] = await Promise.all([
+  const [departments, publishers] = await Promise.all([
     prisma.privilege.findMany({
       where: { active: true },
-      orderBy: [{ category: "asc" }, { sortOrder: "asc" }, { name: "asc" }],
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       include: {
         holders: {
           where: { endDate: null },
           include: { publisher: { select: { id: true, firstName: true, lastName: true, status: true } } },
-          orderBy: [{ publisher: { lastName: "asc" } }],
+          orderBy: [{ startDate: "asc" }, { publisher: { lastName: "asc" } }],
         },
       },
     }),
@@ -33,17 +42,13 @@ export default async function PrivilegesPage() {
     }),
   ]);
 
-  const categories = (Object.keys(CATEGORY_LABELS) as (keyof typeof CATEGORY_LABELS)[])
-    .map((c) => ({ key: c, label: CATEGORY_LABELS[c], items: privileges.filter((p) => p.category === c) }))
-    .filter((c) => c.items.length > 0);
-
-  const holderCount = new Set(privileges.flatMap((p) => p.holders.map((h) => h.publisherId))).size;
+  const people = new Set(departments.flatMap((d) => d.holders.map((h) => h.publisherId))).size;
 
   return (
     <>
       <PageHeader
-        title="Privileges and assignments"
-        description="Who holds which congregation assignment and meeting duty. Ending an assignment keeps it on the person’s history."
+        title="Ministerial assignments"
+        description="Each department with its overseer, assistant, servants and assignees. Ending an assignment keeps it on the person’s history."
         actions={
           can(user.role, "export:run") && (
             <a href="/api/exports/privileges" target="_blank" rel="noopener">
@@ -53,75 +58,86 @@ export default async function PrivilegesPage() {
         }
       />
 
-      {privileges.length === 0 ? (
-        <EmptyState
-          title="No privileges set up yet"
-          description="Add the assignments your congregation uses below, then assign brothers to them."
-        />
+      {departments.length === 0 ? (
+        <EmptyState title="No departments set up yet" description="Add the departments your congregation uses below, then assign brothers to them." />
       ) : (
-        <>
-          <p className="mb-6 text-sm text-ink-soft">
-            {privileges.length} privilege{privileges.length === 1 ? "" : "s"} · {holderCount} publisher{holderCount === 1 ? "" : "s"} with at least one.
-          </p>
-          {categories.map((cat) => (
-            <Section key={cat.key} title={cat.label}>
-              <ul className="divide-y divide-rule rounded border border-rule bg-surface">
-                {cat.items.map((p) => (
-                  <li key={p.id} className="px-4 py-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-ink">{p.name}</p>
-                        {p.description && <p className="text-xs text-ink-soft">{p.description}</p>}
-                      </div>
-                      {canWrite && (
-                        <form action={retirePrivilege}>
-                          <input type="hidden" name="id" value={p.id} />
-                          <button className="shrink-0 text-xs text-ink-faint hover:text-clay" title="Remove this privilege from the list">Retire</button>
-                        </form>
-                      )}
-                    </div>
-                    {p.holders.length === 0 ? (
-                      <p className="mt-1.5 text-xs text-ink-faint">Nobody assigned.</p>
-                    ) : (
-                      <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5">
-                        {p.holders.map((h) => (
-                          <li key={h.id} className="flex items-center gap-2 text-sm">
-                            <Link href={`/publishers/${h.publisher.id}`} className="text-ink hover:text-pine hover:underline">
-                              {displayName(h.publisher)}
-                            </Link>
-                            {h.startDate && <span className="text-xxs text-ink-faint">since {formatDate(h.startDate)}</span>}
-                            {h.publisher.status !== "ACTIVE" && <Badge tone="warn">{h.publisher.status.toLowerCase()}</Badge>}
-                            {canWrite && (
-                              <form action={endAssignment}>
-                                <input type="hidden" name="id" value={h.id} />
-                                <button className="text-xxs text-ink-faint hover:text-clay" aria-label={`End ${p.name} for ${displayName(h.publisher)}`}>end</button>
-                              </form>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </Section>
-          ))}
-        </>
+        <Section
+          title="Departments"
+          description={`${departments.length} departments · ${people} brother${people === 1 ? "" : "s"} with at least one assignment. Hover a name to see since when.`}
+        >
+          <DataTable>
+            <thead>
+              <tr>
+                <Th>Department</Th>
+                {ROLES.map((r) => <Th key={r}>{r === "SERVANT" ? "Servants" : r === "ASSIGNEE" ? "Assignees" : ROLE_LABELS[r]}</Th>)}
+                {canWrite && <Th align="right"></Th>}
+              </tr>
+            </thead>
+            <tbody>
+              {departments.map((d) => (
+                <tr key={d.id} className="align-top">
+                  <Td>
+                    <span className="font-medium text-ink">{d.name}</span>
+                    {d.description && <span className="block text-xxs text-ink-faint">{d.description}</span>}
+                  </Td>
+                  {ROLES.map((role) => {
+                    const holders = d.holders.filter((h) => h.role === role);
+                    return (
+                      <Td key={role} className="text-sm">
+                        {holders.length === 0 ? (
+                          <span className="text-ink-faint">—</span>
+                        ) : (
+                          <ul className="space-y-0.5">
+                            {holders.map((h) => (
+                              <li key={h.id} className="flex items-center gap-1.5">
+                                <Link
+                                  href={`/publishers/${h.publisher.id}`}
+                                  title={`${h.publisher.firstName} ${h.publisher.lastName}${h.startDate ? ` · since ${formatDate(h.startDate)}` : ""}${h.notes ? ` · ${h.notes}` : ""}`}
+                                  className={`hover:text-pine hover:underline ${h.publisher.status === "ACTIVE" ? "text-ink" : "text-ink-faint line-through"}`}
+                                >
+                                  {shortName(h.publisher)}
+                                </Link>
+                                {canWrite && (
+                                  <form action={endAssignment}>
+                                    <input type="hidden" name="id" value={h.id} />
+                                    <button className="text-xxs text-ink-faint hover:text-clay" aria-label={`End ${d.name} for ${h.publisher.firstName} ${h.publisher.lastName}`} title="End this assignment">×</button>
+                                  </form>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </Td>
+                    );
+                  })}
+                  {canWrite && (
+                    <Td align="right">
+                      <form action={retirePrivilege}>
+                        <input type="hidden" name="id" value={d.id} />
+                        <button className="text-xxs text-ink-faint hover:text-clay" title="Remove this department from the list">Retire</button>
+                      </form>
+                    </Td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
+        </Section>
       )}
 
       {canWrite && (
         <div className="grid gap-8 lg:grid-cols-2">
-          <Section title="Assign a privilege">
-            {privileges.length === 0 ? (
-              <p className="text-sm text-ink-soft">Add a privilege first.</p>
+          <Section title="Assign a brother">
+            {departments.length === 0 ? (
+              <p className="text-sm text-ink-soft">Add a department first.</p>
             ) : (
               <AssignForm
-                privileges={privileges.map((p) => ({ id: p.id, name: p.name }))}
+                departments={departments.map((d) => ({ id: d.id, name: d.name }))}
                 publishers={publishers.map((p) => ({ id: p.id, name: `${p.lastName}, ${p.firstName}` }))}
               />
             )}
           </Section>
-          <Section title="Add a privilege to the list">
+          <Section title="Add a department">
             <NewPrivilegeForm />
           </Section>
         </div>

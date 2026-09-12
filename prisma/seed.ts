@@ -62,40 +62,33 @@ async function main() {
   }
   console.log(`${groups.length} service groups ready.`);
 
-  // Starter list of privileges. The secretary can retire or add to these.
-  const privileges: { name: string; category: "CONGREGATION" | "MEETING" | "OTHER" }[] = [
-    { name: "Coordinator of the body of elders", category: "CONGREGATION" },
+  // Departments, in the order of the congregation's ministerial assignment sheet.
+  const departments: { name: string; category: "CONGREGATION" | "MEETING" | "OTHER" }[] = [
+    { name: "CBOE", category: "CONGREGATION" },
     { name: "Secretary", category: "CONGREGATION" },
     { name: "Service overseer", category: "CONGREGATION" },
-    { name: "Life and Ministry Meeting overseer", category: "CONGREGATION" },
-    { name: "Watchtower Study conductor", category: "CONGREGATION" },
-    { name: "Group overseer", category: "CONGREGATION" },
-    { name: "Group assistant", category: "CONGREGATION" },
-    { name: "Accounts servant", category: "CONGREGATION" },
-    { name: "Literature servant", category: "CONGREGATION" },
-    { name: "Territory servant", category: "CONGREGATION" },
-    { name: "Operating committee", category: "CONGREGATION" },
-    { name: "Public talk speaker", category: "MEETING" },
-    { name: "Watchtower reader", category: "MEETING" },
-    { name: "Bible study reader", category: "MEETING" },
-    { name: "Chairman", category: "MEETING" },
-    { name: "Attendant", category: "MEETING" },
-    { name: "Sound and video", category: "MEETING" },
+    { name: "CLM", category: "CONGREGATION" },
+    { name: "Watchtower", category: "CONGREGATION" },
+    { name: "Sound & AV", category: "MEETING" },
+    { name: "Cleaning", category: "OTHER" },
+    { name: "Public talk", category: "CONGREGATION" },
+    { name: "Aux counselor", category: "CONGREGATION" },
+    { name: "Kingdom Hall", category: "CONGREGATION" },
+    { name: "Audio visual", category: "MEETING" },
     { name: "Platform", category: "MEETING" },
-    { name: "Microphones", category: "MEETING" },
-    { name: "Zoom host", category: "MEETING" },
-    { name: "Cleaning captain", category: "OTHER" },
-    { name: "Maintenance", category: "OTHER" },
+    { name: "Microphone", category: "MEETING" },
+    { name: "Attendants", category: "MEETING" },
   ];
   let order = 0;
-  for (const p of privileges) {
+  for (const d of departments) {
     await prisma.privilege.upsert({
-      where: { name: p.name },
-      update: {},
-      create: { ...p, sortOrder: order++ },
+      where: { name: d.name },
+      update: { sortOrder: order, active: true },
+      create: { ...d, sortOrder: order },
     });
+    order++;
   }
-  console.log(`${privileges.length} privileges ready.`);
+  console.log(`${departments.length} departments ready.`);
 
   console.log("\nSeed complete. Sign in, change the password, then import your roster.");
 }

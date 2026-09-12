@@ -1,9 +1,8 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
-import {
-  currentServiceYear, serviceYearMonths, serviceYearLabel, serviceYearOptions,
-} from "@/lib/service-year";
+import { can } from "@/lib/rbac";
+import { currentServiceYear, serviceYearMonths, serviceYearLabel, serviceYearOptions } from "@/lib/service-year";
+import { analyse, periodKey } from "@/lib/analysis";
 import { PageHeader, Section, DataTable, Th, Td } from "@/components/shell";
 import { Button } from "@/components/ui";
 
@@ -14,60 +13,42 @@ export default async function SummaryPage({
 }: {
   searchParams: Promise<{ sy?: string }>;
 }) {
-  await requirePermission("report:read");
+  const user = await requirePermission("report:read");
   const sp = await searchParams;
   const serviceYear = Number(sp.sy) || currentServiceYear();
   const months = serviceYearMonths(serviceYear);
+  const from = { year: months[0].year, month: months[0].month };
+  const to = { year: months[11].year, month: months[11].month };
 
-  const [publishers, reports] = await Promise.all([
-    prisma.publisher.findMany({
-      where: { status: { in: ["ACTIVE", "IRREGULAR"] } },
-      select: { id: true, pioneerStatus: true },
-    }),
-    prisma.serviceReport.findMany({
-      where: { OR: months.map((m) => ({ year: m.year, month: m.month })) },
-      select: {
-        year: true, month: true, sharedInMinistry: true, bibleStudies: true,
-        hours: true, pioneerStatusUsed: true, publisherId: true,
-      },
-    }),
-  ]);
-
-  const pioneerIds = new Set(publishers.filter((p) => p.pioneerStatus !== "NONE").map((p) => p.id));
-
-  const rows = months.map((m) => {
-    const inMonth = reports.filter((r) => r.year === m.year && r.month === m.month);
-    const active = inMonth.filter((r) => r.sharedInMinistry);
-    const auxiliaries = active.filter((r) => r.pioneerStatusUsed === "AUXILIARY").length;
-    const regulars = active.filter(
-      (r) => r.pioneerStatusUsed === "REGULAR" || r.pioneerStatusUsed === "SPECIAL",
-    ).length;
-    return {
-      label: m.label,
-      reported: inMonth.length,
-      active: active.length,
-      studies: active.reduce((t, r) => t + r.bibleStudies, 0),
-      pioneerHours: active.reduce((t, r) => t + (r.hours ?? 0), 0),
-      auxiliaries,
-      regulars,
-    };
-  });
+  const a = await analyse(from, to);
+  const t = a.totals;
+  const query = `from=${periodKey(from)}&to=${periodKey(to)}`;
 
   return (
     <>
       <PageHeader
         title={`Field service summary · ${serviceYearLabel(serviceYear)}`}
-        description="Congregation totals by month. Hours count pioneer service only, as the reporting arrangement requires."
+        description="Congregation totals by month. Hours are shown for regular pioneers and for the months publishers served as auxiliary pioneers."
         back={{ href: "/reports", label: "Report sheet" }}
         actions={
-          <form method="get" className="flex items-center gap-2">
-            <select name="sy" defaultValue={serviceYear} className="field-input py-1 text-xs" aria-label="Service year">
-              {serviceYearOptions().map((y) => (
-                <option key={y} value={y}>{serviceYearLabel(y)}</option>
-              ))}
-            </select>
-            <Button type="submit" variant="secondary" size="sm">Show</Button>
-          </form>
+          <>
+            <form method="get" className="flex items-center gap-2">
+              <select name="sy" defaultValue={serviceYear} className="field-input py-1 text-xs" aria-label="Service year">
+                {serviceYearOptions().map((y) => (
+                  <option key={y} value={y}>{serviceYearLabel(y)}</option>
+                ))}
+              </select>
+              <Button type="submit" variant="secondary" size="sm">Show</Button>
+            </form>
+            <Link href={`/reports/analysis?${query}`}>
+              <Button variant="secondary" size="sm">Open in analysis</Button>
+            </Link>
+            {can(user.role, "export:run") && (
+              <a href={`/api/exports/analysis?${query}&format=pdf`} target="_blank" rel="noopener">
+                <Button size="sm">Download PDF</Button>
+              </a>
+            )}
+          </>
         }
       />
 
@@ -77,44 +58,54 @@ export default async function SummaryPage({
             <tr>
               <Th>Month</Th>
               <Th align="right">Reports on file</Th>
-              <Th align="right">Publishers active</Th>
-              <Th align="right">Bible studies</Th>
+              <Th align="right">Active</Th>
+              <Th align="right">Publishers</Th>
               <Th align="right">Regular pioneers</Th>
+              <Th align="right">RP hours</Th>
               <Th align="right">Auxiliary pioneers</Th>
-              <Th align="right">Pioneer hours</Th>
+              <Th align="right">Aux hours</Th>
+              <Th align="right">All hours</Th>
+              <Th align="right">Bible studies</Th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.label}>
-                <Td className="whitespace-nowrap">{r.label}</Td>
-                <Td align="right">{r.reported || "—"}</Td>
-                <Td align="right">{r.active || "—"}</Td>
-                <Td align="right">{r.studies || "—"}</Td>
-                <Td align="right">{r.regulars || "—"}</Td>
-                <Td align="right">{r.auxiliaries || "—"}</Td>
-                <Td align="right">{r.pioneerHours || "—"}</Td>
+            {a.months.map((m) => (
+              <tr key={m.label}>
+                <Td className="whitespace-nowrap">{m.label}</Td>
+                <Td align="right">{m.onFile || "—"}</Td>
+                <Td align="right">{m.active || "—"}</Td>
+                <Td align="right">{m.publishers.reports || "—"}</Td>
+                <Td align="right">{m.regular.reports + m.special.reports || "—"}</Td>
+                <Td align="right">{m.regular.hours + m.special.hours || "—"}</Td>
+                <Td align="right">{m.auxiliary.reports || "—"}</Td>
+                <Td align="right">{m.auxiliary.hours || "—"}</Td>
+                <Td align="right" className="font-medium">{m.totalHours || "—"}</Td>
+                <Td align="right">{m.totalStudies || "—"}</Td>
               </tr>
             ))}
             <tr className="bg-paper font-medium">
               <Td>Service year</Td>
-              <Td align="right">{rows.reduce((t, r) => t + r.reported, 0)}</Td>
+              <Td align="right">{t.onFile}</Td>
               <Td align="right">
-                {Math.round(rows.reduce((t, r) => t + r.active, 0) / 12) || "—"}
+                {t.activeAverage || "—"}
                 <span className="ml-1 text-xxs font-normal text-ink-faint">avg</span>
               </Td>
-              <Td align="right">{rows.reduce((t, r) => t + r.studies, 0)}</Td>
-              <Td align="right">{pioneerIds.size}</Td>
-              <Td align="right">{rows.reduce((t, r) => t + r.auxiliaries, 0)}</Td>
-              <Td align="right">{rows.reduce((t, r) => t + r.pioneerHours, 0)}</Td>
+              <Td align="right">{t.publishers.reports}</Td>
+              <Td align="right">{t.regular.reports + t.special.reports}</Td>
+              <Td align="right">{t.regular.hours + t.special.hours}</Td>
+              <Td align="right">{t.auxiliary.reports}</Td>
+              <Td align="right">{t.auxiliary.hours}</Td>
+              <Td align="right">{t.totalHours}</Td>
+              <Td align="right">{t.totalStudies}</Td>
             </tr>
           </tbody>
         </DataTable>
       </Section>
 
       <p className="text-xs text-ink-faint">
-        “Publishers active” counts everyone who reported sharing in the ministry that month.
-        The service year row shows the monthly average.
+        “Active” counts everyone who reported sharing in the ministry that month. Pioneer columns
+        count reports, so a publisher who auxiliary pioneered in two months counts twice. The
+        service year row shows the monthly average for “Active” and totals elsewhere.
       </p>
     </>
   );

@@ -3,8 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import {
-  currentServiceYear, serviceYearMonths, serviceYearLabel, reportingMonth, monthLabel,
+  currentServiceYear, serviceYearMonths, serviceYearLabel, reportingMonth, monthLabel, serviceYearOptions, serviceYearOf,
 } from "@/lib/service-year";
+import { analyse, parsePeriod, periodKey } from "@/lib/analysis";
 import { formatDate, formatTimeRange, displayName } from "@/lib/format";
 import { PageHeader, Section, DataTable, Th, Td, EmptyState, Notice } from "@/components/shell";
 import { Badge, Button } from "@/components/ui";
@@ -14,14 +15,21 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ denied?: string }>;
+  searchParams: Promise<{ denied?: string; sy?: string; period?: string }>;
 }) {
   const user = await requireUser();
-  const { denied } = await searchParams;
+  const { denied, sy, period: periodParam } = await searchParams;
 
-  const serviceYear = currentServiceYear();
+  // The month being looked at defaults to the one reports are being collected
+  // for; the strip follows whichever service year that month falls in.
+  const period = parsePeriod(periodParam) ?? reportingMonth();
+  const serviceYear = Number(sy) || serviceYearOf(period.year, period.month);
   const months = serviceYearMonths(serviceYear);
-  const period = reportingMonth();
+  const monthOptions = serviceYearMonths(serviceYear).filter(
+    (m) => new Date(Date.UTC(m.year, m.month - 1, 1)) <= new Date(),
+  );
+  const monthAnalysis = await analyse(period, period);
+  const t = monthAnalysis.totals;
 
   const [activePublishers, reportsThisYear, missing, pendingBookings, openItems, upcoming] =
     await Promise.all([
@@ -67,7 +75,24 @@ export default async function DashboardPage({
     <>
       <PageHeader
         title={`Good day, ${user.name.split(" ")[0]}`}
-        description={`Service year ${serviceYearLabel(serviceYear)}. Reports are currently being collected for ${monthLabel(period.year, period.month)}.`}
+        description={`Service year ${serviceYearLabel(serviceYear)}. Reports are currently being collected for ${monthLabel(reportingMonth().year, reportingMonth().month)}.`}
+        actions={
+          <>
+            <form method="get" className="flex items-center gap-2">
+              <select name="sy" defaultValue={serviceYear} className="field-input py-1 text-xs" aria-label="Service year">
+                {serviceYearOptions().map((y) => (
+                  <option key={y} value={y}>{serviceYearLabel(y)}</option>
+                ))}
+              </select>
+              <Button type="submit" variant="secondary" size="sm">Show</Button>
+            </form>
+            {can(user.role, "report:read") && (
+              <Link href="/reports/analysis">
+                <Button variant="secondary" size="sm">Analysis</Button>
+              </Link>
+            )}
+          </>
+        }
       />
 
       {denied && (
@@ -110,6 +135,51 @@ export default async function DashboardPage({
           </p>
         </div>
       </Section>
+
+      {can(user.role, "report:read") && (
+        <Section
+          title={`Compiled summary · ${monthLabel(period.year, period.month)}`}
+          description={`${t.onFile} reports on file · ${t.activePublishers} publishers on the roster.`}
+          actions={
+            <>
+              <form method="get" className="flex items-center gap-2">
+                <input type="hidden" name="sy" value={serviceYear} />
+                <select name="period" defaultValue={periodKey(period)} className="field-input py-1 text-xs" aria-label="Month">
+                  {monthOptions.map((m) => (
+                    <option key={m.label} value={periodKey(m)}>{m.label}</option>
+                  ))}
+                </select>
+                <Button type="submit" variant="secondary" size="sm">Show</Button>
+              </form>
+              {can(user.role, "export:run") && (
+                <a href={`/api/exports/analysis?from=${periodKey(period)}&to=${periodKey(period)}&format=pdf`} target="_blank" rel="noopener">
+                  <Button variant="secondary" size="sm">PDF</Button>
+                </a>
+              )}
+            </>
+          }
+        >
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              { label: "Regular pioneers", c: t.regular, hours: true },
+              { label: "Auxiliary pioneers", c: t.auxiliary, hours: true },
+              { label: "Publishers", c: t.publishers, hours: false },
+              { label: "Total", c: { reports: t.regular.reports + t.special.reports + t.auxiliary.reports + t.publishers.reports, hours: t.totalHours, studies: t.totalStudies }, hours: true },
+            ].map((x) => (
+              <div key={x.label} className="rounded border border-rule bg-surface px-4 py-3">
+                <p className="text-xs text-ink-soft">{x.label}</p>
+                <p className="mt-1 font-serif text-2xl text-ink">{x.c.reports}<span className="ml-1 text-xs text-ink-faint">reports</span></p>
+                <p className="mt-1 text-xs text-ink-soft">
+                  {x.hours ? `${x.c.hours} hours · ` : ""}{x.c.studies} Bible studies
+                </p>
+              </div>
+            ))}
+          </div>
+          {t.lateReceived > 0 && (
+            <p className="mt-2 text-xs text-ink-faint">{t.lateReceived} late report{t.lateReceived === 1 ? "" : "s"} for earlier months were entered during this month.</p>
+          )}
+        </Section>
+      )}
 
       <Section
         title={`Still to report for ${monthLabel(period.year, period.month)}`}

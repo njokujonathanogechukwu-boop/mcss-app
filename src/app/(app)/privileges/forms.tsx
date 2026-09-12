@@ -7,16 +7,23 @@ import { Notice } from "@/components/shell";
 import { createPrivilege, assignPrivilege, type PrivilegeState } from "./actions";
 
 export const CATEGORY_LABELS = {
-  CONGREGATION: "Congregation assignments",
-  MEETING: "Meeting duties",
+  CONGREGATION: "Congregation department",
+  MEETING: "Meeting duty",
   OTHER: "Other",
 } as const;
 
+export const ROLE_LABELS = {
+  OVERSEER: "Overseer",
+  ASSISTANT: "Assistant",
+  SERVANT: "Servant",
+  ASSIGNEE: "Assignee",
+} as const;
+
 export function AssignForm({
-  privileges,
+  departments,
   publishers,
 }: {
-  privileges: { id: string; name: string }[];
+  departments: { id: string; name: string }[];
   publishers: { id: string; name: string }[];
 }) {
   const [state, action] = useActionState<PrivilegeState, FormData>(assignPrivilege, {});
@@ -28,9 +35,14 @@ export function AssignForm({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <SelectField
-          label="Privilege" name="privilegeId" placeholder="Choose one" required
-          options={privileges.map((p) => ({ value: p.id, label: p.name }))}
+          label="Department" name="privilegeId" placeholder="Choose one" required
+          options={departments.map((p) => ({ value: p.id, label: p.name }))}
           error={state.errors?.privilegeId}
+        />
+        <SelectField
+          label="Role" name="role" defaultValue="ASSIGNEE"
+          options={Object.entries(ROLE_LABELS).map(([value, label]) => ({ value, label }))}
+          error={state.errors?.role}
         />
         <SelectField
           label="Publisher" name="publisherId" placeholder="Choose one" required
@@ -55,16 +67,16 @@ export function NewPrivilegeForm() {
       {state.ok && <Notice tone="success">{state.ok}</Notice>}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <TextField label="Name" name="name" required placeholder="e.g. Sound" error={state.errors?.name} />
+        <TextField label="Department" name="name" required placeholder="e.g. Sound & AV" error={state.errors?.name} />
         <SelectField
           label="Kind" name="category"
           options={Object.entries(CATEGORY_LABELS).map(([value, label]) => ({ value, label }))}
           error={state.errors?.category}
         />
       </div>
-      <TextArea label="What it involves" name="description" rows={2} hint="Optional." />
+      <TextArea label="What it covers" name="description" rows={2} hint="Optional." />
 
-      <SubmitButton variant="secondary" pendingLabel="Adding…">Add privilege</SubmitButton>
+      <SubmitButton variant="secondary" pendingLabel="Adding…">Add department</SubmitButton>
     </form>
   );
 }

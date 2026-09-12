@@ -1,16 +1,32 @@
 "use client";
 
-import { useActionState } from "react";
-import { TextField, TextArea, SelectField } from "@/components/fields";
-import { SubmitButton } from "@/components/ui";
+import { useActionState, useState } from "react";
+import { TextField, TextArea } from "@/components/fields";
+import { SubmitButton, Button } from "@/components/ui";
 import { Notice } from "@/components/shell";
-import { saveDecision, type DecisionState } from "./actions";
+import { saveMeeting, type DecisionState } from "./actions";
 
+type Row = { key: number };
+
+/**
+ * One meeting, many decisions. Each row is an agenda item with what was
+ * decided, who is carrying it out and when it is due. Rows are numbered
+ * in the field names (agendaItem.0, agendaItem.1 …) and the action saves
+ * them together.
+ */
 export function DecisionForm({ elders }: { elders: { id: string; label: string }[] }) {
-  const [state, action] = useActionState<DecisionState, FormData>(saveDecision, {});
+  const [state, action] = useActionState<DecisionState, FormData>(saveMeeting, {});
+  const [rows, setRows] = useState<Row[]>([{ key: 0 }, { key: 1 }, { key: 2 }]);
+  const [next, setNext] = useState(3);
+
+  const addRow = () => {
+    setRows((r) => [...r, { key: next }]);
+    setNext((n) => n + 1);
+  };
+  const removeRow = (key: number) => setRows((r) => (r.length > 1 ? r.filter((x) => x.key !== key) : r));
 
   return (
-    <form action={action} className="space-y-4 rounded border border-rule bg-surface p-5">
+    <form action={action} className="space-y-5 rounded border border-rule bg-surface p-5">
       {state.error && <Notice tone="error">{state.error}</Notice>}
       {state.ok && <Notice tone="success">{state.ok}</Notice>}
 
@@ -19,36 +35,57 @@ export function DecisionForm({ elders }: { elders: { id: string; label: string }
           label="Date of the meeting" name="meetingDate" type="date" required
           defaultValue={new Date().toISOString().slice(0, 10)} error={state.errors?.meetingDate}
         />
-        <TextField
-          label="Agenda item" name="agendaItem" required placeholder="Kingdom Hall roof repair"
-          error={state.errors?.agendaItem}
-        />
       </div>
 
-      <TextArea
-        label="What was decided" name="decision" rows={3} required error={state.errors?.decision}
-        hint="Record the decision itself, not the discussion. Keep confidential matters out of this system."
-      />
-
-      <div className="grid gap-4 sm:grid-cols-3">
-        <SelectField
-          label="Assigned to" name="assignedToId" placeholder="Not assigned"
-          options={elders.map((e) => ({ value: e.id, label: e.label }))}
-        />
-        <TextField label="Target date" name="targetDate" type="date" error={state.errors?.targetDate} />
-        <SelectField
-          label="Status" name="status" defaultValue="OPEN"
-          options={[
-            { value: "OPEN", label: "Open" },
-            { value: "IN_PROGRESS", label: "In progress" },
-            { value: "COMPLETED", label: "Completed" },
-            { value: "DEFERRED", label: "Deferred" },
-          ]}
-        />
+      <div className="space-y-4">
+        {rows.map((row, i) => {
+          const err = (field: string) => state.errors?.[`${field}.${i}`];
+          return (
+            <fieldset key={row.key} className="rounded border border-rule bg-paper/60 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <legend className="text-xs font-medium uppercase tracking-wide text-ink-soft">Decision {i + 1}</legend>
+                {rows.length > 1 && (
+                  <button type="button" onClick={() => removeRow(row.key)} className="text-xs text-ink-faint hover:text-clay">
+                    Remove
+                  </button>
+                )}
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <TextField
+                  label="Agenda item" name={`agendaItem.${i}`} placeholder="Kingdom Hall roof repair"
+                  error={err("agendaItem")}
+                />
+                <div>
+                  <label htmlFor={`assignedToId.${i}`} className="field-label">Assigned to</label>
+                  <select id={`assignedToId.${i}`} name={`assignedToId.${i}`} className="field-input" defaultValue="">
+                    <option value="">Not assigned</option>
+                    {elders.map((e) => (
+                      <option key={e.id} value={e.id}>{e.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="sm:col-span-2">
+                  <TextArea
+                    label="What was decided" name={`decision.${i}`} rows={2}
+                    error={err("decision")}
+                  />
+                </div>
+                <TextField label="Deadline" name={`targetDate.${i}`} type="date" error={err("targetDate")} />
+                <TextField label="Notes" name={`notes.${i}`} />
+              </div>
+            </fieldset>
+          );
+        })}
       </div>
 
-      <TextArea label="Notes" name="notes" rows={2} />
-      <SubmitButton pendingLabel="Saving…">Record item</SubmitButton>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="button" variant="secondary" size="sm" onClick={addRow}>+ Another decision</Button>
+        <SubmitButton pendingLabel="Saving…">Record the meeting</SubmitButton>
+      </div>
+      <p className="text-xs text-ink-faint">
+        Rows left blank are ignored. Record the decision itself, not the discussion, and keep
+        confidential matters out of this system.
+      </p>
     </form>
   );
 }

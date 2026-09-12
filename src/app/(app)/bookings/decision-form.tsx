@@ -1,15 +1,23 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useRef } from "react";
 import { decideBooking, type BookingState } from "./actions";
 import { SubmitButton, Button } from "@/components/ui";
 
 export function DecisionForm({ id }: { id: string }) {
   const [state, action] = useActionState<BookingState, FormData>(decideBooking, {});
+  // The submit button's own name/value is not reliably included in the
+  // FormData a server action receives, so the choice is written into a
+  // hidden field the moment a button is pressed.
+  const decision = useRef<HTMLInputElement>(null);
+  const choose = (value: "APPROVED" | "DECLINED") => () => {
+    if (decision.current) decision.current.value = value;
+  };
 
   return (
     <form action={action} className="mt-3 border-t border-rule pt-3">
       <input type="hidden" name="id" value={id} />
+      <input type="hidden" name="decision" ref={decision} defaultValue="" />
 
       {state.error && (
         <div className="mb-2 rounded border border-clay/30 bg-clay-light px-3 py-2 text-xs text-clay">
@@ -35,10 +43,10 @@ export function DecisionForm({ id }: { id: string }) {
         className="mb-2 w-full rounded border border-rule-strong bg-surface px-2.5 py-1.5 text-xs"
       />
       <div className="flex flex-wrap gap-2">
-        <SubmitButton name="decision" value="APPROVED" size="sm" pendingLabel="Working…">
+        <SubmitButton onClick={choose("APPROVED")} size="sm" pendingLabel="Working…">
           Approve
         </SubmitButton>
-        <SubmitButton name="decision" value="DECLINED" size="sm" variant="secondary" pendingLabel="Working…">
+        <SubmitButton onClick={choose("DECLINED")} size="sm" variant="secondary" pendingLabel="Working…">
           Decline
         </SubmitButton>
       </div>

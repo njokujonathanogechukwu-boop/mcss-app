@@ -319,6 +319,13 @@ model MemorialRecord {
 
 // ------------------------------------------------ privileges and assignments
 
+enum PrivilegeRole {
+  OVERSEER
+  ASSISTANT
+  SERVANT
+  ASSIGNEE
+}
+
 enum PrivilegeCategory {
   CONGREGATION
   MEETING
@@ -340,13 +347,14 @@ model Privilege {
 }
 
 model PublisherPrivilege {
-  id          String    @id @default(cuid())
+  id          String        @id @default(cuid())
   publisherId String
-  publisher   Publisher @relation("PublisherPrivileges", fields: [publisherId], references: [id], onDelete: Cascade)
+  publisher   Publisher     @relation("PublisherPrivileges", fields: [publisherId], references: [id], onDelete: Cascade)
   privilegeId String
-  privilege   Privilege @relation(fields: [privilegeId], references: [id], onDelete: Cascade)
-  startDate   DateTime? @db.Date
-  endDate     DateTime? @db.Date
+  privilege   Privilege     @relation(fields: [privilegeId], references: [id], onDelete: Cascade)
+  role        PrivilegeRole @default(ASSIGNEE)
+  startDate   DateTime?     @db.Date
+  endDate     DateTime?     @db.Date
   notes       String?
 
   createdAt DateTime @default(now())

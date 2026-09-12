@@ -21,7 +21,7 @@ export default async function PublisherPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ sy?: string; saved?: string }>;
+  searchParams: Promise<{ sy?: string; saved?: string; merged?: string }>;
 }) {
   const user = await requirePermission("publisher:read");
   const { id } = await params;
@@ -48,10 +48,17 @@ export default async function PublisherPage({
   });
   if (!publisher) notFound();
   const held = [
-    ...publisher.privilegeAssignments.map((a) => a.privilege.name),
+    ...publisher.privilegeAssignments.map((a) => `${a.privilege.name} · ${a.role.charAt(0)}${a.role.slice(1).toLowerCase()}`),
     ...publisher.privileges,
   ];
 
+  const others = can(user.role, "publisher:delete")
+    ? await prisma.publisher.findMany({
+        where: { id: { not: id } },
+        select: { id: true, firstName: true, lastName: true, group: { select: { number: true } } },
+        orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+      })
+    : [];
   const [reports, groups] = await Promise.all([
     prisma.serviceReport.findMany({
       where: { publisherId: id, OR: months.map((m) => ({ year: m.year, month: m.month })) },
@@ -104,6 +111,7 @@ export default async function PublisherPage({
       />
 
       {sp.saved && <Notice tone="success">The record has been saved.</Notice>}
+      {sp.merged && <Notice tone="success">The two records have been merged into this one.</Notice>}
 
       <div className="mb-9 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Fact label="Standing" value={STATUS_LABELS[publisher.status]} />
@@ -130,7 +138,7 @@ export default async function PublisherPage({
         description={
           tracksHours
             ? "Hours are recorded because this publisher serves as a pioneer."
-            : "Publishers record participation and Bible studies. Hours apply to pioneers only."
+            : "Publishers record participation and Bible studies. Hours appear for months served as an auxiliary pioneer."
         }
         actions={
           <form method="get" className="flex items-center gap-2">
@@ -151,7 +159,7 @@ export default async function PublisherPage({
               <Th>Shared in the ministry</Th>
               <Th align="right">Bible studies</Th>
               <Th>Auxiliary pioneer</Th>
-              {tracksHours && <Th align="right">Hours</Th>}
+              <Th align="right">Hours</Th>
               <Th>Remarks</Th>
             </tr>
           </thead>
@@ -172,7 +180,7 @@ export default async function PublisherPage({
                   </Td>
                   <Td align="right">{r ? r.bibleStudies : "—"}</Td>
                   <Td>{r?.pioneerStatusUsed === "AUXILIARY" ? <Badge>Auxiliary</Badge> : ""}</Td>
-                  {tracksHours && <Td align="right">{r?.hours ?? "—"}</Td>}
+                  <Td align="right">{r?.hours ?? <span className="text-ink-faint">—</span>}</Td>
                   <Td className="text-xs text-ink-soft">{r?.remarks ?? ""}</Td>
                 </tr>
               );
@@ -182,7 +190,7 @@ export default async function PublisherPage({
               <Td className="text-xs text-ink-soft">{totals.active} months active</Td>
               <Td align="right">{totals.studies}</Td>
               <Td />
-              {tracksHours && <Td align="right">{totals.hours}</Td>}
+              <Td align="right">{totals.hours || "—"}</Td>
               <Td />
             </tr>
           </tbody>
@@ -238,6 +246,26 @@ export default async function PublisherPage({
           )}
         </Section>
       </div>
+
+      {can(user.role, "publisher:delete") && (
+        <section className="mt-6 rounded border border-rule bg-surface p-4">
+          <h2 className="font-serif text-sm text-ink">Merge with another record</h2>
+          <p className="mt-1 max-w-[62ch] text-xs text-ink-soft">
+            If this person has a second record under a different spelling, choose it here. You
+            will see both side by side before anything changes.
+          </p>
+          <form method="get" action="/publishers/merge" className="mt-3 flex flex-wrap items-center gap-2">
+            <input type="hidden" name="a" value={id} />
+            <select name="b" className="field-input max-w-xs py-1 text-xs" aria-label="Other record" required defaultValue="">
+              <option value="" disabled>Choose the other record…</option>
+              {others.map((o) => (
+                <option key={o.id} value={o.id}>{o.lastName}, {o.firstName}{o.group ? ` (Group ${o.group.number})` : ""}</option>
+              ))}
+            </select>
+            <Button type="submit" variant="secondary" size="sm">Compare</Button>
+          </form>
+        </section>
+      )}
 
       {can(user.role, "publisher:delete") && (
         <section className="mt-6 rounded border border-clay/25 bg-clay-light/40 p-4">

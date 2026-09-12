@@ -60,29 +60,30 @@ export async function assignPrivilege(
   const parsed = assignmentSchema.safeParse({
     publisherId: formData.get("publisherId"),
     privilegeId: formData.get("privilegeId"),
+    role: formData.get("role") ?? "ASSIGNEE",
     startDate: formData.get("startDate") ?? "",
     notes: formData.get("notes") ?? "",
   });
   if (!parsed.success) return { errors: fieldErrors(parsed.error) };
-  const { publisherId, privilegeId, startDate, notes } = parsed.data;
+  const { publisherId, privilegeId, role, startDate, notes } = parsed.data;
 
   const [publisher, privilege, current] = await Promise.all([
     prisma.publisher.findUnique({ where: { id: publisherId }, select: { firstName: true, lastName: true } }),
     prisma.privilege.findUnique({ where: { id: privilegeId }, select: { name: true, active: true } }),
-    prisma.publisherPrivilege.findFirst({ where: { publisherId, privilegeId, endDate: null } }),
+    prisma.publisherPrivilege.findFirst({ where: { publisherId, privilegeId, role, endDate: null } }),
   ]);
   if (!publisher || !privilege || !privilege.active) return { error: "That publisher or privilege no longer exists." };
   if (current) return { errors: { publisherId: `${publisher.firstName} ${publisher.lastName} already holds this.` } };
 
-  await prisma.publisherPrivilege.create({ data: { publisherId, privilegeId, startDate, notes } });
+  await prisma.publisherPrivilege.create({ data: { publisherId, privilegeId, role, startDate, notes } });
   await recordAudit(
     auth.session.userId, "assigned", "PublisherPrivilege", null,
-    `${publisher.firstName} ${publisher.lastName}: ${privilege.name}`,
+    `${publisher.firstName} ${publisher.lastName}: ${privilege.name} (${role.toLowerCase()})`,
   );
 
   revalidatePath("/privileges");
   revalidatePath(`/publishers/${publisherId}`);
-  return { ok: `${publisher.firstName} ${publisher.lastName} now holds ${privilege.name}.` };
+  return { ok: `${publisher.firstName} ${publisher.lastName} added to ${privilege.name} as ${role.toLowerCase()}.` };
 }
 
 export async function endAssignment(formData: FormData) {

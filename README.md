@@ -117,9 +117,22 @@ approval, and is re-checked then in case the calendar changed in between.
 **Memorial** attendance and partakers are recorded once a year under
 **Attendance**, and appear on the S-1 for that month.
 
-**Privileges** lists congregation assignments and meeting duties and who
-holds each. Ending an assignment keeps it on the person's history. The whole
-list exports as a PDF, grouped by privilege and then by publisher.
+**Ministerial assignments** (Privileges) is the congregation's department
+sheet: each department with its overseer, assistant, servants and assignees.
+Ending an assignment keeps it on the person's history. Exports as a PDF in the
+same table layout.
+
+**Analysis** (Field service → Analysis, or from the overview) answers any
+"how many, how much" question over a run of months, for the whole
+congregation or one group: regular pioneers, auxiliary pioneers and
+publishers with their reports, hours and studies; by month; by group; by
+publisher; late reports received. Downloads as CSV or PDF. Auxiliary pioneer
+hours are counted in the month they were served.
+
+**Duplicates.** Publishers → Find duplicates lists records that share a name;
+a merge moves every report, assignment and role onto the record you keep and
+deletes the other. Two records with different spellings can be merged from
+either record's page.
 
 **Official forms.** Under **Accounts → Official forms** the secretary can
 upload the fillable S-21, S-1 and S-88 PDFs from jw.org. When one is on file,
