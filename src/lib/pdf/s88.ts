@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { serviceYearMonths, serviceYearLabel, serviceYearRange } from "@/lib/service-year";
 import { formatDate } from "@/lib/format";
 import { newDoc, text, textRight, rule, band, INK, SOFT, PINE } from "@/lib/pdf/kit";
+import { getTemplate } from "@/lib/forms";
+import { fillS88 } from "@/lib/pdf/fill";
 
 export type AttendanceRow = {
   label: string;
@@ -42,8 +44,26 @@ export async function attendanceSummary(serviceYear: number): Promise<Attendance
   });
 }
 
-/** Congregation Meeting Attendance Record. */
+/**
+ * Congregation Meeting Attendance Record. The official S-88, when uploaded,
+ * is filled with this service year and the one before it (the form holds
+ * two); otherwise the built-in layout is drawn.
+ */
 export async function buildS88(serviceYear: number): Promise<Uint8Array> {
+  const template = await getTemplate("S88");
+  if (template) {
+    const [previous, current] = await Promise.all([attendanceSummary(serviceYear - 1), attendanceSummary(serviceYear)]);
+    return fillS88(template, {
+      years: [
+        { serviceYear: serviceYear - 1, rows: previous },
+        { serviceYear, rows: current },
+      ],
+    });
+  }
+  return drawS88(serviceYear);
+}
+
+async function drawS88(serviceYear: number): Promise<Uint8Array> {
   const rows = await attendanceSummary(serviceYear);
 
   const doc = await newDoc("portrait");

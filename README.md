@@ -114,14 +114,35 @@ Hall A and Hall B can be in use at the same time. A clashing
 request is still saved as pending with the overlap shown; the block happens at
 approval, and is re-checked then in case the calendar changed in between.
 
-**Import** reads a pasted spreadsheet, matches column headings loosely
+**Memorial** attendance and partakers are recorded once a year under
+**Attendance**, and appear on the S-1 for that month.
+
+**Privileges** lists congregation assignments and meeting duties and who
+holds each. Ending an assignment keeps it on the person's history. The whole
+list exports as a PDF, grouped by privilege and then by publisher.
+
+**Official forms.** Under **Accounts → Official forms** the secretary can
+upload the fillable S-21, S-1 and S-88 PDFs from jw.org. When one is on file,
+that export is written onto the real form (found by where each box sits on
+the page, so a new edition usually works unchanged); otherwise the app draws
+its own layout with the same figures. A "field check" download labels every
+box on an uploaded form with its internal name, for diagnosing a misfill.
+
+**Exports.** Every publisher's S-21 can be downloaded one at a time, for a
+whole group, or for the whole congregation in one PDF (**Publishers → Download
+every S-21**). The S-1 for any month is on the **Field service** page; the
+S-88 on **Attendance**; and a full JSON backup of every record under
+**Accounts → Backup**.
+
+**Import** reads a pasted spreadsheet or an uploaded file (.xlsx / .csv), matches column headings loosely
 ("Surname", "Last Name" and "Family Name" all work), flags names already on
 file, and shows you everything before writing. The whole batch lands or none of
 it does.
 
-**Exports** produce S-21 publisher cards, the S-88 attendance record and a
-per-group field service analysis as PDFs, generated on the server and
-downloaded directly.
+**Importing S-21 cards.** Filled-in S-21 PDFs can be uploaded in bulk on the
+Import page. Each card creates or updates the publisher and adds every month
+with anything in it. Field service history kept in spreadsheets (a grid of
+months, a list of reports, or a typed-out card) is read on the same page.
 
 ---
 
@@ -141,7 +162,11 @@ applies to them.
 - Judicial matters do not belong in this system. The elders' tracker is for
   practical action items only.
 - Take a database backup before any large import. Neon and Supabase both
-  provide point-in-time restore.
+  provide point-in-time restore, and **Accounts → Backup** downloads every
+  record as one JSON file.
+- Updates to the app never remove data: database changes are additive
+  migrations in `prisma/migrations`, applied on deploy, and the records live
+  in the database, not in the code.
 
 ---
 
@@ -158,9 +183,11 @@ src/
 │   │   ├── attendance/     meeting counts and S-88 figures
 │   │   ├── bookings/       hall calendar and conflict checking
 │   │   ├── boe/            elders' action items
+│   │   ├── privileges/     assignments and who holds them
 │   │   ├── import/         spreadsheet import
 │   │   └── settings/       accounts and audit log
-│   ├── api/exports/        PDF generation
+│   ├── api/exports/        PDF generation (S-21, S-1, S-88, group analysis, privileges, backup)
+│   ├── api/forms/          uploaded official forms and the field check
 │   └── login/
 ├── components/             shared interface pieces
 ├── lib/
@@ -170,7 +197,10 @@ src/
 │   ├── validation.ts       zod schemas for every form
 │   ├── bookings.ts         overlap detection
 │   ├── import.ts           header matching and row parsing
-│   └── pdf/                S-21, S-88 and group analysis
+│   ├── import-s21.ts       reads filled-in S-21 PDFs
+│   ├── import-reports.ts   reads field service spreadsheets
+│   ├── forms.ts            uploaded official forms
+│   └── pdf/                built-in layouts, and fill.ts for writing onto official forms
 └── middleware.ts
 ```
 

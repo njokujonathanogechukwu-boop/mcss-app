@@ -6,6 +6,7 @@ import { can } from "@/lib/rbac";
 import { displayName, formatDate, APPOINTMENT_LABELS, PIONEER_LABELS, STATUS_LABELS } from "@/lib/format";
 import { PageHeader, DataTable, Th, Td, EmptyState } from "@/components/shell";
 import { Badge, Button } from "@/components/ui";
+import { currentServiceYear } from "@/lib/service-year";
 
 export const dynamic = "force-dynamic";
 
@@ -58,11 +59,18 @@ export default async function PublishersPage({
         title="Publishers"
         description={`${total} records on file. Search by name or narrow the list by group, standing or appointment.`}
         actions={
-          canWrite && (
-            <Link href="/publishers/new">
-              <Button>Add a publisher</Button>
-            </Link>
-          )
+          <>
+            {can(user.role, "export:run") && (
+              <a href={`/api/exports/s21/batch?sy=${currentServiceYear()}`} target="_blank" rel="noopener">
+                <Button variant="secondary" size="sm">Download every S-21</Button>
+              </a>
+            )}
+            {canWrite && (
+              <Link href="/publishers/new">
+                <Button>Add a publisher</Button>
+              </Link>
+            )}
+          </>
         }
       />
 

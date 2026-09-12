@@ -5,6 +5,8 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
 import { userSchema, passwordSchema, fieldErrors } from "@/lib/validation";
+import { inspectTemplate, type TemplateSummary } from "@/lib/pdf/fill";
+import type { FormKind } from "@prisma/client";
 
 export type UserState = { error?: string; errors?: Record<string, string>; ok?: string };
 
@@ -98,4 +100,63 @@ export async function changeOwnPassword(_prev: UserState, formData: FormData): P
   });
   await recordAudit(user.id, "updated", "User", user.id, "Changed their own password");
   return { ok: "Your password has been changed." };
+}
+
+// ------------------------------------------------------------- official forms
+
+
+export type FormUploadState = { error?: string; ok?: string; summary?: TemplateSummary; kind?: FormKind };
+
+const KINDS: FormKind[] = ["S21", "S1", "S88"];
+
+export async function uploadForm(_prev: FormUploadState, formData: FormData): Promise<FormUploadState> {
+  const auth = await guard("forms:manage");
+  if (!auth.ok) return { error: auth.error };
+
+  const kindRaw = String(formData.get("kind") ?? "");
+  if (!KINDS.includes(kindRaw as FormKind)) return { error: "Unknown form." };
+  const kind = kindRaw as FormKind;
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) return { kind, error: "Choose the PDF first." };
+  if (!file.name.toLowerCase().endsWith(".pdf")) return { kind, error: "That is not a PDF." };
+  if (file.size > 3_500_000) return { kind, error: "The file is over 3.5 MB. The official forms are much smaller; check you have the right file." };
+
+  const data = Buffer.from(await file.arrayBuffer());
+  let summary: TemplateSummary;
+  try {
+    summary = await inspectTemplate(data, kind);
+  } catch {
+    return { kind, error: "Could not read that PDF." };
+  }
+  if (summary.fieldCount === 0) {
+    return { kind, error: "This PDF has no fillable fields, so it cannot be filled in. Use the fillable version from jw.org, not a scan or printout." };
+  }
+
+  await prisma.formTemplate.upsert({
+    where: { kind },
+    create: { kind, fileName: file.name, data, fieldCount: summary.fieldCount, uploadedById: auth.session.userId },
+    update: { fileName: file.name, data, fieldCount: summary.fieldCount, uploadedById: auth.session.userId, uploadedAt: new Date() },
+  });
+  await recordAudit(auth.session.userId, "uploaded", "FormTemplate", kind, `Uploaded the ${kind} form (${file.name})`);
+
+  revalidatePath("/settings");
+  const missed = summary.checks.filter((c) => !c.ok).length;
+  return {
+    kind,
+    summary,
+    ok: missed
+      ? `Saved. ${summary.fieldCount} fields found, but ${missed} thing${missed === 1 ? "" : "s"} the app looks for could not be located; exports will fall back to the built-in layout where needed. Download the field check to see what was read.`
+      : `Saved. ${summary.fieldCount} fields found and everything the app needs was located. Exports now use this form.`,
+  };
+}
+
+export async function removeForm(formData: FormData) {
+  const auth = await guard("forms:manage");
+  if (!auth.ok) return;
+  const kind = String(formData.get("kind")) as FormKind;
+  if (!KINDS.includes(kind)) return;
+  await prisma.formTemplate.deleteMany({ where: { kind } });
+  await recordAudit(auth.session.userId, "removed", "FormTemplate", kind, `Removed the uploaded ${kind} form; exports use the built-in layout`);
+  revalidatePath("/settings");
 }

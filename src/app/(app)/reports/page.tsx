@@ -73,9 +73,16 @@ export default async function ReportsPage({
         title="Field service reports"
         description={`${onFile} of ${rows.length} publishers have a report on file for ${monthLabel(year, month)}.`}
         actions={
-          <Link href={`/reports/summary?sy=${serviceYear}`}>
-            <Button variant="secondary" size="sm">Service year summary</Button>
-          </Link>
+          <>
+            {can(user.role, "export:run") && (
+              <a href={`/api/exports/s1?year=${year}&month=${month}`} target="_blank" rel="noopener">
+                <Button size="sm">Download S-1 for {monthLabel(year, month)}</Button>
+              </a>
+            )}
+            <Link href={`/reports/summary?sy=${serviceYear}`}>
+              <Button variant="secondary" size="sm">Service year summary</Button>
+            </Link>
+          </>
         }
       />
 

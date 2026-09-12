@@ -1,4 +1,5 @@
-import { PDFDocument, PDFCheckBox, PDFTextField, PDFField } from "pdf-lib";
+import { PDFDocument } from "pdf-lib";
+import { collectWidgets, groupRows, type Widget } from "@/lib/pdf/fields";
 
 /**
  * Reads a filled-in S-21 (Congregation's Publisher Record) PDF.
@@ -36,19 +37,6 @@ export type S21Card = {
   problems: string[];
 };
 
-type Widget = {
-  field: PDFField;
-  name: string;
-  kind: "check" | "text";
-  page: number;
-  x: number;
-  y: number; // top edge, in PDF units (origin bottom-left)
-  w: number;
-  h: number;
-  text: string;
-  checked: boolean;
-};
-
 const SEP_FIRST = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
 
 export async function readS21(buffer: Buffer, fileName: string, fallbackYear?: number): Promise<S21Card> {
@@ -74,36 +62,10 @@ export async function readS21(buffer: Buffer, fileName: string, fallbackYear?: n
     return card;
   }
 
-  const pages = pdf.getPages();
-  const pageIndex = new Map(pages.map((p, i) => [p.ref.toString(), i]));
-
-  let fields: PDFField[];
-  try {
-    fields = pdf.getForm().getFields();
-  } catch {
-    fields = [];
-  }
-  if (fields.length === 0) {
+  const widgets = collectWidgets(pdf);
+  if (widgets.length === 0) {
     card.problems.push("This PDF has no fillable fields. It may be a scan or a printout; those cannot be read automatically.");
     return card;
-  }
-
-  // ------------------------------------------------ collect every widget
-  const widgets: Widget[] = [];
-  for (const field of fields) {
-    const kind = field instanceof PDFCheckBox ? "check" : field instanceof PDFTextField ? "text" : null;
-    if (!kind) continue;
-    const text = kind === "text" ? ((field as PDFTextField).getText() ?? "").trim() : "";
-    const checked = kind === "check" ? (field as PDFCheckBox).isChecked() : false;
-    for (const w of field.acroField.getWidgets()) {
-      const rect = w.getRectangle();
-      const pRef = w.P();
-      const page = pRef ? (pageIndex.get(pRef.toString()) ?? 0) : 0;
-      widgets.push({
-        field, name: field.getName(), kind, page,
-        x: rect.x, y: rect.y + rect.height, w: rect.width, h: rect.height, text, checked,
-      });
-    }
   }
 
   // ------------------------------------------------ header fields by name
@@ -169,9 +131,9 @@ export async function readS21(buffer: Buffer, fileName: string, fallbackYear?: n
     let i = 0;
     while (i + 12 <= rows.length) {
       const table = rows.slice(i, i + 12);
-      const top = table[0][0].y;
+      const top = Math.max(...table[0].map((w) => w.y));
       const yearBox = ws
-        .filter((w) => w.kind === "text" && w.y > top && /^\s*(19|20)\d{2}\s*$/.test(w.text))
+        .filter((w) => w.kind === "text" && w.y - w.h >= top && /^\s*(19|20)\d{2}\s*$/.test(w.text))
         .sort((a, b) => a.y - b.y)[0]; // nearest above
       let serviceYear = yearBox ? Number(yearBox.text.trim()) : null;
       if (!serviceYear && fallbackYear && card.serviceYears.length === 0) {
@@ -223,18 +185,6 @@ export async function readS21(buffer: Buffer, fileName: string, fallbackYear?: n
     card.problems.push("No month rows with anything filled in were found.");
   }
   return card;
-}
-
-/** Groups widgets into rows by their top edge, top of page first. */
-function groupRows(ws: Widget[]): Widget[][] {
-  const sorted = ws.slice().sort((a, b) => b.y - a.y);
-  const rows: Widget[][] = [];
-  for (const w of sorted) {
-    const last = rows[rows.length - 1];
-    if (last && Math.abs(last[0].y - w.y) <= Math.max(4, last[0].h * 0.5)) last.push(w);
-    else rows.push([w]);
-  }
-  return rows;
 }
 
 function toInt(raw: string): number | null {

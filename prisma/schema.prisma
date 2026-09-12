@@ -157,12 +157,13 @@ model Publisher {
 
   notes String?
 
-  reports        ServiceReport[]
-  transfers      TransferLog[]  @relation("TransferSubject")
-  assignedItems  BoeDecision[]  @relation("DecisionAssignee")
-  overseesGroups ServiceGroup[] @relation("GroupOverseer")
-  assistsGroups  ServiceGroup[] @relation("GroupAssistant")
-  userAccount    User?          @relation("UserPublisher")
+  reports              ServiceReport[]
+  transfers            TransferLog[]        @relation("TransferSubject")
+  assignedItems        BoeDecision[]        @relation("DecisionAssignee")
+  overseesGroups       ServiceGroup[]       @relation("GroupOverseer")
+  assistsGroups        ServiceGroup[]       @relation("GroupAssistant")
+  userAccount          User?                @relation("UserPublisher")
+  privilegeAssignments PublisherPrivilege[] @relation("PublisherPrivileges")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -299,4 +300,78 @@ model BoeDecision {
   updatedAt DateTime @updatedAt
 
   @@index([status, targetDate])
+}
+
+// ---------------------------------------------------------------- memorial
+
+model MemorialRecord {
+  id        String   @id @default(cuid())
+  year      Int      @unique
+  date      DateTime @db.Date
+  inPerson  Int      @default(0)
+  video     Int      @default(0)
+  partakers Int      @default(0)
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ------------------------------------------------ privileges and assignments
+
+enum PrivilegeCategory {
+  CONGREGATION
+  MEETING
+  OTHER
+}
+
+model Privilege {
+  id          String            @id @default(cuid())
+  name        String            @unique
+  category    PrivilegeCategory @default(CONGREGATION)
+  description String?
+  sortOrder   Int               @default(0)
+  active      Boolean           @default(true)
+
+  holders PublisherPrivilege[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PublisherPrivilege {
+  id          String    @id @default(cuid())
+  publisherId String
+  publisher   Publisher @relation("PublisherPrivileges", fields: [publisherId], references: [id], onDelete: Cascade)
+  privilegeId String
+  privilege   Privilege @relation(fields: [privilegeId], references: [id], onDelete: Cascade)
+  startDate   DateTime? @db.Date
+  endDate     DateTime? @db.Date
+  notes       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([publisherId])
+  @@index([privilegeId])
+}
+
+// ------------------------------------------------------- official forms
+
+enum FormKind {
+  S21
+  S1
+  S88
+}
+
+/// An uploaded official fillable PDF. Exports are written into it when
+/// one is on file; otherwise the built-in layout is used.
+model FormTemplate {
+  id           String   @id @default(cuid())
+  kind         FormKind @unique
+  fileName     String
+  data         Bytes
+  fieldCount   Int      @default(0)
+  uploadedById String?
+  uploadedAt   DateTime @default(now())
 }

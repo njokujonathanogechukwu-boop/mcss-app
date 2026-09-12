@@ -39,9 +39,18 @@ export default async function PublisherPage({
         orderBy: { effectiveDate: "desc" },
         take: 10,
       },
+      privilegeAssignments: {
+        where: { endDate: null },
+        include: { privilege: { select: { name: true } } },
+        orderBy: { privilege: { sortOrder: "asc" } },
+      },
     },
   });
   if (!publisher) notFound();
+  const held = [
+    ...publisher.privilegeAssignments.map((a) => a.privilege.name),
+    ...publisher.privileges,
+  ];
 
   const [reports, groups] = await Promise.all([
     prisma.serviceReport.findMany({
@@ -103,10 +112,13 @@ export default async function PublisherPage({
         <Fact label="Hope" value={publisher.isAnointed ? "Anointed" : "Other sheep"} />
       </div>
 
-      {publisher.privileges.length > 0 && (
-        <Section title="Privileges">
+      {held.length > 0 && (
+        <Section
+          title="Privileges and assignments"
+          actions={<Link href="/privileges" className="text-xs text-pine hover:underline">Manage</Link>}
+        >
           <div className="flex flex-wrap gap-1.5">
-            {publisher.privileges.map((p) => (
+            {held.map((p) => (
               <Badge key={p}>{p}</Badge>
             ))}
           </div>

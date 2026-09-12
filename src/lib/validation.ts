@@ -75,6 +75,27 @@ export const attendanceSchema = z.object({
   notes: optionalString,
 });
 
+export const memorialSchema = z.object({
+  date: z.string().refine((v) => !Number.isNaN(Date.parse(v)), "Enter the date of the Memorial"),
+  inPerson: z.coerce.number().int().min(0).max(20000),
+  video: z.coerce.number().int().min(0).max(20000),
+  partakers: z.coerce.number().int().min(0).max(1000),
+  notes: optionalString,
+});
+
+export const privilegeSchema = z.object({
+  name: z.string().trim().min(2, "Give the privilege a name").max(80),
+  category: z.enum(["CONGREGATION", "MEETING", "OTHER"]),
+  description: optionalString,
+});
+
+export const assignmentSchema = z.object({
+  publisherId: z.string().min(1, "Choose a publisher"),
+  privilegeId: z.string().min(1, "Choose a privilege"),
+  startDate: optionalDate,
+  notes: optionalString,
+});
+
 export const bookingSchema = z
   .object({
     resourceId: z.string().min(1, "Choose which part of the hall is needed"),

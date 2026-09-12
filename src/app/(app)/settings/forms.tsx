@@ -4,7 +4,7 @@ import { useActionState } from "react";
 import { TextField, SelectField, CheckField } from "@/components/fields";
 import { SubmitButton } from "@/components/ui";
 import { Notice } from "@/components/shell";
-import { createUser, changeOwnPassword, type UserState } from "./actions";
+import { createUser, changeOwnPassword, uploadForm, type UserState, type FormUploadState } from "./actions";
 import { ROLE_LABELS, ROLE_DESCRIPTIONS } from "@/lib/rbac";
 
 const ROLE_OPTIONS = (Object.keys(ROLE_LABELS) as (keyof typeof ROLE_LABELS)[]).map((r) => ({
@@ -65,6 +65,42 @@ export function PasswordForm() {
         autoComplete="new-password" error={state.errors?.newPassword}
       />
       <SubmitButton variant="secondary" pendingLabel="Changing…">Change password</SubmitButton>
+    </form>
+  );
+}
+
+export function FormUpload({ kind, code, title }: { kind: "S21" | "S1" | "S88"; code: string; title: string }) {
+  const [state, action] = useActionState<FormUploadState, FormData>(uploadForm, {});
+
+  return (
+    <form action={action} className="space-y-3">
+      <input type="hidden" name="kind" value={kind} />
+      <label htmlFor={`form-${kind}`} className="field-label">
+        Upload the {code} PDF
+      </label>
+      <input
+        id={`form-${kind}`}
+        name="file"
+        type="file"
+        accept=".pdf,application/pdf"
+        required
+        className="block w-full text-sm text-ink-soft file:mr-3 file:rounded file:border file:border-rule-strong file:bg-surface file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-ink hover:file:bg-paper"
+      />
+      <p className="field-hint">The fillable {title} form as downloaded from jw.org.</p>
+      {state.error && <Notice tone="error">{state.error}</Notice>}
+      {state.ok && (
+        <Notice tone="success">
+          <p>{state.ok}</p>
+          {state.summary && (
+            <ul className="mt-2 space-y-0.5 text-xs">
+              {state.summary.checks.map((c) => (
+                <li key={c.label}>{c.ok ? "✓" : "✗"} {c.label}</li>
+              ))}
+            </ul>
+          )}
+        </Notice>
+      )}
+      <SubmitButton variant="secondary" size="sm" pendingLabel="Uploading…">Save this form</SubmitButton>
     </form>
   );
 }

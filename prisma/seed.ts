@@ -62,6 +62,41 @@ async function main() {
   }
   console.log(`${groups.length} service groups ready.`);
 
+  // Starter list of privileges. The secretary can retire or add to these.
+  const privileges: { name: string; category: "CONGREGATION" | "MEETING" | "OTHER" }[] = [
+    { name: "Coordinator of the body of elders", category: "CONGREGATION" },
+    { name: "Secretary", category: "CONGREGATION" },
+    { name: "Service overseer", category: "CONGREGATION" },
+    { name: "Life and Ministry Meeting overseer", category: "CONGREGATION" },
+    { name: "Watchtower Study conductor", category: "CONGREGATION" },
+    { name: "Group overseer", category: "CONGREGATION" },
+    { name: "Group assistant", category: "CONGREGATION" },
+    { name: "Accounts servant", category: "CONGREGATION" },
+    { name: "Literature servant", category: "CONGREGATION" },
+    { name: "Territory servant", category: "CONGREGATION" },
+    { name: "Operating committee", category: "CONGREGATION" },
+    { name: "Public talk speaker", category: "MEETING" },
+    { name: "Watchtower reader", category: "MEETING" },
+    { name: "Bible study reader", category: "MEETING" },
+    { name: "Chairman", category: "MEETING" },
+    { name: "Attendant", category: "MEETING" },
+    { name: "Sound and video", category: "MEETING" },
+    { name: "Platform", category: "MEETING" },
+    { name: "Microphones", category: "MEETING" },
+    { name: "Zoom host", category: "MEETING" },
+    { name: "Cleaning captain", category: "OTHER" },
+    { name: "Maintenance", category: "OTHER" },
+  ];
+  let order = 0;
+  for (const p of privileges) {
+    await prisma.privilege.upsert({
+      where: { name: p.name },
+      update: {},
+      create: { ...p, sortOrder: order++ },
+    });
+  }
+  console.log(`${privileges.length} privileges ready.`);
+
   console.log("\nSeed complete. Sign in, change the password, then import your roster.");
 }
 

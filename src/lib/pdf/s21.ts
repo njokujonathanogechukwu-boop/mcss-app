@@ -3,14 +3,106 @@ import { prisma } from "@/lib/prisma";
 import { serviceYearMonths, serviceYearLabel } from "@/lib/service-year";
 import { formatDate, APPOINTMENT_LABELS, PIONEER_LABELS } from "@/lib/format";
 import { newDoc, text, textRight, rule, band, INK, SOFT, PINE } from "@/lib/pdf/kit";
+import { getTemplate } from "@/lib/forms";
+import { fillS21, type S21FillData } from "@/lib/pdf/fill";
+import { PDFDocument } from "pdf-lib";
 
-/** Congregation Publisher Record — one card per publisher per service year. */
-export async function buildS21(publisherId: string, serviceYear: number): Promise<Uint8Array> {
-  const publisher = await prisma.publisher.findUniqueOrThrow({
-    where: { id: publisherId },
-    include: { group: true },
+type PublisherWithGroup = NonNullable<Awaited<ReturnType<typeof loadPublisher>>>;
+
+function loadPublisher(id: string) {
+  return prisma.publisher.findUnique({ where: { id }, include: { group: true } });
+}
+
+/**
+ * Congregation Publisher Record, one card per publisher. When the official
+ * S-21 has been uploaded under Accounts → Official forms it is filled in;
+ * otherwise the built-in layout is drawn. `template` lets a batch reuse one
+ * copy of the form instead of re-reading it for every publisher.
+ */
+export async function buildS21(
+  publisherId: string,
+  serviceYear: number,
+  template?: Buffer | null,
+): Promise<Uint8Array> {
+  const publisher = await loadPublisher(publisherId);
+  if (!publisher) throw new Error("No such publisher.");
+  const form = template === undefined ? await getTemplate("S21") : template;
+  if (form) return fillS21(form, await s21FillData(publisher, serviceYear, form));
+  return drawS21(publisher, serviceYear);
+}
+
+/**
+ * Every card in one PDF, for printing or filing. Active and irregular
+ * publishers, optionally one group only, in surname order.
+ */
+export async function buildS21Batch(serviceYear: number, groupId?: string | null): Promise<{ pdf: Uint8Array; count: number }> {
+  const publishers = await prisma.publisher.findMany({
+    where: { status: { in: ["ACTIVE", "IRREGULAR"] }, ...(groupId ? { groupId } : {}) },
+    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    select: { id: true },
   });
+  const template = await getTemplate("S21");
+  const merged = await PDFDocument.create();
+  for (const p of publishers) {
+    const bytes = await buildS21(p.id, serviceYear, template);
+    const doc = await PDFDocument.load(bytes);
+    const pages = await merged.copyPages(doc, doc.getPageIndices());
+    pages.forEach((page) => merged.addPage(page));
+  }
+  return { pdf: await merged.save(), count: publishers.length };
+}
 
+/** How many twelve-row tables the uploaded form has: fill that many consecutive service years. */
+async function tableCount(form: Buffer): Promise<number> {
+  const { collectWidgets, groupRows, pagesOf } = await import("@/lib/pdf/fields");
+  const pdf = await PDFDocument.load(form, { ignoreEncryption: true, updateMetadata: false });
+  const widgets = collectWidgets(pdf);
+  let n = 0;
+  for (const page of pagesOf(widgets)) {
+    const rows = groupRows(widgets.filter((w) => w.page === page)).filter(
+      (r) => r.filter((w) => w.kind === "check").length >= 2 && r.filter((w) => w.kind === "text").length >= 2,
+    );
+    n += Math.floor(rows.length / 12);
+  }
+  return Math.max(1, n);
+}
+
+async function s21FillData(publisher: PublisherWithGroup, serviceYear: number, form: Buffer): Promise<S21FillData> {
+  const tables = await tableCount(form);
+  const years: S21FillData["years"] = [];
+  for (let t = 0; t < tables; t++) {
+    const sy = serviceYear + t;
+    const months = serviceYearMonths(sy);
+    const reports = await prisma.serviceReport.findMany({
+      where: { publisherId: publisher.id, OR: months.map((m) => ({ year: m.year, month: m.month })) },
+    });
+    const byKey = new Map(reports.map((r) => [`${r.year}-${r.month}`, r]));
+    let totalHours = 0;
+    years.push({
+      serviceYear: sy,
+      months: months.map((m) => {
+        const r = byKey.get(`${m.year}-${m.month}`);
+        if (!r) return null;
+        if (r.hours) totalHours += r.hours;
+        return { shared: r.sharedInMinistry, studies: r.bibleStudies, aux: r.pioneerStatusUsed === "AUXILIARY", hours: r.hours, remarks: r.remarks };
+      }),
+      totalHours,
+    });
+  }
+  return {
+    name: `${publisher.firstName} ${publisher.lastName}`,
+    dateOfBirth: formatDate(publisher.dateOfBirth) === "—" ? "" : formatDate(publisher.dateOfBirth),
+    baptismDate: formatDate(publisher.baptismDate) === "—" ? "" : formatDate(publisher.baptismDate),
+    gender: publisher.gender,
+    anointed: publisher.isAnointed,
+    appointment: publisher.appointment,
+    pioneerStatus: publisher.pioneerStatus,
+    years,
+  };
+}
+
+async function drawS21(publisher: PublisherWithGroup, serviceYear: number): Promise<Uint8Array> {
+  const publisherId = publisher.id;
   const months = serviceYearMonths(serviceYear);
   const reports = await prisma.serviceReport.findMany({
     where: {
