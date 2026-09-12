@@ -110,7 +110,7 @@ Entering the same date twice corrects the earlier figure instead of creating a
 second row. The monthly averages are what the S-88 shows.
 
 **Kingdom Hall** bookings are checked per room, not per building, so the
-auditorium and the second school can be in use at the same time. A clashing
+Hall A and Hall B can be in use at the same time. A clashing
 request is still saved as pending with the overlap shown; the block happens at
 approval, and is re-checked then in case the calendar changed in between.
 

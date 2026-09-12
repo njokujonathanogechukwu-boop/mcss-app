@@ -35,9 +35,8 @@ async function main() {
   console.log(`Administrator ready: ${admin.email}`);
 
   const rooms = [
-    { name: "Auditorium", description: "Main hall", capacity: 200 },
-    { name: "Second school", description: "Overflow and auxiliary classroom", capacity: 60 },
-    { name: "Library", description: "Small meeting room", capacity: 15 },
+    { name: "Hall A", description: "Main hall" },
+    { name: "Hall B", description: "Second hall" },
   ];
   for (const room of rooms) {
     await prisma.hallResource.upsert({
