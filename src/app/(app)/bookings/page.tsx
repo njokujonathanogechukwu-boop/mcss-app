@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
-import { formatTimeRange, formatDate, BOOKING_LABELS } from "@/lib/format";
+import { formatTimeRange, formatDate, displayName, BOOKING_LABELS, DECISION_LABELS } from "@/lib/format";
+import Link from "next/link";
 import { PageHeader, Section, EmptyState, Panel } from "@/components/shell";
 import { Badge } from "@/components/ui";
 import { BookingForm } from "./booking-form";
@@ -11,6 +12,10 @@ export const dynamic = "force-dynamic";
 
 const TONE: Record<string, "good" | "warn" | "bad" | "neutral"> = {
   APPROVED: "good", PENDING: "warn", DECLINED: "bad", CANCELLED: "neutral",
+};
+
+const DECISION_TONE: Record<string, "good" | "warn" | "neutral"> = {
+  COMPLETED: "good", IN_PROGRESS: "warn", OPEN: "neutral", DEFERRED: "neutral",
 };
 
 export default async function BookingsPage() {
@@ -36,6 +41,16 @@ export default async function BookingsPage() {
     }),
     prisma.hallResource.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
   ]);
+
+  // Only the elders see their own items, so for everyone else the section is absent.
+  const boeItems = can(user.role, "boe:read")
+    ? await prisma.boeDecision.findMany({
+        where: { status: { in: ["OPEN", "IN_PROGRESS", "DEFERRED"] }, targetDate: { not: null } },
+        include: { assignedTo: true },
+        orderBy: { targetDate: "asc" },
+        take: 12,
+      })
+    : null;
 
   return (
     <>
@@ -81,6 +96,44 @@ export default async function BookingsPage() {
           </ul>
         )}
       </Section>
+
+      {boeItems !== null && (
+        <Section title={`Body of elders items${boeItems.length ? ` · ${boeItems.length}` : ""}`}>
+          {boeItems.length === 0 ? (
+            <EmptyState
+              title="Nothing due"
+              description="Decisions from the body of elders that carry a deadline appear here in date order."
+            />
+          ) : (
+            <ul className="divide-y divide-rule rounded border border-rule bg-surface">
+              {boeItems.map((item) => {
+                const late = item.targetDate !== null && item.targetDate < new Date();
+                return (
+                  <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+                    <div className="min-w-0">
+                      <p className="text-sm text-ink">{item.agendaItem}</p>
+                      <p className="text-xs text-ink-faint">
+                        <span className={late ? "font-medium text-clay" : ""}>
+                          Due {formatDate(item.targetDate)}
+                        </span>
+                        {item.assignedTo ? ` · ${displayName(item.assignedTo)}` : " · nobody assigned"}
+                      </p>
+                    </div>
+                    <Badge tone={late ? "bad" : DECISION_TONE[item.status]}>{DECISION_LABELS[item.status]}</Badge>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <p className="mt-2 text-xs text-ink-faint">
+            Recorded and completed on the{" "}
+            <Link href="/boe" className="text-pine underline-offset-2 hover:underline">
+              Elders’ items page
+            </Link>
+            .
+          </p>
+        </Section>
+      )}
 
       <Section title="Request the hall">
         <div className="max-w-2xl">

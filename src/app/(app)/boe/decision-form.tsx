@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useEffect, useActionState, useState } from "react";
 import { TextField, TextArea } from "@/components/fields";
 import { SubmitButton, Button } from "@/components/ui";
 import { Notice } from "@/components/shell";
@@ -18,6 +18,11 @@ export function DecisionForm({ elders }: { elders: { id: string; label: string }
   const [state, action] = useActionState<DecisionState, FormData>(saveMeeting, {});
   const [rows, setRows] = useState<Row[]>([{ key: 0 }, { key: 1 }, { key: 2 }]);
   const [next, setNext] = useState(3);
+  // A saved meeting must not sit in the form waiting to be saved twice.
+  const [saved, setSaved] = useState(0);
+  useEffect(() => {
+    if (state.ok) setSaved((n) => n + 1);
+  }, [state]);
 
   const addRow = () => {
     setRows((r) => [...r, { key: next }]);
@@ -26,7 +31,7 @@ export function DecisionForm({ elders }: { elders: { id: string; label: string }
   const removeRow = (key: number) => setRows((r) => (r.length > 1 ? r.filter((x) => x.key !== key) : r));
 
   return (
-    <form action={action} className="space-y-5 rounded border border-rule bg-surface p-5">
+    <form key={saved} action={action} className="space-y-5 rounded border border-rule bg-surface p-5">
       {state.error && <Notice tone="error">{state.error}</Notice>}
       {state.ok && <Notice tone="success">{state.ok}</Notice>}
 

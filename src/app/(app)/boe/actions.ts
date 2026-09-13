@@ -7,42 +7,6 @@ import { decisionSchema, fieldErrors } from "@/lib/validation";
 
 export type DecisionState = { error?: string; errors?: Record<string, string>; ok?: string };
 
-export async function saveDecision(
-  _prev: DecisionState,
-  formData: FormData,
-): Promise<DecisionState> {
-  const auth = await guard("boe:write");
-  if (!auth.ok) return { error: auth.error };
-
-  const parsed = decisionSchema.safeParse({
-    meetingDate: formData.get("meetingDate"),
-    agendaItem: formData.get("agendaItem"),
-    decision: formData.get("decision"),
-    assignedToId: formData.get("assignedToId") ?? "",
-    targetDate: formData.get("targetDate") ?? "",
-    status: formData.get("status") ?? "OPEN",
-    notes: formData.get("notes") ?? "",
-  });
-  if (!parsed.success) return { errors: fieldErrors(parsed.error) };
-
-  const created = await prisma.boeDecision.create({
-    data: {
-      ...parsed.data,
-      meetingDate: new Date(`${parsed.data.meetingDate}T00:00:00.000Z`),
-      completedAt: parsed.data.status === "COMPLETED" ? new Date() : null,
-    },
-  });
-
-  await recordAudit(
-    auth.session.userId, "created", "BoeDecision", created.id,
-    `Logged "${created.agendaItem}"`,
-  );
-
-  revalidatePath("/boe");
-  revalidatePath("/dashboard");
-  return { ok: "Item recorded." };
-}
-
 /**
  * Saves every decision reached at one meeting. Rows arrive numbered
  * (agendaItem.0, decision.0, assignedToId.0, targetDate.0, notes.0 …);
@@ -59,7 +23,7 @@ export async function saveMeeting(
   const meetingDate = String(formData.get("meetingDate") ?? "");
   if (Number.isNaN(Date.parse(meetingDate))) return { errors: { meetingDate: "Enter a valid date" } };
 
-  const indexes = [...new Set([...formData.keys()].map((k) => k.match(/^agendaItem.(d+)$/)?.[1]).filter((i): i is string => !!i))];
+  const indexes = [...new Set([...formData.keys()].map((k) => k.match(/^agendaItem\.(\d+)$/)?.[1]).filter((i): i is string => !!i))];
   const errors: Record<string, string> = {};
   const items: { agendaItem: string; decision: string; assignedToId: string | null; targetDate: Date | null; notes: string | null }[] = [];
 

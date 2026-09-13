@@ -15,7 +15,7 @@ const TONE: Record<string, "good" | "warn" | "neutral"> = {
 export default async function BoePage() {
   await requirePermission("boe:read");
 
-  const [open, closed, elders] = await Promise.all([
+  const [open, closed, elders, meetings] = await Promise.all([
     prisma.boeDecision.findMany({
       where: { status: { in: ["OPEN", "IN_PROGRESS", "DEFERRED"] } },
       include: { assignedTo: true },
@@ -31,6 +31,12 @@ export default async function BoePage() {
       where: { appointment: "ELDER", status: "ACTIVE" },
       orderBy: { lastName: "asc" },
       select: { id: true, firstName: true, lastName: true },
+    }),
+    prisma.boeDecision.groupBy({
+      by: ["meetingDate"],
+      _count: { _all: true },
+      orderBy: { meetingDate: "desc" },
+      take: 24,
     }),
   ]);
 
@@ -78,8 +84,14 @@ export default async function BoePage() {
                     {item.notes && <p className="mt-1 text-xs text-ink-soft">{item.notes}</p>}
 
                     <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-rule pt-3">
-                      <span className="text-xs text-ink-faint">Move to</span>
-                      {(["IN_PROGRESS", "COMPLETED", "DEFERRED"] as const)
+                      <form action={setDecisionStatus}>
+                        <input type="hidden" name="id" value={item.id} />
+                        <input type="hidden" name="status" value="COMPLETED" />
+                        <button className="rounded bg-pine px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-pine-dark">
+                          Mark complete
+                        </button>
+                      </form>
+                      {(["IN_PROGRESS", "DEFERRED"] as const)
                         .filter((s) => s !== item.status)
                         .map((s) => (
                           <form key={s} action={setDecisionStatus}>
@@ -105,15 +117,50 @@ export default async function BoePage() {
         </div>
       </Section>
 
+      {meetings.length > 0 && (
+        <Section title="Meeting summaries">
+          <p className="mb-3 text-sm text-ink-soft">
+            One page per meeting with every decision reached at it, to share with the body of elders.
+          </p>
+          <ul className="divide-y divide-rule rounded border border-rule bg-surface text-sm">
+            {meetings.map((m) => (
+              <li key={m.meetingDate.toISOString()} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+                <span className="text-ink">
+                  {formatDate(m.meetingDate)}
+                  <span className="ml-2 text-xs text-ink-faint">
+                    {m._count._all} decision{m._count._all === 1 ? "" : "s"}
+                  </span>
+                </span>
+                <a
+                  href={`/api/exports/boe?date=${m.meetingDate.toISOString().slice(0, 10)}`}
+                  className="rounded border border-rule-strong px-2 py-1 text-xs text-ink-soft hover:border-pine hover:text-pine"
+                >
+                  Download (PDF)
+                </a>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
       {closed.length > 0 && (
         <Section title="Completed">
           <ul className="divide-y divide-rule rounded border border-rule bg-surface text-sm">
             {closed.map((item) => (
               <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
                 <span className="text-ink-soft">{item.agendaItem}</span>
-                <span className="text-xs text-ink-faint">
-                  {item.assignedTo ? `${displayName(item.assignedTo)} · ` : ""}
-                  {formatDate(item.completedAt)}
+                <span className="flex items-center gap-2.5 text-xs text-ink-faint">
+                  <span>
+                    {item.assignedTo ? `${displayName(item.assignedTo)} · ` : ""}
+                    {formatDate(item.completedAt)}
+                  </span>
+                  <form action={setDecisionStatus}>
+                    <input type="hidden" name="id" value={item.id} />
+                    <input type="hidden" name="status" value="OPEN" />
+                    <button className="rounded border border-rule-strong px-2 py-1 text-xs text-ink-soft hover:border-pine hover:text-pine">
+                      Reopen
+                    </button>
+                  </form>
                 </span>
               </li>
             ))}
