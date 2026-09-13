@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui";
-import { revealLink } from "./actions";
 
 async function copyText(text: string): Promise<boolean> {
   try {
@@ -22,20 +21,13 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-export function CopyLinkButton({ publisherId }: { publisherId: string }) {
-  const [label, setLabel] = useState("Copy link");
+export function CopyLinkButton({ url }: { url: string }) {
+  const [label, setLabel] = useState("Copy");
 
   const onClick = async () => {
-    setLabel("Working…");
-    const result = await revealLink(publisherId);
-    if (result.error) {
-      setLabel("Copy link");
-      window.alert(result.error);
-      return;
-    }
-    const ok = await copyText(result.url!);
-    setLabel(ok ? "Copied" : "Copy failed");
-    window.setTimeout(() => setLabel("Copy link"), 2000);
+    const ok = await copyText(url);
+    setLabel(ok ? "Copied" : "Select it instead");
+    window.setTimeout(() => setLabel("Copy"), 2000);
   };
 
   return (

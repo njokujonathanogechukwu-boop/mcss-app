@@ -1,0 +1,62 @@
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { readSession } from "@/lib/session";
+import { can } from "@/lib/rbac";
+import { displayName } from "@/lib/format";
+import { ensureSelfToken, requestOrigin } from "@/lib/self-service";
+
+export const dynamic = "force-dynamic";
+
+function cell(value: string): string {
+  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+/**
+ * Every publisher's personal update link as a spreadsheet, ordered by field
+ * service group so each group's links sit together and can be filtered or
+ * copied out group by group.
+ */
+export async function GET() {
+  const session = await readSession();
+  if (!session) return new NextResponse("Sign in first.", { status: 401 });
+  if (!can(session.role, "publisher:write")) {
+    return new NextResponse("Your account cannot view publisher update links.", { status: 403 });
+  }
+
+  const origin = await requestOrigin();
+  if (!origin) return new NextResponse("Could not work out the site address.", { status: 500 });
+
+  const publishers = await prisma.publisher.findMany({
+    where: { status: { in: ["ACTIVE", "IRREGULAR"] } },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      selfToken: true,
+      group: { select: { number: true, name: true } },
+    },
+    orderBy: [{ group: { number: "asc" } }, { lastName: "asc" }, { firstName: "asc" }],
+  });
+
+  const rows: string[][] = [];
+  for (const p of publishers) {
+    const token = p.selfToken ?? (await ensureSelfToken(p.id));
+    if (!token) continue;
+    rows.push([
+      p.group ? `${p.group.number} — ${p.group.name}` : "No group",
+      displayName(p),
+      `${origin}/my/${token}`,
+    ]);
+  }
+
+  const header = ["Service group", "Publisher", "Update link"];
+  const csv = "\uFEFF" + [header, ...rows].map((r) => r.map(cell).join(",")).join("\r\n");
+  const stamp = new Date().toISOString().slice(0, 10);
+  return new NextResponse(csv, {
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="publisher-update-links-${stamp}.csv"`,
+      "Cache-Control": "no-store",
+    },
+  });
+}

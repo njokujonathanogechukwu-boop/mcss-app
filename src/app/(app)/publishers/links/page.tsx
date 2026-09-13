@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { displayName } from "@/lib/format";
+import { ensureSelfToken, requestOrigin } from "@/lib/self-service";
 import { PageHeader, Section, DataTable, Th, Td } from "@/components/shell";
-import { Badge } from "@/components/ui";
+import { Button } from "@/components/ui";
 import { CopyLinkButton } from "./copy-link";
 
 export const dynamic = "force-dynamic";
@@ -22,45 +23,67 @@ export default async function PublisherLinksPage() {
     orderBy: [{ group: { number: "asc" } }, { lastName: "asc" }, { firstName: "asc" }],
   });
 
+  const origin = await requestOrigin();
+
+  // Tokens are created here, not on first copy, so every link can be shown and
+  // exported straight away. It is idempotent, and a token grants nothing until
+  // the link is actually sent to someone.
+  const rows: { id: string; name: string; group: string; url: string }[] = [];
+  for (const p of publishers) {
+    const token = p.selfToken ?? (await ensureSelfToken(p.id));
+    if (!token || !origin) continue;
+    rows.push({
+      id: p.id,
+      name: displayName(p),
+      group: p.group ? `${p.group.number} — ${p.group.name}` : "No group",
+      url: `${origin}/my/${token}`,
+    });
+  }
+
   return (
     <>
       <PageHeader
         title="Personal update links"
         description="Copy a link and send it to that publisher by WhatsApp or SMS. Each link opens only that person's own record and lets them correct their bio-data and emergency contact — nothing else."
         back={{ href: "/publishers", label: "Back to publishers" }}
+        actions={
+          <a href="/api/exports/self-links" target="_blank" rel="noopener">
+            <Button variant="secondary" size="sm">Export links by group</Button>
+          </a>
+        }
       />
 
       <Section>
         <p className="mb-4 rounded border border-rule bg-surface px-4 py-3 text-sm text-ink-soft">
           Treat each link like a key: anyone holding it can edit that publisher&rsquo;s details, so
-          send it to the publisher only. A link is created the first time you copy it and stays the
-          same afterwards, so a publisher can keep using the one you sent.
+          send it to the publisher only. A link stays the same once created, so a publisher can keep
+          using the one you sent.
         </p>
         <DataTable>
           <thead>
             <tr>
               <Th>Publisher</Th>
               <Th>Group</Th>
-              <Th>Link</Th>
+              <Th>Personal link</Th>
               <Th align="right"></Th>
             </tr>
           </thead>
           <tbody>
-            {publishers.map((p) => (
-              <tr key={p.id} className="hover:bg-paper">
-                <Td className="font-medium">{displayName(p)}</Td>
-                <Td className="text-ink-soft">
-                  {p.group ? `${p.group.number} — ${p.group.name}` : <span className="text-ink-faint">No group</span>}
-                </Td>
+            {rows.map((r) => (
+              <tr key={r.id} className="hover:bg-paper">
+                <Td className="font-medium whitespace-nowrap">{r.name}</Td>
+                <Td className="text-ink-soft whitespace-nowrap">{r.group}</Td>
                 <Td>
-                  {p.selfToken ? (
-                    <Badge tone="good">Link created</Badge>
-                  ) : (
-                    <Badge tone="quiet">Not created yet</Badge>
-                  )}
+                  <input
+                    readOnly
+                    value={r.url}
+                    onFocus={(e) => e.currentTarget.select()}
+                    aria-label={`Update link for ${r.name}`}
+                    className="field-input w-full min-w-[16rem] font-mono text-xs"
+                  />
                 </Td>
                 <Td align="right">
-                  <CopyLinkButton publisherId={p.id} />
+                  <CopyLinkButton url={r.url} />
                 </Td>
               </tr>
             ))}

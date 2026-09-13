@@ -1,5 +1,6 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
+import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -19,4 +20,13 @@ export async function ensureSelfToken(publisherId: string): Promise<string | nul
   const token = randomBytes(24).toString("base64url");
   await prisma.publisher.update({ where: { id: publisherId }, data: { selfToken: token } });
   return token;
+}
+
+/** Absolute origin of the current request, to build shareable /my links. */
+export async function requestOrigin(): Promise<string | null> {
+  const h = await headers();
+  const host = h.get("host");
+  if (!host) return null;
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  return `${proto}://${host}`;
 }
