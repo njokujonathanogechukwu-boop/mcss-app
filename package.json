@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.2.1",
+    "@types/qrcode": "^1.5.6",
     "bcryptjs": "^2.4.3",
     "clsx": "^2.1.1",
     "exceljs": "^4.4.0",
@@ -24,6 +25,7 @@
     "next": "^15.1.4",
     "papaparse": "^5.4.1",
     "pdf-lib": "^1.17.1",
+    "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "zod": "^3.24.1"

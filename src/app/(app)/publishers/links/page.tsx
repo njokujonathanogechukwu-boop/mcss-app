@@ -5,6 +5,7 @@ import { ensureSelfToken, requestOrigin } from "@/lib/self-service";
 import { PageHeader, Section, DataTable, Th, Td } from "@/components/shell";
 import { Button } from "@/components/ui";
 import { CopyLinkButton } from "./copy-link";
+import { EmailLinksButton } from "./email-links";
 
 export const dynamic = "force-dynamic";
 
@@ -47,18 +48,26 @@ export default async function PublisherLinksPage() {
         description="Copy a link and send it to that publisher by WhatsApp or SMS. Each link opens only that person's own record and lets them correct their bio-data and emergency contact — nothing else."
         back={{ href: "/publishers", label: "Back to publishers" }}
         actions={
-          <a href="/api/exports/self-links" target="_blank" rel="noopener">
-            <Button variant="secondary" size="sm">Export links by group</Button>
-          </a>
+          <>
+            <a href="/api/exports/self-links?format=pdf" target="_blank" rel="noopener">
+              <Button variant="secondary" size="sm">Print QR sheet</Button>
+            </a>
+            <a href="/api/exports/self-links" target="_blank" rel="noopener">
+              <Button variant="secondary" size="sm">Export links by group</Button>
+            </a>
+          </>
         }
       />
 
       <Section>
-        <p className="mb-4 rounded border border-rule bg-surface px-4 py-3 text-sm text-ink-soft">
-          Treat each link like a key: anyone holding it can edit that publisher&rsquo;s details, so
-          send it to the publisher only. A link stays the same once created, so a publisher can keep
-          using the one you sent.
-        </p>
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3 rounded border border-rule bg-surface px-4 py-3">
+          <p className="max-w-xl text-sm text-ink-soft">
+            Treat each link like a key: anyone holding it can edit that publisher&rsquo;s details, so
+            send it to the publisher only. A link stays the same once created, so a publisher can keep
+            using the one you sent.
+          </p>
+          <EmailLinksButton />
+        </div>
         <DataTable>
           <thead>
             <tr>

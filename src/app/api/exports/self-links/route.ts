@@ -4,6 +4,7 @@ import { readSession } from "@/lib/session";
 import { can } from "@/lib/rbac";
 import { displayName } from "@/lib/format";
 import { ensureSelfToken, requestOrigin } from "@/lib/self-service";
+import { buildSelfLinksSheet } from "@/lib/pdf/self-links";
 
 export const dynamic = "force-dynamic";
 
@@ -16,11 +17,24 @@ function cell(value: string): string {
  * service group so each group's links sit together and can be filtered or
  * copied out group by group.
  */
-export async function GET() {
+export async function GET(request: Request) {
   const session = await readSession();
   if (!session) return new NextResponse("Sign in first.", { status: 401 });
   if (!can(session.role, "publisher:write")) {
     return new NextResponse("Your account cannot view publisher update links.", { status: 403 });
+  }
+
+  const stamp = new Date().toISOString().slice(0, 10);
+
+  if (new URL(request.url).searchParams.get("format") === "pdf") {
+    const pdf = await buildSelfLinksSheet();
+    return new NextResponse(Buffer.from(pdf), {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="publisher-update-links-${stamp}.pdf"`,
+        "Cache-Control": "no-store",
+      },
+    });
   }
 
   const origin = await requestOrigin();
@@ -51,7 +65,6 @@ export async function GET() {
 
   const header = ["Service group", "Publisher", "Update link"];
   const csv = "\uFEFF" + [header, ...rows].map((r) => r.map(cell).join(",")).join("\r\n");
-  const stamp = new Date().toISOString().slice(0, 10);
   return new NextResponse(csv, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
