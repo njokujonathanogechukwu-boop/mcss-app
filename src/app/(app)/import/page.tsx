@@ -18,7 +18,7 @@ export default async function ImportPage() {
     <>
       <PageHeader
         title="Import existing records"
-        description="Bring your publisher roster and past field service reports across from a spreadsheet. Every sheet is checked and shown to you before anything is written, and each batch either lands whole or not at all."
+        description="Bring your publisher roster, past field service reports and meeting attendance across from a spreadsheet. Every sheet is checked and shown to you before anything is written, and each batch either lands whole or not at all."
       />
 
       <Section>
@@ -72,7 +72,8 @@ export default async function ImportPage() {
           <ul className="list-inside list-disc space-y-1 text-xs text-ink-faint">
             <li>A card for someone already on file adds their months to the existing record. Dates of birth and baptism are filled in if the record had none; nothing else on the record is changed.</li>
             <li>A card for someone not on file creates their publisher record. Set their service group afterwards.</li>
-            <li>Cards must be the fillable PDF, saved with the boxes filled in. A scanned or printed card cannot be read; enter those on the Field service sheets tab instead.</li>
+            <li>A card filled in on the PDF is read from its fields. A card that was printed, filled in by hand and saved back to PDF is read from where the writing sits on the page, so it works too.</li>
+            <li>A card saved as a scanned picture has no text in it to read. It is flagged below and a grid is shown for it: type in what is on the card and it is imported exactly like one that was read.</li>
           </ul>
         </div>
       </Section>
@@ -114,6 +115,56 @@ export default async function ImportPage() {
             Months already on file are left alone unless you choose to replace them. Hours on a
             non-pioneer month are kept as written, since every publisher reported hours before
             November 2023. Imported reports are marked as imported in the audit log.
+          </p>
+        </div>
+      </Section>
+
+      <Section title="Meeting attendance: the layouts it can read">
+        <div className="rounded border border-rule bg-surface p-5 text-sm leading-relaxed text-ink-soft">
+          <p className="mb-3">
+            Attendance is kept one meeting at a time, so that the S-88 can be filled from it later.
+            Choose where the figures are: a filled-in S-88, or a spreadsheet. Two spreadsheet layouts
+            are recognised, and one sheet may mix them:
+          </p>
+          <dl className="space-y-3">
+            <div>
+              <dt className="text-ink">A filled-in S-88 (PDF)</dt>
+              <dd className="text-xs text-ink-faint">
+                The Congregation Meeting Attendance Record as saved from the PDF with its boxes
+                filled in. One form carries two service years of both meetings: the midweek meeting
+                across the top, the weekend meeting below, the earlier year on the left of each half
+                and the later one on the right, every block running September to August. Several
+                files may be uploaded at once, about 5 MB per batch. The form keeps one attendance
+                figure and does not split it between the hall and video, so each meeting is recorded
+                as that many present in the hall. A printed or scanned S-88 has no boxes left to
+                read; type its months into a spreadsheet and use the sheet instead.
+              </dd>
+            </div>
+            <div>
+              <dt className="text-ink">A list: one row per meeting</dt>
+              <dd className="text-xs text-ink-faint">
+                Columns: Date (dd/mm/yyyy, yyyy-mm-dd or “12 Mar 2025”), Meeting (midweek or
+                weekend, when the sheet says), In person or Hall, Video or Zoom, Total, Notes.
+              </dd>
+            </div>
+            <div>
+              <dt className="text-ink">A month per row, the way an old S-88 keeps it</dt>
+              <dd className="text-xs text-ink-faint">
+                Columns: Month, then any of Meetings held, Total attendance and Average — each may
+                be named for its meeting, as on the form (“Midweek total”, “Weekend average”). The
+                month’s total is shared out over the weekdays you choose, so the sum comes out
+                exactly as written and the meeting count stays right. Where the sheet gives no
+                meeting count, every weekday that has already passed is used.
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-4 text-xs">
+            Only meetings that have already happened can be recorded, so a month still ahead, or the
+            part of this month that has not come round yet, is left out and reported. Where more
+            meetings were held in a month than the chosen weekday falls in it — a special meeting, or
+            a week the meeting moved — the extra ones go on the free days nearest them, so the count
+            and the total still come out exactly as written, and each is reported. A figure already
+            on file for a meeting is left alone unless you choose to replace it.
           </p>
         </div>
       </Section>

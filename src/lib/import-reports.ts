@@ -1,5 +1,5 @@
 import Papa from "papaparse";
-import { MONTH_NAMES } from "./service-year";
+import { MONTH_NAMES, calendarYearOf } from "./service-year";
 
 /**
  * Reads historical field service reports out of a pasted or uploaded sheet.
@@ -128,11 +128,6 @@ export function parseMonthLabel(raw: string): { month: number; year: number | nu
 function expandYear(two: string) {
   const n = Number(two);
   return two.length === 4 ? n : 2000 + n;
-}
-
-/** Service years run September to August and are named for the year they end in. */
-function yearFromServiceYear(month: number, serviceYear: number) {
-  return month >= 9 ? serviceYear - 1 : serviceYear;
 }
 
 // ------------------------------------------------------------ values
@@ -268,7 +263,7 @@ function parseGrid(
   const columns = monthColumns.map((c) => ({
     index: c.index,
     month: c.label.month,
-    year: c.label.year ?? yearFromServiceYear(c.label.month, options.serviceYear),
+    year: c.label.year ?? calendarYearOf(options.serviceYear, c.label.month),
   }));
 
   const reports: ParsedReport[] = [];
@@ -335,7 +330,7 @@ function parseLong(
     let year = label.year;
     const yearRaw = get(row, yearCol);
     if (year === null && yearRaw) year = parseInt0(yearRaw);
-    if (year === null) year = yearFromServiceYear(label.month, options.serviceYear);
+    if (year === null) year = calendarYearOf(options.serviceYear, label.month);
     if (year < 1990 || year > 2100) {
       problems.push({ line, message: `The year "${yearRaw || year}" does not look right. Left out.` });
       continue;

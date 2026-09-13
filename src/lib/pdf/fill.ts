@@ -1,5 +1,6 @@
 import { PDFDocument, PDFCheckBox, PDFTextField } from "pdf-lib";
 import { collectWidgets, groupRows, pageRows, pagesOf, setText, setCheck, type Widget } from "./fields";
+import { s88Blocks } from "./s88-layout";
 
 /**
  * Writes app data into the official fillable forms. Each filler finds its
@@ -141,57 +142,41 @@ export type S88FillData = {
 };
 
 /**
- * The S-88 is a table of twelve month rows, each holding groups of three
- * text boxes (number of meetings, total attendance, average) for the
- * midweek and weekend meetings. Two service years may sit side by side in
- * one row (twelve boxes) or in separate tables.
+ * The S-88 is four blocks of twelve month rows: the midweek meeting for two
+ * service years across the top, the weekend meeting for the same two years
+ * below. Which box is which is worked out by {@link s88Blocks}, so the same
+ * geometry serves the importer that reads a filled form back in.
  */
 export async function fillS88(template: Buffer, data: S88FillData, opts?: FillOptions): Promise<Uint8Array> {
   const pdf = await load(template);
-  const widgets = collectWidgets(pdf);
+  const blocks = s88Blocks(collectWidgets(pdf));
 
-  // Find every run of 12 rows whose text-box count is the same and a multiple of 3.
-  const slots: { yearBox?: Widget; rows: Widget[][]; page: number }[] = [];
-  for (const page of pagesOf(widgets)) {
-    const rows = pageRows(widgets, page)
-      .map((r) => r.filter((w) => w.kind === "text"))
-      .filter((r) => r.length >= 3 && r.length % 3 === 0);
-    let i = 0;
-    while (i + 12 <= rows.length) {
-      const n = rows[i].length;
-      const run = rows.slice(i, i + 12);
-      if (run.every((r) => r.length === n)) {
-        const perYear = 6;
-        const yearsInRow = Math.max(1, Math.floor(n / perYear));
-        const top = Math.max(...run[0].map((w) => w.y));
-        const above = widgets
-          .filter((w) => w.kind === "text" && w.page === page && w.y - w.h >= top && w.y < top + 80 && w.w < 120)
-          .sort((a, b) => a.x - b.x);
-        for (let y = 0; y < yearsInRow; y++) {
-          slots.push({
-            page,
-            yearBox: above[y],
-            rows: run.map((r) => r.slice(y * perYear, y * perYear + perYear)),
-          });
-        }
-        i += 12;
-      } else {
-        i++;
-      }
-    }
-  }
+  for (const block of blocks) {
+    const year = data.years[block.yearSlot];
+    if (!year) continue;
+    const midweek = block.half === "midweek";
+    const figures = year.rows.map((r) =>
+      midweek
+        ? { meetings: r.midweekMeetings, total: r.midweekTotal, average: r.midweekAverage }
+        : { meetings: r.weekendMeetings, total: r.weekendTotal, average: r.weekendAverage },
+    );
 
-  slots.forEach((slot, s) => {
-    const year = data.years[s];
-    if (!year) return;
-    setText(slot.yearBox, year.serviceYear);
-    slot.rows.forEach((boxes, r) => {
-      const v = year.rows[r];
-      if (!v) return;
-      const vals = [v.midweekMeetings, v.midweekTotal, v.midweekAverage, v.weekendMeetings, v.weekendTotal, v.weekendAverage];
-      boxes.forEach((box, i) => setText(box, vals[i] ? vals[i] : ""));
+    setText(block.yearBox, year.serviceYear);
+    block.cells.forEach((c, m) => {
+      const f = figures[m];
+      if (!f) return;
+      setText(c.meetings, f.meetings || "");
+      setText(c.attendance, f.total || "");
+      setText(c.average, f.average || "");
     });
-  });
+
+    // "Average attendance each month" is the mean of the months that actually
+    // met, which is how the congregation fills the official form — not the
+    // year's attendance over twelve.
+    const met = figures.filter((f) => f && f.meetings > 0);
+    const footing = met.length ? met.reduce((t, f) => t + f.average, 0) / met.length : 0;
+    setText(block.averageEachMonth, footing ? Math.round(footing * 100) / 100 : "");
+  }
 
   return finish(pdf, opts);
 }
@@ -314,14 +299,14 @@ export async function inspectTemplate(template: Buffer, kind: "S21" | "S1" | "S8
     checks.push({ label: `Month table${tables.length === 1 ? "" : "s"} of twelve rows (found ${tables.length})`, ok: tables.length >= 1 });
     checks.push({ label: "Service year box above the table", ok: tables.some((t) => t.yearBox) });
   } else if (kind === "S88") {
-    let found = 0;
-    for (const page of pagesOf(widgets)) {
-      const rows = pageRows(widgets, page).map((r) => r.filter((w) => w.kind === "text")).filter((r) => r.length >= 3 && r.length % 3 === 0);
-      for (let i = 0; i + 12 <= rows.length; i++) {
-        if (rows.slice(i, i + 12).every((r) => r.length === rows[i].length)) { found++; i += 11; }
-      }
-    }
-    checks.push({ label: `Twelve-row attendance table${found === 1 ? "" : "s"} (found ${found})`, ok: found >= 1 });
+    const blocks = s88Blocks(widgets);
+    const halves = new Set(blocks.map((b) => b.half));
+    checks.push({
+      label: `Four blocks of twelve month rows (found ${blocks.length})`,
+      ok: blocks.length >= 4,
+    });
+    checks.push({ label: "Both the midweek and the weekend meeting", ok: halves.size === 2 });
+    checks.push({ label: "A box for each service year", ok: blocks.some((b) => b.yearBox) });
   } else {
     const names = widgets.map((w) => norm(w.name));
     checks.push({ label: "Fields named for publishers / pioneers", ok: names.some((n) => /publisher|pioneer/.test(n)) });

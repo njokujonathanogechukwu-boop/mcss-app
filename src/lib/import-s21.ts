@@ -1,5 +1,7 @@
 import { PDFDocument } from "pdf-lib";
 import { collectWidgets, groupRows, type Widget } from "@/lib/pdf/fields";
+import { readPdfPages, words, isBoxGlyph, type PdfPage, type Word } from "@/lib/pdf/text";
+import { MONTH_NAMES } from "@/lib/service-year";
 
 /**
  * Reads a filled-in S-21 (Congregation's Publisher Record) PDF.
@@ -35,6 +37,8 @@ export type S21Card = {
   serviceYears: number[];
   months: S21Month[];
   problems: string[];
+  /** The card is a picture: nothing on it can be read as text. */
+  scanned?: boolean;
 };
 
 const SEP_FIRST = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
@@ -62,9 +66,21 @@ export async function readS21(buffer: Buffer, fileName: string, fallbackYear?: n
     return card;
   }
 
+  const pages = await readPdfPages(buffer);
+  if (pages.some((p) => p.images > 0 && p.items.length === 0)) {
+    card.scanned = true;
+    card.problems.push("This card is a scanned picture, so there is no text on it to read. Type what is on the card into the grid instead.");
+    return card;
+  }
+
   const widgets = collectWidgets(pdf);
-  if (widgets.length === 0) {
-    card.problems.push("This PDF has no fillable fields. It may be a scan or a printout; those cannot be read automatically.");
+  if (!widgets.some((w) => w.text !== "" || w.checked)) {
+    // Flattened or printed: the figures are on the page, not in the fields.
+    readPrintedS21(card, pages, fallbackYear);
+    if (!card.name) card.problems.push("No name found on the card.");
+    if (card.months.length === 0 && card.problems.length === 0) {
+      card.problems.push("No month rows with anything filled in were found.");
+    }
     return card;
   }
 
@@ -151,30 +167,12 @@ export async function readS21(buffer: Buffer, fileName: string, fallbackYear?: n
         const sorted = row.slice().sort((a, b) => a.x - b.x);
         const checks = sorted.filter((w) => w.kind === "check");
         const texts = sorted.filter((w) => w.kind === "text");
-        const shared = checks[0]?.checked ?? false;
-        const aux = checks[1]?.checked ?? false;
-        const studiesRaw = texts[0]?.text ?? "";
-        const hoursRaw = texts[1]?.text ?? "";
-        const remarks = (texts[2]?.text ?? "").trim() || null;
-
-        const month = SEP_FIRST[r];
-        const year = month >= 9 ? serviceYear - 1 : serviceYear;
-        const studies = toInt(studiesRaw);
-        const hours = toInt(hoursRaw);
-
-        const blank = !shared && !aux && !studiesRaw && !hoursRaw && !remarks;
-        if (blank) return;
-
-        if (studiesRaw && studies === null) card.problems.push(`${monthName(month)} ${year}: studies "${studiesRaw}" is not a number; recorded as 0.`);
-        if (hoursRaw && hours === null) card.problems.push(`${monthName(month)} ${year}: hours "${hoursRaw}" is not a number; left blank.`);
-
-        card.months.push({
-          year, month,
-          shared: shared || (studies ?? 0) > 0 || (hours ?? 0) > 0 || aux,
-          studies: studies ?? 0,
-          hours,
-          aux,
-          remarks,
+        addMonth(card, serviceYear, r, {
+          shared: checks[0]?.checked ?? false,
+          aux: checks[1]?.checked ?? false,
+          studiesRaw: texts[0]?.text ?? "",
+          hoursRaw: texts[1]?.text ?? "",
+          remarks: (texts[2]?.text ?? "").trim() || null,
         });
       });
       i += 12;
@@ -187,15 +185,179 @@ export async function readS21(buffer: Buffer, fileName: string, fallbackYear?: n
   return card;
 }
 
+type RawMonth = { shared: boolean; aux: boolean; studiesRaw: string; hoursRaw: string; remarks: string | null };
+
+function addMonth(card: S21Card, serviceYear: number, rowIndex: number, raw: RawMonth) {
+  if (rowIndex < 0 || rowIndex >= 12) return;
+  const month = SEP_FIRST[rowIndex];
+  const year = month >= 9 ? serviceYear - 1 : serviceYear;
+  const studies = toInt(raw.studiesRaw);
+  const hours = toInt(raw.hoursRaw);
+
+  const blank = !raw.shared && !raw.aux && !raw.studiesRaw && !raw.hoursRaw && !raw.remarks;
+  if (blank) return;
+
+  if (raw.studiesRaw && studies === null) card.problems.push(`${MONTH_NAMES[month - 1]} ${year}: studies "${raw.studiesRaw}" is not a number; recorded as 0.`);
+  if (raw.hoursRaw && hours === null) card.problems.push(`${MONTH_NAMES[month - 1]} ${year}: hours "${raw.hoursRaw}" is not a number; left blank.`);
+
+  card.months.push({
+    year, month,
+    shared: raw.shared || (studies ?? 0) > 0 || (hours ?? 0) > 0 || raw.aux,
+    studies: studies ?? 0,
+    hours,
+    aux: raw.aux,
+    remarks: raw.remarks,
+  });
+}
+
+/**
+ * A card whose fields were flattened away — printed, or saved to PDF after
+ * being filled — keeps no values to read, only the page. The month table is
+ * found from the rules drawn around it and every word is placed in the cell it
+ * sits in: five vertical rules make six columns, twelve horizontal rules make
+ * the rows, and a tick is the single glyph a viewer draws in a checked box.
+ */
+type Grid = {
+  all: Word[];
+  boxes: Word[];
+  ticks: Word[];
+  columnOf: (x: number) => number;
+  bands: { top: number; bottom: number }[];
+  tableTop: number;
+};
+
+function readPrintedS21(card: S21Card, pages: PdfPage[], fallbackYear?: number) {
+  for (const [index, page] of pages.entries()) {
+    const grid = printedGrid(page);
+    if (!grid) continue;
+    if (index === 0) readPrintedHeader(card, page, grid); // the bio-data lines are on the first page only
+    readPrintedMonths(card, grid, fallbackYear);
+  }
+}
+
+function printedGrid(page: PdfPage): Grid | null {
+  const every = words(page.items);
+  const all = every.filter((w) => !isBoxGlyph(w.text));
+  const uprights = page.ink.filter((m) => m.h > 100 && m.w < 2);
+  if (uprights.length < 5) return null;
+
+  const tableTop = Math.max(...uprights.map((m) => m.y + m.h));
+  const tableBottom = Math.min(...uprights.map((m) => m.y));
+  const vRules = uprights.map((m) => m.x).sort((a, b) => a - b);
+  const hRules = page.ink
+    .filter((m) => m.w > 300 && m.h < 2 && m.y > tableBottom - 1 && m.y < tableTop + 1)
+    .map((m) => m.y)
+    .sort((a, b) => b - a);
+  if (hRules.length < 12) return null;
+
+  const cols = [0, ...vRules, Infinity];
+  const columnOf = (x: number) => cols.findIndex((c, i) => x >= c && x < cols[i + 1]);
+
+  // The month names printed down the first column anchor the rows: the rules
+  // just above and just below a name are that row's edges. Without them the
+  // rules are taken in order, which holds as long as nothing else is ruled.
+  const names = all
+    .filter((w) => w.y > tableBottom && w.y < tableTop && columnOf(w.x) === 0 && isMonthWord(w.text))
+    .sort((a, b) => b.y - a.y);
+  const bands =
+    names.length === 12
+      ? names.map((w) => ({
+          // hRules runs downwards: the rule nearest above a name is the last
+          // one at or above it, and the one nearest below is the first under it.
+          top: hRules.filter((y) => y >= w.y).pop() ?? tableTop,
+          bottom: hRules.find((y) => y < w.y - 2) ?? tableBottom,
+        }))
+      : hRules.slice(0, 12).map((top, i) => ({ top, bottom: hRules[i + 1] ?? tableBottom }));
+
+  return {
+    all,
+    boxes: every.filter((w) => isBoxGlyph(w.text)),
+    ticks: all.filter((w) => w.text.length === 1),
+    columnOf,
+    bands,
+    tableTop,
+  };
+}
+
+function readPrintedHeader(card: S21Card, page: PdfPage, grid: Grid) {
+  const { all, boxes, ticks } = grid;
+
+  // A bio-data line runs on into the tick-box columns beside it, so a value
+  // stops at the first box drawn on its line.
+  const stops = [
+    ...boxes.map((b) => ({ x: b.x, y: b.y })),
+    ...page.ink.filter((m) => m.w >= 4 && m.w <= 20 && m.h >= 4 && m.h <= 20).map((m) => ({ x: m.x, y: m.y + m.h / 2 })),
+  ];
+  const lineValue = (labelRe: RegExp, from: number) => {
+    const label = all.find((w) => labelRe.test(w.text));
+    if (!label) return null;
+    const limit = Math.min(page.width, ...stops.filter((s) => Math.abs(s.y - label.y) <= 6).map((s) => s.x));
+    const value = all
+      .filter((w) => w !== label && Math.abs(w.y - label.y) <= 3 && w.x >= label.x + from && w.x < limit)
+      .sort((a, b) => a.x - b.x)
+      .map((w) => w.text);
+    return value.join(" ") || null;
+  };
+  card.name = lineValue(/^Name:?$/i, 20);
+  card.dateOfBirth = lineValue(/birth/i, 40);
+  card.baptismDate = lineValue(/baptism/i, 40);
+
+  // A tick sits just left of, and a little above, the word it ticks.
+  const ticked = (labelRe: RegExp) => {
+    const label = all.find((w) => labelRe.test(w.text));
+    return Boolean(
+      label && ticks.some((t) => t.x > label.x - 14 && t.x <= label.x + 2 && t.y > label.y + 5 && t.y < label.y + 18),
+    );
+  };
+  card.gender = ticked(/^Female$/i) ? "FEMALE" : ticked(/^Male$/i) ? "MALE" : null;
+  card.anointed = ticked(/Anointed/i);
+  card.appointment = ticked(/Elder/i) ? "ELDER" : ticked(/Ministerial/i) ? "MINISTERIAL_SERVANT" : "PUBLISHER";
+  card.pioneerStatus = ticked(/Special/i) ? "SPECIAL" : ticked(/Regular/i) ? "REGULAR" : "NONE";
+}
+
+function readPrintedMonths(card: S21Card, grid: Grid, fallbackYear?: number) {
+  const { all, ticks, columnOf, bands, tableTop } = grid;
+  const yearWord = all.find((w) => /^(19|20)\d{2}$/.test(w.text) && w.y > bands[0].top && w.y < tableTop);
+  let serviceYear = yearWord ? Number(yearWord.text) : null;
+  if (!serviceYear && fallbackYear && card.serviceYears.length === 0) {
+    serviceYear = fallbackYear;
+    card.problems.push(`No service year is printed above the month table; the ${fallbackYear - 1}/${String(fallbackYear).slice(2)} year you chose was used.`);
+  }
+  if (!serviceYear) {
+    card.problems.push("No service year is printed above the month table, so the months were left out.");
+    return;
+  }
+  const year = serviceYear;
+  card.serviceYears.push(year);
+
+  const inRow = (w: Word, band: { top: number; bottom: number }) => w.y > band.bottom && w.y <= band.top;
+  const cell = (col: number, band: { top: number; bottom: number }) =>
+    all.filter((w) => columnOf(w.x) === col && inRow(w, band)).sort((a, b) => a.x - b.x).map((w) => w.text);
+  const tickedCell = (col: number, band: { top: number; bottom: number }) =>
+    ticks.some((t) => columnOf(t.x) === col && inRow(t, band));
+
+  bands.forEach((band, r) => {
+    addMonth(card, year, r, {
+      shared: tickedCell(1, band),
+      aux: tickedCell(3, band),
+      studiesRaw: cell(2, band).join(""),
+      hoursRaw: cell(4, band).join(""),
+      remarks: cell(5, band).join(" ").trim() || null,
+    });
+  });
+}
+
+/** "September", "Sept." or "sep": the month names printed down the first column. */
+function isMonthWord(text: string): boolean {
+  const s = text.toLowerCase().replace(/[^a-z]/g, "");
+  return s.length >= 3 && MONTH_NAMES.some((m) => m.toLowerCase().startsWith(s));
+}
+
 function toInt(raw: string): number | null {
   const v = raw.trim();
   if (!v) return null;
   const n = Number(v.replace(/[^\d.]/g, ""));
   return Number.isFinite(n) ? Math.round(n) : null;
-}
-
-function monthName(m: number) {
-  return ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][m - 1];
 }
 
 /**
