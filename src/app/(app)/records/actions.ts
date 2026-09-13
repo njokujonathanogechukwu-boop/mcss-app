@@ -5,72 +5,90 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
 import { displayName } from "@/lib/format";
+import { monthLabel } from "@/lib/service-year";
+import { recordFixSchema, fieldErrors } from "@/lib/validation";
 
-export type RecordFixState = { ok?: boolean; error?: string; message?: string };
+export type RecordFixState = {
+  ok?: boolean;
+  error?: string;
+  errors?: Record<string, string>;
+  message?: string;
+};
 
-function parseDate(value: string): Date | null {
-  const v = value.trim();
-  if (v === "") return null;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function trimmed(value: FormDataEntryValue | null): string | null {
-  const v = String(value ?? "").trim();
-  return v === "" ? null : v;
+/** A field the form never rendered stays absent, so it is not blanked out. */
+function offered(formData: FormData, key: string): string | undefined {
+  return formData.has(key) ? String(formData.get(key) ?? "") : undefined;
 }
 
 /**
  * Fixes the gaps the records review flags: bio-data, contact details, service
- * group and this month's report — all from one small inline form. Only the
- * fields actually present in the submission are touched, so a form that shows
- * three missing fields never blanks out the rest of the record.
+ * group and any month still missing a field service report — all from one
+ * small inline form. Only the fields actually present in the submission are
+ * touched, so a form that shows three missing fields never blanks out the rest
+ * of the record.
  */
 export async function saveRecordFix(_prev: RecordFixState, formData: FormData): Promise<RecordFixState> {
-  const publisherId = String(formData.get("publisherId") ?? "");
-  if (!publisherId) return { error: "Missing publisher." };
-
   const canPublisher = await guard("publisher:write");
   const canReport = await guard("report:write");
   const session = canPublisher.ok ? canPublisher.session : canReport.ok ? canReport.session : null;
   if (!session) return { error: "Your account cannot update records." };
 
+  const parsed = recordFixSchema.safeParse({
+    publisherId: String(formData.get("publisherId") ?? ""),
+    dateOfBirth: offered(formData, "dateOfBirth"),
+    baptismDate: offered(formData, "baptismDate"),
+    phone: offered(formData, "phone"),
+    email: offered(formData, "email"),
+    address: offered(formData, "address"),
+    emergencyContactName: offered(formData, "emergencyContactName"),
+    emergencyContactPhone: offered(formData, "emergencyContactPhone"),
+    groupId: offered(formData, "groupId"),
+    reportPeriod: offered(formData, "reportPeriod"),
+    reportShared: formData.get("reportShared") === "true",
+    reportAux: formData.get("reportAux") === "true",
+    reportStudies: String(formData.get("reportStudies") ?? "").trim(),
+    reportHours: String(formData.get("reportHours") ?? "").trim(),
+  });
+  if (!parsed.success) return { errors: fieldErrors(parsed.error) };
+
+  const input = parsed.data;
+
   const publisher = await prisma.publisher.findUnique({
-    where: { id: publisherId },
+    where: { id: input.publisherId },
     select: { id: true, firstName: true, lastName: true, groupId: true, pioneerStatus: true },
   });
   if (!publisher) return { error: "That publisher no longer exists." };
 
   const done: string[] = [];
+  const notes: string[] = [];
 
   // ---- Publisher bio / contact / group
   if (canPublisher.ok) {
     const data: Prisma.PublisherUpdateInput = {};
 
-    if (formData.has("dateOfBirth")) data.dateOfBirth = parseDate(String(formData.get("dateOfBirth")));
-    if (formData.has("baptismDate")) data.baptismDate = parseDate(String(formData.get("baptismDate")));
-    for (const key of ["phone", "email", "address", "emergencyContactName", "emergencyContactPhone"] as const) {
-      if (formData.has(key)) data[key] = trimmed(formData.get(key));
-    }
+    if (input.dateOfBirth !== undefined) data.dateOfBirth = input.dateOfBirth;
+    if (input.baptismDate !== undefined) data.baptismDate = input.baptismDate;
+    if (input.phone !== undefined) data.phone = input.phone;
+    if (input.email !== undefined) data.email = input.email;
+    if (input.address !== undefined) data.address = input.address;
+    if (input.emergencyContactName !== undefined) data.emergencyContactName = input.emergencyContactName;
+    if (input.emergencyContactPhone !== undefined) data.emergencyContactPhone = input.emergencyContactPhone;
 
-    let groupChange: { toGroupId: string | null } | null = null;
-    if (formData.has("groupId")) {
-      const groupId = trimmed(formData.get("groupId"));
-      if (groupId !== publisher.groupId) {
-        data.group = groupId ? { connect: { id: groupId } } : { disconnect: true };
-        groupChange = { toGroupId: groupId };
-      }
+    let movedToGroupId: string | null = null;
+    if (input.groupId !== undefined && input.groupId !== publisher.groupId) {
+      data.group = input.groupId ? { connect: { id: input.groupId } } : { disconnect: true };
+      movedToGroupId = input.groupId;
     }
 
     if (Object.keys(data).length > 0) {
-      await prisma.publisher.update({ where: { id: publisherId }, data });
+      await prisma.publisher.update({ where: { id: publisher.id }, data });
 
-      if (groupChange && groupChange.toGroupId) {
+      if (movedToGroupId) {
         await prisma.transferLog.create({
           data: {
-            publisherId,
+            publisherId: publisher.id,
             fromGroupId: publisher.groupId,
-            toGroupId: groupChange.toGroupId,
+            toGroupId: movedToGroupId,
             effectiveDate: new Date(),
             reason: "Assigned from records review",
             recordedById: session.userId,
@@ -81,63 +99,72 @@ export async function saveRecordFix(_prev: RecordFixState, formData: FormData): 
     }
   }
 
-  // ---- This month's field service report
-  if (canReport.ok && formData.has("reportYear") && formData.has("reportMonth")) {
-    const year = Number(formData.get("reportYear"));
-    const month = Number(formData.get("reportMonth"));
-    if (Number.isFinite(year) && month >= 1 && month <= 12) {
-      const shared = formData.get("reportShared") === "on" || formData.get("reportShared") === "true";
+  // ---- A month still missing its field service report
+  if (canReport.ok && input.reportPeriod) {
+    const { year, month } = input.reportPeriod;
+    const marked =
+      input.reportShared || input.reportAux || input.reportStudies !== "" || input.reportHours !== "";
+
+    const existing = await prisma.serviceReport.findUnique({
+      where: { publisherId_year_month: { publisherId: publisher.id, year, month } },
+      select: { id: true },
+    });
+
+    if (existing && !marked) {
+      // Someone filled this month in after the form was rendered. Leaving the
+      // report alone beats overwriting real figures with an empty submission.
+      notes.push(`${monthLabel(year, month)} already has a report on file, so it was left as it is.`);
+    } else {
       const isPioneer = publisher.pioneerStatus !== "NONE";
-      const bibleStudies = Math.max(0, Math.min(99, Number(formData.get("reportStudies")) || 0));
-      const hoursRaw = String(formData.get("reportHours") ?? "").trim();
-      const hours = isPioneer && hoursRaw !== "" ? Math.max(0, Math.min(744, Number(hoursRaw) || 0)) : null;
-      const usedAux = formData.get("reportAux") === "on" || formData.get("reportAux") === "true";
       const pioneerStatusUsed = isPioneer
         ? publisher.pioneerStatus
-        : usedAux
+        : input.reportAux
           ? "AUXILIARY"
           : "NONE";
 
+      const data = {
+        sharedInMinistry: input.reportShared,
+        bibleStudies: input.reportShared && input.reportStudies !== "" ? input.reportStudies : 0,
+        hours: input.reportShared && isPioneer && input.reportHours !== "" ? input.reportHours : null,
+        pioneerStatusUsed: pioneerStatusUsed as "NONE" | "AUXILIARY" | "REGULAR" | "SPECIAL",
+        submittedById: session.userId,
+      };
+
       await prisma.serviceReport.upsert({
-        where: { publisherId_year_month: { publisherId, year, month } },
-        create: {
-          publisherId,
-          year,
-          month,
-          sharedInMinistry: shared,
-          bibleStudies: shared ? bibleStudies : 0,
-          hours: shared ? hours : null,
-          pioneerStatusUsed: pioneerStatusUsed as Prisma.ServiceReportCreateInput["pioneerStatusUsed"],
-          submittedById: session.userId,
-        },
-        update: {
-          sharedInMinistry: shared,
-          bibleStudies: shared ? bibleStudies : 0,
-          hours: shared ? hours : null,
-          pioneerStatusUsed: pioneerStatusUsed as Prisma.ServiceReportUpdateInput["pioneerStatusUsed"],
-          submittedById: session.userId,
-        },
+        where: { publisherId_year_month: { publisherId: publisher.id, year, month } },
+        create: { publisherId: publisher.id, year, month, ...data },
+        update: data,
       });
-      done.push("field service report");
+      done.push(`the ${monthLabel(year, month)} report`);
     }
   }
 
-  if (done.length === 0) return { error: "Nothing to save, or your account cannot make these changes." };
+  if (done.length === 0) {
+    return {
+      error: notes.length
+        ? notes.join(" ")
+        : "Nothing to save, or your account cannot make these changes.",
+    };
+  }
 
   await recordAudit(
     session.userId,
     "update",
     "publisher",
-    publisherId,
-    `Records review: updated ${done.join(" and ")} for ${displayName(publisher)}`,
+    publisher.id,
+    `Records review: updated ${done.join(", ")} for ${displayName(publisher)}`,
   );
 
   revalidatePath("/records");
   revalidatePath("/publishers");
-  revalidatePath(`/publishers/${publisherId}`);
+  revalidatePath(`/publishers/${publisher.id}`);
   revalidatePath("/reports");
+  revalidatePath("/dashboard");
   revalidatePath("/m/records");
   revalidatePath("/m/report");
 
-  return { ok: true, message: `Saved ${done.join(" and ")}.` };
+  return {
+    ok: true,
+    message: `Saved ${done.join(" and ")}.${notes.length ? ` ${notes.join(" ")}` : ""}`,
+  };
 }

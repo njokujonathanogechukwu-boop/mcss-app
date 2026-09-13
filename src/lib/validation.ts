@@ -14,6 +14,13 @@ const optionalDate = z
   .refine((v) => v === null || !Number.isNaN(Date.parse(v)), "Enter a valid date")
   .transform((v) => (v ? new Date(v) : null));
 
+const optionalEmail = z
+  .string()
+  .trim()
+  .transform((v) => (v === "" ? null : v))
+  .nullable()
+  .refine((v) => v === null || z.string().email().safeParse(v).success, "Enter a valid email");
+
 export const publisherSchema = z.object({
   firstName: z.string().trim().min(1, "First name is required").max(80),
   lastName: z.string().trim().min(1, "Last name is required").max(80),
@@ -27,12 +34,7 @@ export const publisherSchema = z.object({
   status: z.enum(["ACTIVE", "IRREGULAR", "INACTIVE", "TRANSFERRED_OUT", "DECEASED"]),
   privileges: z.array(z.string().trim().min(1)).default([]),
   phone: optionalString,
-  email: z
-    .string()
-    .trim()
-    .transform((v) => (v === "" ? null : v))
-    .nullable()
-    .refine((v) => v === null || z.string().email().safeParse(v).success, "Enter a valid email"),
+  email: optionalEmail,
   address: optionalString,
   emergencyContactName: optionalString,
   emergencyContactPhone: optionalString,
@@ -66,6 +68,45 @@ export const serviceReportSchema = z
     message: "A report with no participation cannot carry studies or hours.",
     path: ["sharedInMinistry"],
   });
+
+/**
+ * The inline "fix" form on the records check. Every field is optional because
+ * the form only renders the parts the signed-in account may edit, so an absent
+ * key means "not offered" rather than "blank it out".
+ */
+export const recordFixSchema = z.object({
+  publisherId: z.string().min(1, "Missing publisher."),
+  dateOfBirth: optionalDate.optional(),
+  baptismDate: optionalDate.optional(),
+  phone: optionalString.optional(),
+  email: optionalEmail.optional(),
+  address: optionalString.optional(),
+  emergencyContactName: optionalString.optional(),
+  emergencyContactPhone: optionalString.optional(),
+  groupId: optionalString.optional(),
+  reportPeriod: z
+    .string()
+    .regex(/^\d{4}-(?:0[1-9]|1[0-2])$/, "Choose a reporting month.")
+    .refine((v) => {
+      const year = Number(v.slice(0, 4));
+      return year >= 2000 && year <= 2100;
+    }, "Choose a reporting month.")
+    .transform((v) => {
+      const [year, month] = v.split("-").map(Number);
+      return { year, month };
+    })
+    .optional(),
+  reportShared: z.boolean(),
+  reportAux: z.boolean(),
+  reportStudies: z.union([
+    z.literal(""),
+    z.coerce.number().int("Enter a whole number").min(0).max(99, "Bible studies cannot be more than 99"),
+  ]),
+  reportHours: z.union([
+    z.literal(""),
+    z.coerce.number().int("Enter a whole number").min(0).max(744, "Hours cannot be more than 744"),
+  ]),
+});
 
 export const attendanceSchema = z.object({
   date: z.string().refine((v) => !Number.isNaN(Date.parse(v)), "Enter a valid date"),

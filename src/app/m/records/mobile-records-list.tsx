@@ -94,14 +94,7 @@ export function MobileRecordsList({
                   {isOpen && (
                     <div className="border-t border-rule bg-paper px-4 py-4">
                       {canEdit ? (
-                        <>
-                          {r.missing.otherMonths.length > 0 && (
-                            <p className="mb-3 text-xs text-ink-soft">
-                              Also missing: {r.missing.otherMonths.map((mo) => mo.label).join(", ")}. Enter those from the report tab.
-                            </p>
-                          )}
-                          <RecordFixForm review={r} groups={groups} month={month} flags={flags} />
-                        </>
+                        <RecordFixForm review={r} groups={groups} month={month} flags={flags} />
                       ) : (
                         <p className="text-xs text-ink-soft">Your account has read-only access to these records.</p>
                       )}

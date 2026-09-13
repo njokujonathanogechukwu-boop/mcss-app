@@ -61,13 +61,6 @@ export function ReviewTable({
                 </Link>
                 {isOpen && canEdit && (
                   <div className="mt-4 max-w-2xl rounded border border-rule bg-surface p-4">
-                    {r.missing.otherMonths.length > 0 && (
-                      <p className="mb-3 text-xs text-ink-soft">
-                        Also missing reports for{" "}
-                        {r.missing.otherMonths.map((mo) => mo.label).join(", ")}. Enter those from the
-                        report sheet or the phone app.
-                      </p>
-                    )}
                     <RecordFixForm review={r} groups={groups} month={month} flags={flags} />
                   </div>
                 )}

@@ -1,6 +1,27 @@
 // The service year runs 1 September to 31 August and is named for the
 // year in which it ends: September 2025 falls in service year 2026.
 
+/**
+ * Month boundaries belong to the congregation, not to the host. Vercel runs
+ * UTC and Maitama is UTC+1, so reading the month off the server clock puts
+ * every "this month" calculation one month behind for the first hour of each
+ * month — exactly when reports are being collected.
+ */
+export const CONGREGATION_TIMEZONE = "Africa/Lagos";
+
+/** The calendar year and month at the congregation, whatever timezone the host is in. */
+function calendarParts(now: Date): { year: number; month: number } {
+  const [year, month] = new Intl.DateTimeFormat("en-CA", {
+    timeZone: CONGREGATION_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+  })
+    .format(now)
+    .split("-")
+    .map(Number);
+  return { year, month };
+}
+
 export const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -18,7 +39,8 @@ export function serviceYearOf(year: number, month: number): number {
 }
 
 export function currentServiceYear(now = new Date()): number {
-  return serviceYearOf(now.getFullYear(), now.getMonth() + 1);
+  const { year, month } = calendarParts(now);
+  return serviceYearOf(year, month);
 }
 
 /** The twelve months of a service year, in order from September. */
@@ -50,8 +72,11 @@ export function serviceYearRange(serviceYear: number) {
 
 /** The month reports are currently being collected for (the one just ended). */
 export function reportingMonth(now = new Date()) {
-  const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  return { year: d.getFullYear(), month: d.getMonth() + 1 };
+  const { year, month } = calendarParts(now);
+  // month - 2 steps back one month and lets Date.UTC roll January into the
+  // previous December.
+  const d = new Date(Date.UTC(year, month - 2, 1));
+  return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 };
 }
 
 export function monthLabel(year: number, month: number) {

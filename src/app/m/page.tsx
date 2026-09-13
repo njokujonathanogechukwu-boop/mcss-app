@@ -1,14 +1,14 @@
 import Link from "next/link";
 import { ClipboardList, ClipboardCheck, ArrowRight, Monitor } from "lucide-react";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { reportingMonth, monthLabel } from "@/lib/service-year";
 
 export const dynamic = "force-dynamic";
 
 export default async function MobileHome() {
-  const user = await requireUser();
+  const user = await requirePermission("report:read");
   const rm = reportingMonth();
   const canReport = can(user.role, "report:write");
   const canRecords = can(user.role, "publisher:read");

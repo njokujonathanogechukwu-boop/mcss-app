@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { MONTH_NAMES, MONTH_SHORT, currentServiceYear, serviceYearMonths } from "@/lib/service-year";
+import { MONTH_NAMES, MONTH_SHORT, currentServiceYear, reportingMonth, serviceYearMonths } from "@/lib/service-year";
 
 /**
  * Field service analysis over any run of months, optionally one group.
@@ -116,11 +116,9 @@ export function periodLabel(p: Period) {
 /** Default window: the current service year so far. */
 export function defaultWindow(): { from: Period; to: Period } {
   const months = serviceYearMonths(currentServiceYear());
-  const now = new Date();
-  const last = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   return {
     from: { year: months[0].year, month: months[0].month },
-    to: { year: last.getFullYear(), month: last.getMonth() + 1 },
+    to: reportingMonth(),
   };
 }
 
