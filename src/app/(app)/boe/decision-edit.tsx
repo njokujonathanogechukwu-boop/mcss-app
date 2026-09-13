@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { TextField, TextArea } from "@/components/fields";
+import { NamePicker } from "@/components/name-picker";
 import { SubmitButton, Button } from "@/components/ui";
 import { Notice } from "@/components/shell";
 import { updateDecision, type DecisionState } from "./actions";
@@ -70,17 +71,13 @@ export function DecisionEdit({
         </div>
         <div>
           <label htmlFor={`assignedToId-${item.id}`} className="field-label">Assigned to</label>
-          <select
+          <NamePicker
             id={`assignedToId-${item.id}`}
             name="assignedToId"
-            className="field-input"
             defaultValue={item.assignedToId ?? ""}
-          >
-            <option value="">Not assigned</option>
-            {elders.map((e) => (
-              <option key={e.id} value={e.id}>{e.label}</option>
-            ))}
-          </select>
+            emptyLabel="Not assigned"
+            options={elders.map((e) => ({ value: e.id, label: e.label }))}
+          />
         </div>
         <TextField
           label="Deadline" name="targetDate" type="date"

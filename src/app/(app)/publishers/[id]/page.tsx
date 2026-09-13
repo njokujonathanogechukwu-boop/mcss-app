@@ -11,6 +11,7 @@ import {
 } from "@/lib/format";
 import { PageHeader, Section, DataTable, Th, Td, Notice, Panel } from "@/components/shell";
 import { Badge, Button } from "@/components/ui";
+import { NamePicker } from "@/components/name-picker";
 import { TransferForm } from "./transfer-form";
 import { deletePublisher } from "../actions";
 
@@ -258,12 +259,17 @@ export default async function PublisherPage({
           </p>
           <form method="get" action="/publishers/merge" className="mt-3 flex flex-wrap items-center gap-2">
             <input type="hidden" name="a" value={id} />
-            <select name="b" className="field-input max-w-xs py-1 text-xs" aria-label="Other record" required defaultValue="">
-              <option value="" disabled>Choose the other record…</option>
-              {others.map((o) => (
-                <option key={o.id} value={o.id}>{o.lastName}, {o.firstName}{o.group ? ` (Group ${o.group.number})` : ""}</option>
-              ))}
-            </select>
+            <NamePicker
+              id="merge-b"
+              name="b"
+              ariaLabel="Other record"
+              placeholder="Type a name…"
+              className="max-w-xs"
+              options={others.map((o) => ({
+                value: o.id,
+                label: `${o.lastName}, ${o.firstName}${o.group ? ` (Group ${o.group.number})` : ""}`,
+              }))}
+            />
             <Button type="submit" variant="secondary" size="sm">Compare</Button>
           </form>
         </section>

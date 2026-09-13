@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { NamePicker } from "@/components/name-picker";
 
 type Base = { label: string; name: string; hint?: string; error?: string; required?: boolean };
 
@@ -60,6 +61,28 @@ export function SelectField({
           </option>
         ))}
       </select>
+    </Wrapper>
+  );
+}
+
+export function NameField({
+  label, name, hint, error, options, defaultValue, placeholder, emptyLabel,
+}: Base & {
+  options: { value: string; label: string }[];
+  defaultValue?: string;
+  placeholder?: string;
+  emptyLabel?: string;
+}) {
+  return (
+    <Wrapper label={label} name={name} hint={hint} error={error}>
+      <NamePicker
+        id={name}
+        name={name}
+        options={options}
+        defaultValue={defaultValue}
+        placeholder={placeholder}
+        emptyLabel={emptyLabel}
+      />
     </Wrapper>
   );
 }

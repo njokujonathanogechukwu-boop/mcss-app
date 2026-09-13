@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { TextField, SelectField, TextArea } from "@/components/fields";
+import { TextField, SelectField, TextArea, NameField } from "@/components/fields";
 import { SubmitButton } from "@/components/ui";
 import { Notice } from "@/components/shell";
 import { createPrivilege, assignPrivilege, type PrivilegeState } from "./actions";
@@ -44,8 +44,8 @@ export function AssignForm({
           options={Object.entries(ROLE_LABELS).map(([value, label]) => ({ value, label }))}
           error={state.errors?.role}
         />
-        <SelectField
-          label="Publisher" name="publisherId" placeholder="Choose one" required
+        <NameField
+          label="Publisher" name="publisherId" placeholder="Type a name…"
           options={publishers.map((p) => ({ value: p.id, label: p.name }))}
           error={state.errors?.publisherId}
         />

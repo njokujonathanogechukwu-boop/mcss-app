@@ -10,6 +10,7 @@ import {
 } from "./actions";
 import type { S21Card, S21Month } from "@/lib/import-s21";
 import { DataTable, Th, Td, Notice } from "@/components/shell";
+import { NamePicker } from "@/components/name-picker";
 import { SubmitButton, Badge } from "@/components/ui";
 import { APPOINTMENT_LABELS, PIONEER_LABELS, formatDate } from "@/lib/format";
 import { MONTH_NAMES, MONTH_SHORT, WEEKDAY_NAMES, calendarYearOf, serviceYearLabel } from "@/lib/service-year";
@@ -298,12 +299,13 @@ function ReportImport({ publishers, serviceYears }: { publishers: Publisher[]; s
           </div>
           <div>
             <label htmlFor="rep-card" className="field-label">Whose card is this?</label>
-            <select id="rep-card" name="cardPublisherId" defaultValue={preview.cardPublisherId ?? ""} className="field-input">
-              <option value="">Not a single card</option>
-              {publishers.map((pub) => (
-                <option key={pub.id} value={pub.id}>{pub.name}</option>
-              ))}
-            </select>
+            <NamePicker
+              id="rep-card"
+              name="cardPublisherId"
+              defaultValue={preview.cardPublisherId ?? ""}
+              emptyLabel="Not a single card"
+              options={publishers.map((pub) => ({ value: pub.id, label: pub.name }))}
+            />
             <p className="field-hint">Only for an S-21 sheet with no name column.</p>
           </div>
         </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { TextField, SelectField, CheckField } from "@/components/fields";
+import { TextField, NameField, CheckField } from "@/components/fields";
 import { SubmitButton } from "@/components/ui";
 import { Notice } from "@/components/shell";
 import { saveGroup, type GroupState } from "./actions";
@@ -39,13 +39,13 @@ export function GroupForm({
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <SelectField
-          label="Group overseer" name="overseerId" placeholder="Not assigned"
+        <NameField
+          label="Group overseer" name="overseerId" emptyLabel="Not assigned"
           defaultValue={group?.overseerId ?? ""} error={state.errors?.overseerId}
           options={options} hint="Elders only."
         />
-        <SelectField
-          label="Assistant" name="assistantId" placeholder="Not assigned"
+        <NameField
+          label="Assistant" name="assistantId" emptyLabel="Not assigned"
           defaultValue={group?.assistantId ?? ""} error={state.errors?.assistantId}
           options={options}
         />

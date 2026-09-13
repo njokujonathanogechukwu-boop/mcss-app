@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { TextField, SelectField, CheckField } from "@/components/fields";
+import { TextField, SelectField, CheckField, NameField } from "@/components/fields";
 import { SubmitButton } from "@/components/ui";
 import { Notice } from "@/components/shell";
 import { createUser, changeOwnPassword, uploadForm, type UserState, type FormUploadState } from "./actions";
@@ -31,8 +31,8 @@ export function NewUserForm({
 
       <SelectField label="What they can do" name="role" defaultValue="VIEWER" options={ROLE_OPTIONS} />
 
-      <SelectField
-        label="Their publisher record" name="publisherId" placeholder="Not linked"
+      <NameField
+        label="Their publisher record" name="publisherId" emptyLabel="Not linked"
         options={publishers.map((p) => ({ value: p.id, label: p.label }))}
         hint="Optional. Links the account to a record in the roster."
       />
