@@ -160,6 +160,10 @@ model Publisher {
   emergencyContactName  String?
   emergencyContactPhone String?
 
+  // Unguessable token behind each publisher's personal "update my details"
+  // link. Null until the secretary first copies the link.
+  selfToken String? @unique
+
   groupId String?
   group   ServiceGroup? @relation("GroupMembers", fields: [groupId], references: [id], onDelete: SetNull)
 

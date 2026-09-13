@@ -12,9 +12,9 @@ type Sort = { key: SortKey; dir: "asc" | "desc" };
 
 function Issues({ review }: { review: Review }) {
   const m = review.missing;
-  const chips: string[] = [];
-  if (m.bio.length) chips.push("Bio-data");
-  if (m.contact.length) chips.push("Contact");
+  // Specific labels, not one lumped "Contact" chip: after a save the row only
+  // clears when nothing is left, so the secretary must see exactly what remains.
+  const chips: string[] = [...m.bio, ...m.contact];
   if (m.group) chips.push("No group");
   if (m.thisMonth) chips.push("This month");
   if (m.otherMonths.length) chips.push(`${m.otherMonths.length} past month${m.otherMonths.length === 1 ? "" : "s"}`);

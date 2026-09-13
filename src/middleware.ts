@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/api/health", "/api/cron"];
+const PUBLIC_PATHS = ["/login", "/api/health", "/api/cron", "/my"];
 
 /**
  * Presence check only. The cookie's signature is verified in `readSession`,

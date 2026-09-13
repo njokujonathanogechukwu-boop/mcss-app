@@ -108,6 +108,29 @@ export const recordFixSchema = z.object({
   ]),
 });
 
+const checkbox = z
+  .union([z.literal("on"), z.literal("true")])
+  .optional()
+  .transform((v) => v === "on" || v === "true");
+
+/**
+ * What a publisher may change through their personal link. Deliberately
+ * narrow: gender, appointment, pioneer status, group and record status stay
+ * with the congregation, so a shared or forwarded link cannot rewrite them.
+ */
+export const selfUpdateSchema = z.object({
+  firstName: z.string().trim().min(1, "First name is required").max(80),
+  lastName: z.string().trim().min(1, "Last name is required").max(80),
+  dateOfBirth: optionalDate,
+  baptismDate: optionalDate,
+  isBaptized: checkbox,
+  phone: optionalString,
+  email: optionalEmail,
+  address: optionalString,
+  emergencyContactName: optionalString,
+  emergencyContactPhone: optionalString,
+});
+
 export const attendanceSchema = z.object({
   date: z.string().refine((v) => !Number.isNaN(Date.parse(v)), "Enter a valid date"),
   meetingType: z.enum(["MIDWEEK", "WEEKEND"]),

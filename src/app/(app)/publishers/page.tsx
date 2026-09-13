@@ -102,6 +102,11 @@ export default async function PublishersPage({
               </Link>
             )}
             {canWrite && (
+              <Link href="/publishers/links">
+                <Button variant="secondary" size="sm">Update links</Button>
+              </Link>
+            )}
+            {canWrite && (
               <Link href="/publishers/new">
                 <Button>Add a publisher</Button>
               </Link>
