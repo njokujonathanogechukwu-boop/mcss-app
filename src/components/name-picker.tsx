@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export type NameOption = { value: string; label: string };
 
@@ -34,6 +34,25 @@ export function NamePicker({
   );
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Once the surrounding form posts, the choice has been sent; blank the field
+  // so the next entry starts clean instead of showing the last name.
+  useEffect(() => {
+    const form = inputRef.current?.form;
+    if (!form) return;
+    const clear = () => {
+      // Deferred: React snapshots the FormData during this same dispatch, so
+      // blanking straight away would post an empty id.
+      window.setTimeout(() => {
+        setSelected("");
+        setText("");
+        setOpen(false);
+      }, 0);
+    };
+    form.addEventListener("submit", clear);
+    return () => form.removeEventListener("submit", clear);
+  }, []);
 
   const filtered = useMemo(() => {
     const q = text.trim().toLowerCase();
@@ -69,6 +88,7 @@ export function NamePicker({
     <div className={`relative ${className}`}>
       <input type="hidden" name={name} value={selected} />
       <input
+        ref={inputRef}
         id={id}
         type="text"
         role="combobox"
