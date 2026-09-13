@@ -66,7 +66,9 @@ export async function buildGroupAnalysis(groupId: string, serviceYear: number): 
       const x = L + nameW + cellW * (i + 1) - 4;
       if (!r) {
         textRight(doc, "·", x, y, { size: 8, color: SOFT });
-      } else if (!r.sharedInMinistry) {
+      } else if (r.outcome === "NO_REPORT") {
+        textRight(doc, "NR", x, y, { size: 7, color: SOFT });
+      } else if (r.outcome !== "SHARED") {
         textRight(doc, "0", x, y, { size: 8, color: SOFT });
       } else {
         active++;
@@ -82,7 +84,7 @@ export async function buildGroupAnalysis(groupId: string, serviceYear: number): 
     if (y < 60) break;
   }
 
-  text(doc, "✓ shared in the ministry · number = hours reported by pioneers · · = no report on file", L, 40, {
+  text(doc, "✓ shared · number = hours reported by pioneers · 0 = did not preach · NR = no report · · = nothing on file", L, 40, {
     size: 7, color: SOFT,
   });
   textRight(doc, `Generated ${formatDate(new Date())}`, R, 40, { size: 7, color: SOFT });

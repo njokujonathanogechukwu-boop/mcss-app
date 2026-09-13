@@ -81,9 +81,20 @@ export default async function PublishersPage({
         actions={
           <>
             {can(user.role, "export:run") && (
-              <a href={`/api/exports/s21/batch?sy=${currentServiceYear()}`} target="_blank" rel="noopener">
-                <Button variant="secondary" size="sm">Download every S-21</Button>
-              </a>
+              <>
+                <a href={`/api/exports/s21/batch?sy=${currentServiceYear()}`} target="_blank" rel="noopener">
+                  <Button variant="secondary" size="sm">Every S-21</Button>
+                </a>
+                <a href={`/api/exports/s21/batch?sy=${currentServiceYear()}&category=pioneers`} target="_blank" rel="noopener">
+                  <Button variant="secondary" size="sm">Pioneers &amp; missionaries</Button>
+                </a>
+                <a href={`/api/exports/s21/batch?sy=${currentServiceYear()}&category=auxiliary`} target="_blank" rel="noopener">
+                  <Button variant="secondary" size="sm">Auxiliary pioneers</Button>
+                </a>
+                <a href={`/api/exports/s21/batch?sy=${currentServiceYear()}&category=others`} target="_blank" rel="noopener">
+                  <Button variant="secondary" size="sm">Other publishers</Button>
+                </a>
+              </>
             )}
             {can(user.role, "publisher:delete") && (
               <Link href="/publishers/merge">

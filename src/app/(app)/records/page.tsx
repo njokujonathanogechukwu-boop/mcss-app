@@ -35,7 +35,7 @@ export default async function RecordsPage({
         groupId: true,
         createdAt: true,
         group: { select: { number: true, name: true } },
-        reports: { select: { year: true, month: true } },
+        reports: { select: { year: true, month: true, outcome: true } },
         ...(showContact
           ? {
               phone: true,

@@ -3,14 +3,18 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
+import { REPORT_OUTCOMES, type ReportOutcome } from "@/lib/format";
+import { monthLabel } from "@/lib/service-year";
+import { closeMonth, reopenMonth, isClosed } from "@/lib/report-periods";
 
 export type ReportsState = { error?: string; ok?: string; warnings?: string[] };
 
 /**
  * Saves a whole month of field service reports in one pass.
- * Rows are submitted as report[<publisherId>][<field>]. A row with no
- * marks at all is skipped rather than saved as a nil report, so an
- * untouched publisher still shows as "not reported" on the overview.
+ * Rows are submitted as report[<publisherId>][<field>] with an explicit
+ * outcome per publisher: they shared, they reported but did not preach, or
+ * no report came in. A row left on the blank option is not recorded, and if
+ * it was on file that report is removed.
  */
 export async function saveMonthlyReports(
   _prev: ReportsState,
@@ -44,15 +48,13 @@ export async function saveMonthlyReports(
     if (!publisher) continue;
 
     const touched = formData.get(`touched.${id}`) === "true";
-    const shared = formData.get(`shared.${id}`) === "true";
+    const rawOutcome = String(formData.get(`outcome.${id}`) ?? "").trim();
     const studiesRaw = String(formData.get(`studies.${id}`) ?? "").trim();
     const hoursRaw = String(formData.get(`hours.${id}`) ?? "").trim();
     const aux = formData.get(`aux.${id}`) === "true";
     const remarks = String(formData.get(`remarks.${id}`) ?? "").trim();
 
-    const hasAnything = shared || studiesRaw !== "" || hoursRaw !== "" || aux || remarks !== "";
-
-    if (!hasAnything) {
+    if (!REPORT_OUTCOMES.includes(rawOutcome as ReportOutcome)) {
       if (touched) {
         // The row was on file and has been emptied: remove the report.
         writes.push(
@@ -64,38 +66,44 @@ export async function saveMonthlyReports(
       continue;
     }
 
-    const studies = studiesRaw === "" ? 0 : Number(studiesRaw);
-    if (!Number.isInteger(studies) || studies < 0 || studies > 99) {
-      warnings.push(`${publisher.firstName} ${publisher.lastName}: Bible studies must be a whole number.`);
-      continue;
-    }
-
-    const pioneerStatusUsed = aux
+    const outcome = rawOutcome as ReportOutcome;
+    const shared = outcome === "SHARED";
+    const pioneerStatusUsed = aux && shared
       ? "AUXILIARY"
       : publisher.pioneerStatus === "NONE"
         ? "NONE"
         : publisher.pioneerStatus;
 
+    let studies = 0;
     let hours: number | null = null;
-    if (hoursRaw !== "") {
-      const parsed = Number(hoursRaw);
-      if (!Number.isInteger(parsed) || parsed < 0 || parsed > 744) {
-        warnings.push(`${publisher.firstName} ${publisher.lastName}: hours must be between 0 and 744.`);
+
+    if (shared) {
+      studies = studiesRaw === "" ? 0 : Number(studiesRaw);
+      if (!Number.isInteger(studies) || studies < 0 || studies > 99) {
+        warnings.push(`${publisher.firstName} ${publisher.lastName}: Bible studies must be a whole number.`);
         continue;
       }
-      if (pioneerStatusUsed === "NONE") {
-        warnings.push(
-          `${publisher.firstName} ${publisher.lastName}: hours were ignored. Only pioneers report hours.`,
-        );
-      } else {
-        hours = parsed;
+
+      if (hoursRaw !== "") {
+        const parsed = Number(hoursRaw);
+        if (!Number.isInteger(parsed) || parsed < 0 || parsed > 744) {
+          warnings.push(`${publisher.firstName} ${publisher.lastName}: hours must be between 0 and 744.`);
+          continue;
+        }
+        if (pioneerStatusUsed === "NONE") {
+          warnings.push(
+            `${publisher.firstName} ${publisher.lastName}: hours were ignored. Only pioneers report hours.`,
+          );
+        } else {
+          hours = parsed;
+        }
       }
     }
 
     const data = {
-      sharedInMinistry: shared,
-      bibleStudies: shared ? studies : 0,
-      hours: shared ? hours : null,
+      outcome,
+      bibleStudies: studies,
+      hours,
       pioneerStatusUsed: pioneerStatusUsed as "NONE" | "AUXILIARY" | "REGULAR" | "SPECIAL",
       remarks: remarks || null,
       source: "MANUAL" as const,
@@ -122,6 +130,7 @@ export async function saveMonthlyReports(
 
   revalidatePath("/reports");
   revalidatePath("/dashboard");
+  revalidatePath("/reports/reminders");
 
   const parts = [];
   if (saved) parts.push(`${saved} report${saved === 1 ? "" : "s"} saved`);
@@ -131,4 +140,80 @@ export async function saveMonthlyReports(
     ok: parts.length ? `${parts.join(", ")}.` : "Nothing to save.",
     warnings: warnings.length ? warnings : undefined,
   };
+}
+
+export type CloseState = { ok?: string; error?: string };
+
+function validPeriod(formData: FormData): { year: number; month: number } | null {
+  const year = Number(formData.get("year"));
+  const month = Number(formData.get("month"));
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) return null;
+  return { year, month };
+}
+
+/**
+ * Submit a month's congregation report to the branch office. This freezes who
+ * had reported on time; any report that arrives for this month afterwards is
+ * late and rolls into the next month the secretary closes.
+ */
+export async function closeReportingMonth(
+  _prev: CloseState,
+  formData: FormData,
+): Promise<CloseState> {
+  const auth = await guard("report:write");
+  if (!auth.ok) return { error: auth.error };
+
+  const period = validPeriod(formData);
+  if (!period) return { error: "That reporting month is not valid." };
+  const { year, month } = period;
+
+  if (await isClosed(year, month)) {
+    return { error: `${monthLabel(year, month)} has already been submitted to the branch.` };
+  }
+
+  const { onTimeCount, lateCount } = await closeMonth(year, month, auth.session.userId);
+
+  await recordAudit(
+    auth.session.userId,
+    "closed",
+    "ReportPeriod",
+    `${year}-${month}`,
+    `Submitted ${monthLabel(year, month)} to the branch: ${onTimeCount} reported on time, ` +
+      `${lateCount} late report(s) rolled in.`,
+  );
+  revalidatePath("/reports");
+  revalidatePath("/dashboard");
+
+  const rolled = lateCount ? ` ${lateCount} late report(s) rolled in from earlier months.` : "";
+  return { ok: `${monthLabel(year, month)} closed — ${onTimeCount} reported on time.${rolled}` };
+}
+
+/** Undo a close so the month can be edited again; its late reports roll free. */
+export async function reopenReportingMonth(
+  _prev: CloseState,
+  formData: FormData,
+): Promise<CloseState> {
+  const auth = await guard("report:write");
+  if (!auth.ok) return { error: auth.error };
+
+  const period = validPeriod(formData);
+  if (!period) return { error: "That reporting month is not valid." };
+  const { year, month } = period;
+
+  if (!(await isClosed(year, month))) {
+    return { error: `${monthLabel(year, month)} is not closed.` };
+  }
+
+  await reopenMonth(year, month);
+  await recordAudit(
+    auth.session.userId,
+    "reopened",
+    "ReportPeriod",
+    `${year}-${month}`,
+    `Reopened ${monthLabel(year, month)} for further reports.`,
+  );
+  revalidatePath("/reports");
+  revalidatePath("/dashboard");
+
+  return { ok: `${monthLabel(year, month)} reopened.` };
 }

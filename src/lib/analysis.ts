@@ -9,6 +9,11 @@ import { MONTH_NAMES, MONTH_SHORT, currentServiceYear, reportingMonth, serviceYe
  * March and a publisher for April. Hours are summed wherever they were
  * recorded, which for auxiliary pioneers is the month they served.
  *
+ * A month can be recorded three ways: the publisher shared, they reported
+ * but did not preach, or no report came in. Only the first two are reports
+ * on file; a noted "no report" is counted on its own so the secretary can
+ * see who has gone quiet.
+ *
  * "Late reports" are reports entered in a month for an earlier month,
  * which the secretary's compiled sheet tracks separately.
  */
@@ -23,6 +28,8 @@ export type MonthRow = {
   label: string;
   short: string;
   onFile: number;
+  didNotPreach: number;
+  noReport: number;
   active: number;
   publishers: Category;
   auxiliary: Category;
@@ -53,6 +60,8 @@ export type PublisherRow = {
   standing: string;
   monthsOnFile: number;
   monthsActive: number;
+  monthsDidNotPreach: number;
+  monthsNoReport: number;
   hours: number;
   studies: number;
   auxMonths: number;
@@ -66,6 +75,8 @@ export type Analysis = {
   publishers: PublisherRow[];
   totals: {
     onFile: number;
+    didNotPreach: number;
+    noReport: number;
     activeAverage: number;
     activePublishers: number;
     publishers: Category;
@@ -133,7 +144,7 @@ export async function analyse(from: Period, to: Period, groupId?: string | null)
         ...(groupId ? { publisher: { groupId } } : {}),
       },
       select: {
-        publisherId: true, year: true, month: true, sharedInMinistry: true, bibleStudies: true,
+        publisherId: true, year: true, month: true, outcome: true, bibleStudies: true,
         hours: true, pioneerStatusUsed: true, createdAt: true,
       },
     }),
@@ -151,12 +162,20 @@ export async function analyse(from: Period, to: Period, groupId?: string | null)
     const inMonth = reports.filter((r) => r.year === p.year && r.month === p.month);
     const row: MonthRow = {
       year: p.year, month: p.month, label: periodLabel(p), short: `${MONTH_SHORT[p.month - 1]} ${String(p.year).slice(2)}`,
-      onFile: inMonth.length, active: 0,
+      onFile: 0, didNotPreach: 0, noReport: 0, active: 0,
       publishers: empty(), auxiliary: empty(), regular: empty(), special: empty(),
       totalHours: 0, totalStudies: 0, lateReceived: 0,
     };
     for (const r of inMonth) {
-      if (!r.sharedInMinistry) continue;
+      if (r.outcome === "NO_REPORT") {
+        row.noReport++;
+        continue;
+      }
+      row.onFile++;
+      if (r.outcome === "DID_NOT_PREACH") {
+        row.didNotPreach++;
+        continue;
+      }
       row.active++;
       const bucket = r.pioneerStatusUsed === "AUXILIARY" ? row.auxiliary : r.pioneerStatusUsed === "REGULAR" ? row.regular : r.pioneerStatusUsed === "SPECIAL" ? row.special : row.publishers;
       add(bucket, r);
@@ -167,7 +186,7 @@ export async function analyse(from: Period, to: Period, groupId?: string | null)
     const start = new Date(Date.UTC(p.year, p.month - 1, 1));
     const end = new Date(Date.UTC(p.year, p.month, 1));
     row.lateReceived = reports.filter(
-      (r) => r.createdAt >= start && r.createdAt < end && (r.year < p.year || (r.year === p.year && r.month < p.month)),
+      (r) => r.outcome !== "NO_REPORT" && r.createdAt >= start && r.createdAt < end && (r.year < p.year || (r.year === p.year && r.month < p.month)),
     ).length;
     return row;
   });
@@ -179,7 +198,7 @@ export async function analyse(from: Period, to: Period, groupId?: string | null)
       const members = publishers.filter((p) => p.groupId === g.id && (p.status === "ACTIVE" || p.status === "IRREGULAR")).length;
       const row: GroupRow = { ...g, members, publishers: empty(), auxiliary: empty(), regular: empty(), special: empty(), totalHours: 0, totalStudies: 0 };
       for (const r of reports) {
-        if (!r.sharedInMinistry) continue;
+        if (r.outcome !== "SHARED") continue;
         const pub = publisherById.get(r.publisherId);
         if ((pub?.groupId ?? null) !== g.id) continue;
         const bucket = r.pioneerStatusUsed === "AUXILIARY" ? row.auxiliary : r.pioneerStatusUsed === "REGULAR" ? row.regular : r.pioneerStatusUsed === "SPECIAL" ? row.special : row.publishers;
@@ -202,17 +221,24 @@ export async function analyse(from: Period, to: Period, groupId?: string | null)
         id: pub.id, name: `${pub.lastName}, ${pub.firstName}`,
         group: pub.group ? `${pub.group.number}` : "—",
         standing: pub.pioneerStatus === "REGULAR" ? "RP" : pub.pioneerStatus === "SPECIAL" ? "SP" : "P",
-        monthsOnFile: 0, monthsActive: 0, hours: 0, studies: 0, auxMonths: 0,
+        monthsOnFile: 0, monthsActive: 0, monthsDidNotPreach: 0, monthsNoReport: 0,
+        hours: 0, studies: 0, auxMonths: 0,
       };
       perPublisher.set(pub.id, row);
     }
-    row.monthsOnFile++;
-    if (r.sharedInMinistry) {
-      row.monthsActive++;
-      row.hours += r.hours ?? 0;
-      row.studies += r.bibleStudies;
-      if (r.pioneerStatusUsed === "AUXILIARY") row.auxMonths++;
+    if (r.outcome === "NO_REPORT") {
+      row.monthsNoReport++;
+      continue;
     }
+    row.monthsOnFile++;
+    if (r.outcome === "DID_NOT_PREACH") {
+      row.monthsDidNotPreach++;
+      continue;
+    }
+    row.monthsActive++;
+    row.hours += r.hours ?? 0;
+    row.studies += r.bibleStudies;
+    if (r.pioneerStatusUsed === "AUXILIARY") row.auxMonths++;
   }
   const publisherRows = [...perPublisher.values()].sort((a, b) => a.group.localeCompare(b.group, undefined, { numeric: true }) || a.name.localeCompare(b.name));
 
@@ -224,6 +250,8 @@ export async function analyse(from: Period, to: Period, groupId?: string | null)
   const activeCount = months.filter((m) => m.onFile > 0).length || 1;
   const totals: Analysis["totals"] = {
     onFile: months.reduce((t, m) => t + m.onFile, 0),
+    didNotPreach: months.reduce((t, m) => t + m.didNotPreach, 0),
+    noReport: months.reduce((t, m) => t + m.noReport, 0),
     activeAverage: Math.round(months.reduce((t, m) => t + m.active, 0) / activeCount),
     activePublishers: publishers.filter((p) => p.status === "ACTIVE" || p.status === "IRREGULAR").length,
     publishers: sum((m) => m.publishers),
@@ -242,21 +270,21 @@ export async function analyse(from: Period, to: Period, groupId?: string | null)
 export function analysisCsv(a: Analysis): string {
   const q = (v: string | number | null) => (typeof v === "number" ? String(v) : `"${String(v ?? "").replace(/"/g, '""')}"`);
   const lines: string[] = [];
-  lines.push(["Month", "Reports on file", "Active", "Publishers", "Pub studies", "Aux pioneers", "Aux hours", "Aux studies", "Regular pioneers", "RP hours", "RP studies", "Special", "SP hours", "SP studies", "Total hours", "Total studies", "Late reports received"].map(q).join(","));
+  lines.push(["Month", "Reports on file", "Active", "Did not preach", "No report", "Publishers", "Pub studies", "Aux pioneers", "Aux hours", "Aux studies", "Regular pioneers", "RP hours", "RP studies", "Special", "SP hours", "SP studies", "Total hours", "Total studies", "Late reports received"].map(q).join(","));
   for (const m of a.months) {
-    lines.push([m.label, m.onFile, m.active, m.publishers.reports, m.publishers.studies, m.auxiliary.reports, m.auxiliary.hours, m.auxiliary.studies, m.regular.reports, m.regular.hours, m.regular.studies, m.special.reports, m.special.hours, m.special.studies, m.totalHours, m.totalStudies, m.lateReceived].map(q).join(","));
+    lines.push([m.label, m.onFile, m.active, m.didNotPreach, m.noReport, m.publishers.reports, m.publishers.studies, m.auxiliary.reports, m.auxiliary.hours, m.auxiliary.studies, m.regular.reports, m.regular.hours, m.regular.studies, m.special.reports, m.special.hours, m.special.studies, m.totalHours, m.totalStudies, m.lateReceived].map(q).join(","));
   }
   const t = a.totals;
-  lines.push(["Total", t.onFile, t.activeAverage, t.publishers.reports, t.publishers.studies, t.auxiliary.reports, t.auxiliary.hours, t.auxiliary.studies, t.regular.reports, t.regular.hours, t.regular.studies, t.special.reports, t.special.hours, t.special.studies, t.totalHours, t.totalStudies, t.lateReceived].map(q).join(","));
+  lines.push(["Total", t.onFile, t.activeAverage, t.didNotPreach, t.noReport, t.publishers.reports, t.publishers.studies, t.auxiliary.reports, t.auxiliary.hours, t.auxiliary.studies, t.regular.reports, t.regular.hours, t.regular.studies, t.special.reports, t.special.hours, t.special.studies, t.totalHours, t.totalStudies, t.lateReceived].map(q).join(","));
   lines.push("");
   lines.push(["Group", "Members", "Publisher reports", "Pub studies", "Aux reports", "Aux hours", "Aux studies", "RP reports", "RP hours", "RP studies", "Total hours", "Total studies"].map(q).join(","));
   for (const g of a.groups) {
     lines.push([g.number ? `${g.number} - ${g.name}` : g.name, g.members, g.publishers.reports, g.publishers.studies, g.auxiliary.reports, g.auxiliary.hours, g.auxiliary.studies, g.regular.reports, g.regular.hours, g.regular.studies, g.totalHours, g.totalStudies].map(q).join(","));
   }
   lines.push("");
-  lines.push(["Publisher", "Group", "Standing", "Months on file", "Months active", "Aux months", "Hours", "Bible studies"].map(q).join(","));
+  lines.push(["Publisher", "Group", "Standing", "Months on file", "Months active", "Did not preach", "No report", "Aux months", "Hours", "Bible studies"].map(q).join(","));
   for (const p of a.publishers) {
-    lines.push([p.name, p.group, p.standing, p.monthsOnFile, p.monthsActive, p.auxMonths, p.hours, p.studies].map(q).join(","));
+    lines.push([p.name, p.group, p.standing, p.monthsOnFile, p.monthsActive, p.monthsDidNotPreach, p.monthsNoReport, p.auxMonths, p.hours, p.studies].map(q).join(","));
   }
   return lines.join("\r\n");
 }

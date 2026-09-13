@@ -15,7 +15,7 @@ export default async function MobileHome() {
 
   const [activeCount, reportedCount] = await Promise.all([
     prisma.publisher.count({ where: { status: { in: ["ACTIVE", "IRREGULAR"] } } }),
-    prisma.serviceReport.count({ where: { year: rm.year, month: rm.month } }),
+    prisma.serviceReport.count({ where: { year: rm.year, month: rm.month, outcome: { not: "NO_REPORT" } } }),
   ]);
   const outstanding = Math.max(0, activeCount - reportedCount);
 

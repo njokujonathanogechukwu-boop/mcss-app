@@ -30,7 +30,7 @@ export type PublisherInput = {
   pioneerStatus: string;
   createdAt: Date;
   group: { number: number; name: string } | null;
-  reports: { year: number; month: number }[];
+  reports: { year: number; month: number; outcome?: string }[];
 };
 
 export type Review = {
@@ -116,7 +116,9 @@ export function reviewPublishers(
   };
 
   const reviews: Review[] = publishers.map((p) => {
-    const reported = new Set(p.reports.map((r) => `${r.year}-${r.month}`));
+    const reported = new Set(
+      p.reports.filter((r) => r.outcome !== "NO_REPORT").map((r) => `${r.year}-${r.month}`),
+    );
 
     const bio: string[] = [];
     if (!p.dateOfBirth) bio.push("Date of birth");

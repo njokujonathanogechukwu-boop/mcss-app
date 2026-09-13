@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { serviceYearMonths, serviceYearLabel } from "@/lib/service-year";
 import { formatDate, APPOINTMENT_LABELS, PIONEER_LABELS } from "@/lib/format";
 import { newDoc, text, textRight, rule, band, INK, SOFT, PINE } from "@/lib/pdf/kit";
@@ -32,12 +33,34 @@ export async function buildS21(
 }
 
 /**
- * Every card in one PDF, for printing or filing. Active and irregular
- * publishers, optionally one group only, in surname order.
+ * The three combined Publisher Records the handbook calls for, by standing:
+ * regular and special pioneers (plus field missionaries), auxiliary pioneers,
+ * and everyone else.
  */
-export async function buildS21Batch(serviceYear: number, groupId?: string | null): Promise<{ pdf: Uint8Array; count: number }> {
+export type S21Category = "pioneers" | "auxiliary" | "others";
+
+export const CATEGORY_WHERE: Record<S21Category, Prisma.PublisherWhereInput> = {
+  pioneers: { pioneerStatus: { in: ["REGULAR", "SPECIAL"] } },
+  auxiliary: { pioneerStatus: "AUXILIARY" },
+  others: { pioneerStatus: "NONE" },
+};
+
+/**
+ * Every card in one PDF, for printing or filing. Active and irregular
+ * publishers, optionally one group only and optionally one of the three
+ * combined-record categories, in surname order.
+ */
+export async function buildS21Batch(
+  serviceYear: number,
+  groupId?: string | null,
+  category?: S21Category | null,
+): Promise<{ pdf: Uint8Array; count: number }> {
   const publishers = await prisma.publisher.findMany({
-    where: { status: { in: ["ACTIVE", "IRREGULAR"] }, ...(groupId ? { groupId } : {}) },
+    where: {
+      status: { in: ["ACTIVE", "IRREGULAR"] },
+      ...(groupId ? { groupId } : {}),
+      ...(category ? CATEGORY_WHERE[category] : {}),
+    },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     select: { id: true },
   });
@@ -84,7 +107,7 @@ async function s21FillData(publisher: PublisherWithGroup, serviceYear: number, f
         const r = byKey.get(`${m.year}-${m.month}`);
         if (!r) return null;
         if (r.hours) totalHours += r.hours;
-        return { shared: r.sharedInMinistry, studies: r.bibleStudies, aux: r.pioneerStatusUsed === "AUXILIARY", hours: r.hours, remarks: r.remarks };
+        return { shared: r.outcome === "SHARED", studies: r.bibleStudies, aux: r.pioneerStatusUsed === "AUXILIARY", hours: r.hours, remarks: r.remarks };
       }),
       totalHours,
     });
@@ -178,10 +201,14 @@ async function drawS21(publisher: PublisherWithGroup, serviceYear: number): Prom
 
     if (!r) {
       text(doc, "not reported", cols[1].x, y, { size: 8, color: SOFT });
+    } else if (r.outcome === "NO_REPORT") {
+      text(doc, "no report", cols[1].x, y, { size: 8, color: SOFT });
+      if (r.remarks) text(doc, r.remarks, cols[5].x, y, { size: 8, maxWidth: cols[5].w });
     } else {
       monthsReported++;
-      text(doc, r.sharedInMinistry ? "Yes" : "No", cols[1].x, y, { size: 8.5 });
-      if (r.sharedInMinistry) monthsShared++;
+      const shared = r.outcome === "SHARED";
+      text(doc, shared ? "Yes" : "No", cols[1].x, y, { size: 8.5 });
+      if (shared) monthsShared++;
       textRight(doc, String(r.bibleStudies), cols[2].x + cols[2].w, y, { size: 8.5 });
       totalStudies += r.bibleStudies;
       text(doc, r.pioneerStatusUsed === "AUXILIARY" ? "Yes" : "", cols[3].x, y, { size: 8.5 });

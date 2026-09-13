@@ -19,7 +19,7 @@ export default async function MobileReportPage() {
       group: { select: { number: true, name: true } },
       reports: {
         where: { year: rm.year, month: rm.month },
-        select: { sharedInMinistry: true, bibleStudies: true, hours: true, pioneerStatusUsed: true, remarks: true },
+        select: { outcome: true, bibleStudies: true, hours: true, pioneerStatusUsed: true, remarks: true },
       },
     },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
@@ -32,8 +32,7 @@ export default async function MobileReportPage() {
       name: `${p.firstName} ${p.lastName}`,
       group: p.group ? `${p.group.number} — ${p.group.name}` : null,
       isPioneer: p.pioneerStatus !== "NONE",
-      reported: Boolean(r),
-      shared: r ? r.sharedInMinistry : null,
+      outcome: r ? r.outcome : null,
       studies: r ? r.bibleStudies : null,
       hours: r ? r.hours : null,
       aux: r ? r.pioneerStatusUsed === "AUXILIARY" : false,

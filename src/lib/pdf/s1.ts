@@ -5,27 +5,37 @@ import { formatDate } from "@/lib/format";
 import { newDoc, text, textRight, rule, band, INK, SOFT, PINE } from "@/lib/pdf/kit";
 import { getTemplate } from "@/lib/forms";
 import { fillS1, type S1FillData } from "@/lib/pdf/fill";
+import { reportsForS1 } from "@/lib/report-periods";
 
-export type S1Summary = S1FillData & { year: number; month: number };
+export type S1Summary = S1FillData & {
+  year: number;
+  month: number;
+  lateCount: number;
+  closed: boolean;
+  closedAt: Date | null;
+};
 
 /**
  * The monthly congregation totals: how many reported in each category,
  * their Bible studies, and pioneer hours. A publisher's category for the
  * month is the standing recorded on that report, so someone who auxiliary
  * pioneered in March counts as an auxiliary pioneer for March only.
+ *
+ * The rows come from reportsForS1, which folds in any late reports rolled over
+ * from earlier closed months. Special pioneers and field missionaries report
+ * directly to the branch office, so they are counted here for reference but
+ * deliberately left out of the congregation's totals.
  */
 export async function congregationSummary(year: number, month: number): Promise<S1Summary> {
-  const [reports, activePublishers, memorial] = await Promise.all([
-    prisma.serviceReport.findMany({
-      where: { year, month, sharedInMinistry: true },
-      select: { pioneerStatusUsed: true, bibleStudies: true, hours: true },
-    }),
+  const [source, activePublishers, memorial] = await Promise.all([
+    reportsForS1(year, month),
     prisma.publisher.count({ where: { status: { in: ["ACTIVE", "IRREGULAR"] } } }),
     prisma.memorialRecord.findFirst({
       where: { year, date: { gte: new Date(Date.UTC(year, month - 1, 1)), lt: new Date(Date.UTC(year, month, 1)) } },
     }),
   ]);
 
+  const reports = source.rows;
   const bucket = (status: string) => {
     const rows = reports.filter((r) => r.pioneerStatusUsed === status);
     return {
@@ -52,10 +62,13 @@ export async function congregationSummary(year: number, month: number): Promise<
       special,
     },
     totals: {
-      reports: reports.length,
-      studies: publishers.studies + auxiliary.studies + regular.studies + special.studies,
-      hours: auxiliary.hours + regular.hours + special.hours,
+      reports: publishers.reports + auxiliary.reports + regular.reports,
+      studies: publishers.studies + auxiliary.studies + regular.studies,
+      hours: auxiliary.hours + regular.hours,
     },
+    lateCount: source.lateCount,
+    closed: source.closed,
+    closedAt: source.closedAt,
     memorial: memorial ? { attendance: memorial.inPerson + memorial.video, partakers: memorial.partakers } : null,
   };
 }
@@ -64,7 +77,12 @@ export async function congregationSummary(year: number, month: number): Promise<
 export async function buildS1(year: number, month: number): Promise<Uint8Array> {
   const data = await congregationSummary(year, month);
   const template = await getTemplate("S1");
-  if (template) return fillS1(template, data);
+  if (template) {
+    return fillS1(template, {
+      ...data,
+      rows: { ...data.rows, special: { reports: 0, studies: 0, hours: 0 } },
+    });
+  }
   return drawS1(data);
 }
 
@@ -110,9 +128,19 @@ async function drawS1(d: S1Summary): Promise<Uint8Array> {
   line("Publishers", d.rows.publishers.reports, d.rows.publishers.studies, null);
   line("Auxiliary pioneers", d.rows.auxiliary.reports, d.rows.auxiliary.studies, d.rows.auxiliary.hours);
   line("Regular pioneers", d.rows.regular.reports, d.rows.regular.studies, d.rows.regular.hours);
-  line("Special pioneers and field missionaries", d.rows.special.reports, d.rows.special.studies, d.rows.special.hours);
   y -= 2;
   line("Totals", d.totals.reports, d.totals.studies, d.totals.hours, true);
+
+  if (d.lateCount > 0) {
+    text(
+      doc,
+      `Includes ${d.lateCount} late report${d.lateCount === 1 ? "" : "s"} rolled over from earlier months.`,
+      L,
+      y,
+      { size: 8, color: SOFT },
+    );
+    y -= 12;
+  }
 
   if (d.memorial) {
     y -= 10;
@@ -128,6 +156,8 @@ async function drawS1(d: S1Summary): Promise<Uint8Array> {
 
   y -= 20;
   text(doc, "Hours are totalled for pioneers only. Publishers report participation and Bible studies.", L, y, { size: 7.5, color: SOFT });
+  y -= 11;
+  text(doc, "Special pioneers and field missionaries report directly to the branch office and are not included above.", L, y, { size: 7.5, color: SOFT });
   y -= 11;
   text(doc, `Generated ${formatDate(new Date())} · Maitama Congregation Secretary System`, L, y, { size: 7.5, color: SOFT });
 

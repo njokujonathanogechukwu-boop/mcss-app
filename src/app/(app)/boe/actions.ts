@@ -65,6 +65,59 @@ export async function saveMeeting(
   return { ok: `${items.length} decision${items.length === 1 ? "" : "s"} recorded.` };
 }
 
+/**
+ * Amends a decision that was recorded: what the item was, what was decided,
+ * who carries it and when it is due. The status travels along hidden so the
+ * same schema validates it, and an item already completed keeps the date it
+ * was completed on.
+ */
+export async function updateDecision(
+  _prev: DecisionState,
+  formData: FormData,
+): Promise<DecisionState> {
+  const auth = await guard("boe:write");
+  if (!auth.ok) return { error: auth.error };
+
+  const id = String(formData.get("id"));
+  const parsed = decisionSchema.safeParse({
+    meetingDate: formData.get("meetingDate"),
+    agendaItem: formData.get("agendaItem"),
+    decision: formData.get("decision"),
+    assignedToId: formData.get("assignedToId") ?? "",
+    targetDate: formData.get("targetDate") ?? "",
+    status: formData.get("status") ?? "OPEN",
+    notes: formData.get("notes") ?? "",
+  });
+  if (!parsed.success) return { errors: fieldErrors(parsed.error) };
+
+  const current = await prisma.boeDecision.findUnique({
+    where: { id },
+    select: { status: true, completedAt: true },
+  });
+  if (!current) return { error: "That item is no longer on file." };
+
+  const { meetingDate, status, agendaItem, decision, assignedToId, targetDate, notes } = parsed.data;
+  await prisma.boeDecision.update({
+    where: { id },
+    data: {
+      agendaItem,
+      decision,
+      assignedToId,
+      targetDate,
+      notes,
+      status,
+      meetingDate: new Date(`${meetingDate}T00:00:00.000Z`),
+      completedAt: status === "COMPLETED" ? (current.completedAt ?? new Date()) : null,
+    },
+  });
+
+  await recordAudit(auth.session.userId, "updated", "BoeDecision", id, `Amended "${agendaItem}"`);
+  revalidatePath("/boe");
+  revalidatePath("/dashboard");
+  revalidatePath("/bookings");
+  return { ok: "Changes saved." };
+}
+
 export async function setDecisionStatus(formData: FormData) {
   const auth = await guard("boe:write");
   if (!auth.ok) return;

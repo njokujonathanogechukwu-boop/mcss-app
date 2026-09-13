@@ -82,6 +82,21 @@ export const BOOKING_LABELS: Record<string, string> = {
   CANCELLED: "Cancelled",
 };
 
+/**
+ * What a publisher's month means. A publisher with no row at all has not been
+ * recorded yet, which is different from NO_REPORT: the secretary has noted
+ * that no report came in.
+ */
+export type ReportOutcome = "SHARED" | "DID_NOT_PREACH" | "NO_REPORT";
+
+export const REPORT_OUTCOMES: ReportOutcome[] = ["SHARED", "DID_NOT_PREACH", "NO_REPORT"];
+
+export const REPORT_OUTCOME_LABELS: Record<ReportOutcome, string> = {
+  SHARED: "Shared",
+  DID_NOT_PREACH: "Did not preach",
+  NO_REPORT: "No report",
+};
+
 /** Pioneers report hours; everyone else reports participation only. */
 export function reportsHours(pioneerStatus: string) {
   return pioneerStatus !== "NONE";

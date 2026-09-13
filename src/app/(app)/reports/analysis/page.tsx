@@ -105,7 +105,7 @@ export default async function AnalysisPage({
         </div>
       </form>
 
-      {t.onFile === 0 ? (
+      {t.onFile === 0 && t.noReport === 0 ? (
         <EmptyState title="No reports in that window" description="Widen the months, or check the report sheet for that period." />
       ) : (
         <>
@@ -127,6 +127,18 @@ export default async function AnalysisPage({
                 {t.special.reports > 0 && cat("Special pioneers / field missionaries", t.special)}
                 {cat("Auxiliary pioneers (AUX)", t.auxiliary)}
                 {cat("Publishers (P)", t.publishers, false)}
+                <tr>
+                  <Td className="text-ink-soft">Reported but did not preach</Td>
+                  <Td align="right" className="text-ink-soft">{t.didNotPreach || "—"}</Td>
+                  <Td align="right" className="text-ink-faint">—</Td>
+                  <Td align="right" className="text-ink-faint">—</Td>
+                </tr>
+                <tr>
+                  <Td className="text-ink-soft">No report received</Td>
+                  <Td align="right" className="text-ink-soft">{t.noReport || "—"}</Td>
+                  <Td align="right" className="text-ink-faint">—</Td>
+                  <Td align="right" className="text-ink-faint">—</Td>
+                </tr>
                 <tr>
                   <Td className="text-ink-soft">Late reports received in the window</Td>
                   <Td align="right" className="text-ink-soft">{t.lateReceived || "—"}</Td>
@@ -156,6 +168,8 @@ export default async function AnalysisPage({
                     <Th>Month</Th>
                     <Th align="right">On file</Th>
                     <Th align="right">Active</Th>
+                    <Th align="right">No preach</Th>
+                    <Th align="right">No report</Th>
                     <Th align="right">RP</Th>
                     <Th align="right">RP hrs</Th>
                     <Th align="right">AUX</Th>
@@ -172,6 +186,8 @@ export default async function AnalysisPage({
                       <Td className="whitespace-nowrap">{m.label}</Td>
                       <Td align="right">{m.onFile || "—"}</Td>
                       <Td align="right">{m.active || "—"}</Td>
+                      <Td align="right" className="text-ink-soft">{m.didNotPreach || "—"}</Td>
+                      <Td align="right" className="text-ink-soft">{m.noReport || "—"}</Td>
                       <Td align="right">{m.regular.reports + m.special.reports || "—"}</Td>
                       <Td align="right">{m.regular.hours + m.special.hours || "—"}</Td>
                       <Td align="right">{m.auxiliary.reports || "—"}</Td>
@@ -243,6 +259,8 @@ export default async function AnalysisPage({
                     <Th>Standing</Th>
                     <Th align="right">On file</Th>
                     <Th align="right">Active</Th>
+                    <Th align="right">No preach</Th>
+                    <Th align="right">No report</Th>
                     <Th align="right">AUX months</Th>
                     <Th align="right">Hours</Th>
                     <Th align="right">Studies</Th>
@@ -256,6 +274,8 @@ export default async function AnalysisPage({
                       <Td className="text-ink-soft">{p.standing}</Td>
                       <Td align="right">{p.monthsOnFile}</Td>
                       <Td align="right">{p.monthsActive}</Td>
+                      <Td align="right" className="text-ink-soft">{p.monthsDidNotPreach || "—"}</Td>
+                      <Td align="right" className="text-ink-soft">{p.monthsNoReport || "—"}</Td>
                       <Td align="right">{p.auxMonths || "—"}</Td>
                       <Td align="right">{p.hours || (p.monthsActive ? "YES" : "—")}</Td>
                       <Td align="right">{p.studies || "—"}</Td>

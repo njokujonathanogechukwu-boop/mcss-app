@@ -329,7 +329,7 @@ export async function commitReportImport(
       const current = standing.get(r.publisherId!) ?? "NONE";
       const pioneerStatusUsed = r.aux ? ("AUXILIARY" as const) : current;
       const data = {
-        sharedInMinistry: r.shared,
+        outcome: r.shared ? ("SHARED" as const) : ("DID_NOT_PREACH" as const),
         bibleStudies: r.shared ? r.studies : 0,
         hours: r.shared ? r.hours : null,
         pioneerStatusUsed,
@@ -648,7 +648,7 @@ export async function commitCardImport(
           continue;
         }
         const data = {
-          sharedInMinistry: m.shared,
+          outcome: m.shared ? ("SHARED" as const) : ("DID_NOT_PREACH" as const),
           bibleStudies: m.shared ? m.studies : 0,
           hours: m.shared ? m.hours : null,
           pioneerStatusUsed: m.aux ? ("AUXILIARY" as const) : standing,

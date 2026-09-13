@@ -6,10 +6,12 @@ import {
   reportingMonth, monthLabel, currentServiceYear, serviceYearMonths,
   serviceYearLabel, serviceYearOptions, serviceYearOf,
 } from "@/lib/service-year";
-import { displayName } from "@/lib/format";
+import { displayName, formatDate } from "@/lib/format";
 import { PageHeader, Section, EmptyState } from "@/components/shell";
 import { Button } from "@/components/ui";
 import { ReportSheet, type SheetRow } from "./report-sheet";
+import { getPeriod, outstandingLateReports } from "@/lib/report-periods";
+import { CloseMonthButton, ReopenMonthButton } from "./close-month";
 
 export const dynamic = "force-dynamic";
 
@@ -51,7 +53,7 @@ export default async function ReportsPage({
       pioneerStatus: p.pioneerStatus,
       existing: existing
         ? {
-            sharedInMinistry: existing.sharedInMinistry,
+            outcome: existing.outcome,
             bibleStudies: existing.bibleStudies,
             hours: existing.hours,
             pioneerStatusUsed: existing.pioneerStatusUsed,
@@ -61,7 +63,14 @@ export default async function ReportsPage({
     };
   });
 
-  const onFile = rows.filter((r) => r.existing).length;
+  const shared = rows.filter((r) => r.existing?.outcome === "SHARED").length;
+  const didNotPreach = rows.filter((r) => r.existing?.outcome === "DID_NOT_PREACH").length;
+  const noReport = rows.filter((r) => r.existing?.outcome === "NO_REPORT").length;
+  const outstanding = rows.length - rows.filter((r) => r.existing).length;
+  const isOpenMonth = year === fallback.year && month === fallback.month;
+  const [period, outstandingLate] = await Promise.all([getPeriod(year, month), outstandingLateReports()]);
+  const canWrite = can(user.role, "report:write");
+  const hasEnded = year * 12 + month <= fallback.year * 12 + fallback.month;
   const periodOptions = [
     ...serviceYearMonths(currentServiceYear()),
     ...serviceYearMonths(currentServiceYear() - 1),
@@ -71,7 +80,7 @@ export default async function ReportsPage({
     <>
       <PageHeader
         title="Field service reports"
-        description={`${onFile} of ${rows.length} publishers have a report on file for ${monthLabel(year, month)}.`}
+        description={`${shared} shared · ${didNotPreach} did not preach · ${noReport} no report · ${outstanding} not yet recorded for ${monthLabel(year, month)}.`}
         actions={
           <>
             {can(user.role, "export:run") && (
@@ -79,12 +88,45 @@ export default async function ReportsPage({
                 <Button size="sm">Download S-1 for {monthLabel(year, month)}</Button>
               </a>
             )}
+            <Link href={`/reports/reminders?period=${year}-${month}`}>
+              <Button variant="secondary" size="sm">Who has not reported</Button>
+            </Link>
             <Link href={`/reports/summary?sy=${serviceYear}`}>
               <Button variant="secondary" size="sm">Service year summary</Button>
             </Link>
           </>
         }
       />
+
+      <div className="mb-6 rounded border border-rule bg-surface px-4 py-3 text-sm">
+        {period ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-ink-soft">
+              <span className="font-medium text-pine-dark">Submitted to the branch</span> on{" "}
+              {formatDate(period.submittedAt)}. {period.onTimeIds.length} reported on time
+              {period.lateKeys.length
+                ? `; ${period.lateKeys.length} late report(s) rolled into this month&rsquo;s figure`
+                : ""}
+              . Reports you add for {monthLabel(year, month)} now are treated as late and roll into
+              the next month you close.
+            </p>
+            {canWrite && <ReopenMonthButton year={year} month={month} />}
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-ink-soft">
+              {isOpenMonth
+                ? `The congregation's report for ${monthLabel(year, month)} is due to the branch office by the 20th. `
+                : `${monthLabel(year, month)} has not been submitted to the branch yet. `}
+              {outstandingLate.length > 0 &&
+                `${outstandingLate.length} late report(s) from earlier months will roll into this month when you close it. `}
+              A report that comes in after you close is added to the following month&rsquo;s report
+              and marked late — it does not make a publisher irregular.
+            </p>
+            {canWrite && hasEnded && <CloseMonthButton year={year} month={month} />}
+          </div>
+        )}
+      </div>
 
       <form method="get" className="mb-6 grid gap-3 rounded border border-rule bg-surface p-4 sm:grid-cols-3">
         <div>

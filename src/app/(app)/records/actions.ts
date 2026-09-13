@@ -123,7 +123,7 @@ export async function saveRecordFix(_prev: RecordFixState, formData: FormData): 
           : "NONE";
 
       const data = {
-        sharedInMinistry: input.reportShared,
+        outcome: input.reportShared ? ("SHARED" as const) : ("DID_NOT_PREACH" as const),
         bibleStudies: input.reportShared && input.reportStudies !== "" ? input.reportStudies : 0,
         hours:
           input.reportShared && pioneerStatusUsed !== "NONE" && input.reportHours !== ""

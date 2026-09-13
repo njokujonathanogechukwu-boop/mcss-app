@@ -24,7 +24,7 @@ export default async function MobileRecordsPage() {
         groupId: true,
         createdAt: true,
         group: { select: { number: true, name: true } },
-        reports: { select: { year: true, month: true } },
+        reports: { select: { year: true, month: true, outcome: true } },
         ...(showContact
           ? { phone: true, email: true, address: true, emergencyContactName: true, emergencyContactPhone: true }
           : {}),

@@ -83,6 +83,8 @@ export async function buildAnalysisPdf(a: Analysis, groupId?: string | null): Pr
   summaryRows.push(
     ["Auxiliary pioneers (AUX)", t.auxiliary.reports, t.auxiliary.hours, t.auxiliary.studies],
     ["Publishers (P)", t.publishers.reports, "—", t.publishers.studies],
+    ["Reported but did not preach", t.didNotPreach, "—", "—"],
+    ["No report received", t.noReport, "—", "—"],
     ["Late reports received", t.lateReceived, "—", "—"],
     ["TOTAL", t.regular.reports + t.special.reports + t.auxiliary.reports + t.publishers.reports, t.totalHours, t.totalStudies],
   );
@@ -96,18 +98,21 @@ export async function buildAnalysisPdf(a: Analysis, groupId?: string | null): Pr
     heading("By month");
     table(
       [
-        { label: "Month", w: 120 }, { label: "On file", w: 60, align: "right" }, { label: "Active", w: 60, align: "right" },
-        { label: "RP", w: 50, align: "right" }, { label: "RP hrs", w: 60, align: "right" }, { label: "AUX", w: 50, align: "right" },
-        { label: "AUX hrs", w: 60, align: "right" }, { label: "P", w: 50, align: "right" }, { label: "Hours", w: 60, align: "right" },
-        { label: "Studies", w: 60, align: "right" }, { label: "Late", w: 50, align: "right" },
+        { label: "Month", w: 100 }, { label: "On file", w: 52, align: "right" }, { label: "Active", w: 48, align: "right" },
+        { label: "No preach", w: 56, align: "right" }, { label: "No report", w: 56, align: "right" },
+        { label: "RP", w: 44, align: "right" }, { label: "RP hrs", w: 50, align: "right" }, { label: "AUX", w: 44, align: "right" },
+        { label: "AUX hrs", w: 50, align: "right" }, { label: "P", w: 40, align: "right" }, { label: "Hours", w: 52, align: "right" },
+        { label: "Studies", w: 52, align: "right" }, { label: "Late", w: 44, align: "right" },
       ],
       [
         ...a.months.map((m): Cell[] => [
-          m.label, dash(m.onFile), dash(m.active), dash(m.regular.reports + m.special.reports), dash(m.regular.hours + m.special.hours),
+          m.label, dash(m.onFile), dash(m.active), dash(m.didNotPreach), dash(m.noReport),
+          dash(m.regular.reports + m.special.reports), dash(m.regular.hours + m.special.hours),
           dash(m.auxiliary.reports), dash(m.auxiliary.hours), dash(m.publishers.reports), dash(m.totalHours), dash(m.totalStudies), dash(m.lateReceived),
         ]),
         [
-          "Total", t.onFile, t.activeAverage, t.regular.reports + t.special.reports, t.regular.hours + t.special.hours,
+          "Total", t.onFile, t.activeAverage, t.didNotPreach, t.noReport,
+          t.regular.reports + t.special.reports, t.regular.hours + t.special.hours,
           t.auxiliary.reports, t.auxiliary.hours, t.publishers.reports, t.totalHours, t.totalStudies, t.lateReceived,
         ],
       ],
@@ -133,12 +138,15 @@ export async function buildAnalysisPdf(a: Analysis, groupId?: string | null): Pr
   heading(group ? `Publishers in Group ${group.number}` : "By publisher");
   table(
     [
-      { label: "S/N", w: 34, align: "right" }, { label: "Name", w: 220 }, { label: "Group", w: 50 }, { label: "Standing", w: 60 },
-      { label: "On file", w: 55, align: "right" }, { label: "Active", w: 55, align: "right" }, { label: "AUX months", w: 70, align: "right" },
+      { label: "S/N", w: 34, align: "right" }, { label: "Name", w: 200 }, { label: "Group", w: 50 }, { label: "Standing", w: 52 },
+      { label: "On file", w: 55, align: "right" }, { label: "Active", w: 55, align: "right" },
+      { label: "No preach", w: 56, align: "right" }, { label: "No report", w: 56, align: "right" },
+      { label: "AUX months", w: 60, align: "right" },
       { label: "Hours", w: 60, align: "right" }, { label: "BS", w: 50, align: "right" },
     ],
     a.publishers.map((p, i): Cell[] => [
-      i + 1, p.name, p.group, p.standing, p.monthsOnFile, p.monthsActive, dash(p.auxMonths),
+      i + 1, p.name, p.group, p.standing, p.monthsOnFile, p.monthsActive,
+      dash(p.monthsDidNotPreach), dash(p.monthsNoReport), dash(p.auxMonths),
       p.hours || (p.monthsActive ? "YES" : "—"), dash(p.studies),
     ]),
   );

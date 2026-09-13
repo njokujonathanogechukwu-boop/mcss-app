@@ -47,7 +47,7 @@ export const serviceReportSchema = z
     publisherId: z.string().min(1),
     year: z.coerce.number().int().min(2000).max(2100),
     month: z.coerce.number().int().min(1).max(12),
-    sharedInMinistry: z.coerce.boolean(),
+    outcome: z.enum(["SHARED", "DID_NOT_PREACH", "NO_REPORT"]),
     bibleStudies: z.coerce.number().int().min(0).max(99),
     hours: z
       .union([z.literal(""), z.coerce.number().int().min(0).max(744)])
@@ -64,9 +64,9 @@ export const serviceReportSchema = z
     message: "Only pioneers report hours. Leave hours blank for publishers.",
     path: ["hours"],
   })
-  .refine((d) => d.sharedInMinistry || (d.bibleStudies === 0 && !d.hours), {
+  .refine((d) => d.outcome === "SHARED" || (d.bibleStudies === 0 && !d.hours), {
     message: "A report with no participation cannot carry studies or hours.",
-    path: ["sharedInMinistry"],
+    path: ["outcome"],
   });
 
 /**

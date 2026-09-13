@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { readSession } from "@/lib/session";
 import { can } from "@/lib/rbac";
-import { buildS21Batch } from "@/lib/pdf/s21";
+import { buildS21Batch, type S21Category } from "@/lib/pdf/s21";
 import { currentServiceYear } from "@/lib/service-year";
 
 export const dynamic = "force-dynamic";
@@ -19,15 +19,20 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const sy = Number(url.searchParams.get("sy")) || currentServiceYear();
   const groupId = url.searchParams.get("group") || null;
+  const rawCategory = url.searchParams.get("category");
+  const category: S21Category | null =
+    rawCategory === "pioneers" || rawCategory === "auxiliary" || rawCategory === "others"
+      ? rawCategory
+      : null;
 
-  let suffix = "all_publishers";
+  let suffix = category ? `combined_${category}` : "all_publishers";
   if (groupId) {
     const group = await prisma.serviceGroup.findUnique({ where: { id: groupId }, select: { number: true } });
     if (!group) return new NextResponse("No such group.", { status: 404 });
-    suffix = `group_${group.number}`;
+    suffix = category ? `group_${group.number}_${category}` : `group_${group.number}`;
   }
 
-  const { pdf, count } = await buildS21Batch(sy, groupId);
+  const { pdf, count } = await buildS21Batch(sy, groupId, category);
   if (count === 0) return new NextResponse("No active publishers to print.", { status: 404 });
 
   return new NextResponse(Buffer.from(pdf), {

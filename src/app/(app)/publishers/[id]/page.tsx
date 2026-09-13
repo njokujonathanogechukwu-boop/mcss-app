@@ -79,7 +79,7 @@ export default async function PublisherPage({
     (acc, r) => ({
       studies: acc.studies + r.bibleStudies,
       hours: acc.hours + (r.hours ?? 0),
-      active: acc.active + (r.sharedInMinistry ? 1 : 0),
+      active: acc.active + (r.outcome === "SHARED" ? 1 : 0),
     }),
     { studies: 0, hours: 0, active: 0 },
   );
@@ -172,10 +172,12 @@ export default async function PublisherPage({
                   <Td>
                     {!r ? (
                       <span className="text-xs text-ink-faint">No report on file</span>
-                    ) : r.sharedInMinistry ? (
+                    ) : r.outcome === "SHARED" ? (
                       <Badge tone="good">Yes</Badge>
+                    ) : r.outcome === "DID_NOT_PREACH" ? (
+                      <Badge tone="warn">Did not preach</Badge>
                     ) : (
-                      <Badge tone="warn">No</Badge>
+                      <Badge tone="bad">No report</Badge>
                     )}
                   </Td>
                   <Td align="right">{r ? r.bibleStudies : "—"}</Td>

@@ -40,13 +40,13 @@ export default async function DashboardPage({
       prisma.publisher.count({ where: { status: { in: ["ACTIVE", "IRREGULAR"] } } }),
       prisma.serviceReport.groupBy({
         by: ["year", "month"],
-        where: { OR: months.map((m) => ({ year: m.year, month: m.month })) },
+        where: { OR: months.map((m) => ({ year: m.year, month: m.month })), outcome: { not: "NO_REPORT" } },
         _count: { _all: true },
       }),
       prisma.publisher.findMany({
         where: {
           status: { in: ["ACTIVE", "IRREGULAR"] },
-          reports: { none: { year: period.year, month: period.month } },
+          reports: { none: { year: period.year, month: period.month, outcome: { not: "NO_REPORT" } } },
         },
         select: { id: true, firstName: true, lastName: true, group: { select: { number: true, name: true } } },
         orderBy: [{ group: { number: "asc" } }, { lastName: "asc" }],
@@ -188,9 +188,14 @@ export default async function DashboardPage({
       <Section
         title={`Still to report for ${monthLabel(period.year, period.month)}`}
         actions={
-          <Link href="/reports">
-            <Button variant="secondary" size="sm">Open the report sheet</Button>
-          </Link>
+          <>
+            <Link href={`/reports/reminders?period=${period.year}-${period.month}`}>
+              <Button variant="secondary" size="sm">Remind the overseers</Button>
+            </Link>
+            <Link href="/reports">
+              <Button variant="secondary" size="sm">Open the report sheet</Button>
+            </Link>
+          </>
         }
       >
         {missing.length === 0 ? (

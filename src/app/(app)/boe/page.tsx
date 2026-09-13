@@ -4,6 +4,7 @@ import { displayName, formatDate, DECISION_LABELS } from "@/lib/format";
 import { PageHeader, Section, EmptyState, Panel } from "@/components/shell";
 import { Badge } from "@/components/ui";
 import { DecisionForm } from "./decision-form";
+import { DecisionEdit } from "./decision-edit";
 import { setDecisionStatus } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +42,7 @@ export default async function BoePage() {
   ]);
 
   const overdue = open.filter((d) => d.targetDate && d.targetDate < new Date());
+  const elderOptions = elders.map((e) => ({ id: e.id, label: displayName(e) }));
 
   return (
     <>
@@ -102,6 +104,7 @@ export default async function BoePage() {
                             </button>
                           </form>
                         ))}
+                      <DecisionEdit item={item} elders={elderOptions} />
                     </div>
                   </Panel>
                 </li>
@@ -113,7 +116,7 @@ export default async function BoePage() {
 
       <Section title="Record an item">
         <div className="max-w-2xl">
-          <DecisionForm elders={elders.map((e) => ({ id: e.id, label: displayName(e) }))} />
+          <DecisionForm elders={elderOptions} />
         </div>
       </Section>
 

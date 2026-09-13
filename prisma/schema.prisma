@@ -73,6 +73,14 @@ enum ReportSource {
   IMPORT
 }
 
+// What a publisher's month means. A row that does not exist at all is
+// different from NO_REPORT: nothing has been recorded for them yet.
+enum ReportOutcome {
+  SHARED
+  DID_NOT_PREACH
+  NO_REPORT
+}
+
 // ---------------------------------------------------------------- access
 
 model User {
@@ -206,7 +214,7 @@ model ServiceReport {
   year  Int
   month Int
 
-  sharedInMinistry  Boolean       @default(true)
+  outcome           ReportOutcome @default(SHARED)
   bibleStudies      Int           @default(0)
   hours             Int?
   creditHours       Int?
@@ -221,6 +229,29 @@ model ServiceReport {
   updatedAt DateTime @updatedAt
 
   @@unique([publisherId, year, month])
+  @@index([year, month])
+}
+
+// One row per month whose congregation report has been submitted to the
+// branch office. Closing a month freezes who had reported on time
+// (`onTimeIds`); a report that arrives afterwards for that month is late and
+// rolls into the next month's figure. `lateKeys` records the earlier-month
+// reports ("publisherId|year|month") already absorbed into this submission so
+// they are never counted twice.
+model ReportPeriod {
+  id            String   @id @default(cuid())
+  year          Int
+  month         Int
+  submittedAt   DateTime @default(now())
+  submittedById String?
+  onTimeIds     String[] @default([])
+  lateKeys      String[] @default([])
+  note          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([year, month])
   @@index([year, month])
 }
 
