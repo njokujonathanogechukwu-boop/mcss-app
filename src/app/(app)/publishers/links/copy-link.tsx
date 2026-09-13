@@ -21,6 +21,18 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
+export function LinkInput({ url, publisherName }: { url: string; publisherName: string }) {
+  return (
+    <input
+      readOnly
+      value={url}
+      onFocus={(e) => e.currentTarget.select()}
+      aria-label={`Update link for ${publisherName}`}
+      className="field-input w-full min-w-[16rem] font-mono text-xs"
+    />
+  );
+}
+
 export function CopyLinkButton({ url }: { url: string }) {
   const [label, setLabel] = useState("Copy");
 

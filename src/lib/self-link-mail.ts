@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { displayName } from "@/lib/format";
 import { sendEmail, emailConfigured } from "@/lib/email";
-import { ensureSelfToken, requestOrigin } from "@/lib/self-service";
+import { ensureSelfTokens, requestOrigin } from "@/lib/self-service";
 
 export type SelfLinkMailSummary = {
   configured: boolean;
@@ -49,13 +49,14 @@ export async function sendSelfLinkEmails(): Promise<SelfLinkMailSummary> {
   const [withEmail, withoutEmail] = await Promise.all([
     prisma.publisher.findMany({
       where: { status: { in: ["ACTIVE", "IRREGULAR"] }, email: { not: null } },
-      select: { id: true, firstName: true, lastName: true, email: true, selfToken: true },
+      select: { id: true, firstName: true, lastName: true, email: true },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
     prisma.publisher.count({
       where: { status: { in: ["ACTIVE", "IRREGULAR"] }, email: null },
     }),
   ]);
+  const tokens = await ensureSelfTokens(withEmail.map((p) => p.id));
 
   let sent = 0;
   const failed: string[] = [];
@@ -65,7 +66,7 @@ export async function sendSelfLinkEmails(): Promise<SelfLinkMailSummary> {
     for (;;) {
       const p = queue.shift();
       if (!p || !p.email) return;
-      const token = p.selfToken ?? (await ensureSelfToken(p.id));
+      const token = tokens.get(p.id);
       if (!token) {
         failed.push(`${displayName(p)}: no link could be created.`);
         continue;

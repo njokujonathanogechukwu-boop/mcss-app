@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { readSession } from "@/lib/session";
 import { can } from "@/lib/rbac";
 import { displayName } from "@/lib/format";
-import { ensureSelfToken, requestOrigin } from "@/lib/self-service";
+import { ensureSelfTokens, requestOrigin } from "@/lib/self-service";
 import { waHref } from "@/lib/reminders";
 import { buildSelfLinksSheet } from "@/lib/pdf/self-links";
 
@@ -48,15 +48,15 @@ export async function GET(request: Request) {
       firstName: true,
       lastName: true,
       phone: true,
-      selfToken: true,
       group: { select: { number: true, name: true } },
     },
     orderBy: [{ group: { number: "asc" } }, { lastName: "asc" }, { firstName: "asc" }],
   });
+  const tokens = await ensureSelfTokens(publishers.map((p) => p.id));
 
   const rows: string[][] = [];
   for (const p of publishers) {
-    const token = p.selfToken ?? (await ensureSelfToken(p.id));
+    const token = tokens.get(p.id);
     if (!token) continue;
     const link = `${origin}/my/${token}`;
     rows.push([

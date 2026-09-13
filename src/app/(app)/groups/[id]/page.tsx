@@ -53,7 +53,7 @@ export default async function GroupPage({
         actions={
           can(user.role, "export:run") && (
             <>
-              <a href={`/api/exports/s21/batch?sy=${serviceYear}&group=${id}`} target="_blank" rel="noopener">
+              <a href={`/api/exports/s21/batch?sy=${serviceYear}&group=${id}`}>
                 <Button variant="secondary" size="sm">S-21s for this group</Button>
               </a>
               <a href={`/api/exports/group/${id}?sy=${serviceYear}`} target="_blank" rel="noopener">

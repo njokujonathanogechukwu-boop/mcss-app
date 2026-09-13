@@ -38,6 +38,18 @@ async function load(template: Buffer) {
 export type FillOptions = { flatten?: boolean };
 
 async function finish(pdf: PDFDocument, opts?: FillOptions): Promise<Uint8Array> {
+  // The official forms carry checkbox appearance streams whose tick is drawn
+  // far outside its box, so a flattened card shows giant ticks over the text.
+  // Redraw each tick at its own widget size first.
+  for (const field of pdf.getForm().getFields()) {
+    if (field instanceof PDFCheckBox) {
+      try {
+        field.updateAppearances();
+      } catch {
+        // keep whatever appearance the form shipped with
+      }
+    }
+  }
   if (opts?.flatten === false) {
     pdf.getForm().updateFieldAppearances();
     return pdf.save();

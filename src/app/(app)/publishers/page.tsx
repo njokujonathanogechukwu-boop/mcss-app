@@ -84,16 +84,16 @@ export default async function PublishersPage({
           <>
             {can(user.role, "export:run") && (
               <>
-                <a href={`/api/exports/s21/batch?sy=${currentServiceYear()}`} target="_blank" rel="noopener">
+                <a href={`/api/exports/s21/batch?sy=${currentServiceYear()}`}>
                   <Button variant="secondary" size="sm">Every S-21</Button>
                 </a>
-                <a href={`/api/exports/s21/batch?sy=${currentServiceYear()}&category=pioneers`} target="_blank" rel="noopener">
+                <a href={`/api/exports/s21/batch?sy=${currentServiceYear()}&category=pioneers`}>
                   <Button variant="secondary" size="sm">Pioneers &amp; missionaries</Button>
                 </a>
-                <a href={`/api/exports/s21/batch?sy=${currentServiceYear()}&category=auxiliary`} target="_blank" rel="noopener">
+                <a href={`/api/exports/s21/batch?sy=${currentServiceYear()}&category=auxiliary`}>
                   <Button variant="secondary" size="sm">Auxiliary pioneers</Button>
                 </a>
-                <a href={`/api/exports/s21/batch?sy=${currentServiceYear()}&category=others`} target="_blank" rel="noopener">
+                <a href={`/api/exports/s21/batch?sy=${currentServiceYear()}&category=others`}>
                   <Button variant="secondary" size="sm">Other publishers</Button>
                 </a>
               </>

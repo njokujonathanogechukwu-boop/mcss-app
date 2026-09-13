@@ -75,6 +75,46 @@ export async function buildS21Batch(
   return { pdf: await merged.save(), count: publishers.length };
 }
 
+/**
+ * One card per publisher as its own PDF inside a ZIP, each file named after
+ * the person and the service year, so cards can be shared or filed one at a
+ * time instead of as one long document.
+ */
+export async function buildS21Zip(
+  serviceYear: number,
+  groupId?: string | null,
+  category?: S21Category | null,
+): Promise<{ zip: Uint8Array; count: number }> {
+  const publishers = await prisma.publisher.findMany({
+    where: {
+      status: { in: ["ACTIVE", "IRREGULAR"] },
+      ...(groupId ? { groupId } : {}),
+      ...(category ? CATEGORY_WHERE[category] : {}),
+    },
+    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    select: { id: true, firstName: true, lastName: true },
+  });
+  if (publishers.length === 0) return { zip: new Uint8Array(0), count: 0 };
+
+  const template = await getTemplate("S21");
+  const JSZip = (await import("jszip")).default;
+  const zip = new JSZip();
+  const yearTag = serviceYearLabel(serviceYear).replace("/", "-");
+  const used = new Set<string>();
+
+  for (const p of publishers) {
+    const bytes = await buildS21(p.id, serviceYear, template);
+    const base = `${p.firstName} ${p.lastName} - ${yearTag}`;
+    let name = `${base}.pdf`;
+    for (let n = 2; used.has(name); n++) name = `${base} (${n}).pdf`;
+    used.add(name);
+    zip.file(name, bytes);
+  }
+
+  const zipBytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+  return { zip: zipBytes, count: publishers.length };
+}
+
 /** How many twelve-row tables the uploaded form has: fill that many consecutive service years. */
 async function tableCount(form: Buffer): Promise<number> {
   const { collectWidgets, groupRows, pagesOf } = await import("@/lib/pdf/fields");

@@ -1,13 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { displayName } from "@/lib/format";
-import { ensureSelfToken, requestOrigin } from "@/lib/self-service";
+import { ensureSelfTokens, requestOrigin } from "@/lib/self-service";
 import { PageHeader, Section, DataTable, Th, Td } from "@/components/shell";
 import { Button } from "@/components/ui";
-import { CopyLinkButton } from "./copy-link";
+import { CopyLinkButton, LinkInput } from "./copy-link";
 import { EmailLinksButton } from "./email-links";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 30;
 
 export default async function PublisherLinksPage() {
   await requirePermission("publisher:write");
@@ -18,7 +19,6 @@ export default async function PublisherLinksPage() {
       id: true,
       firstName: true,
       lastName: true,
-      selfToken: true,
       group: { select: { number: true, name: true } },
     },
     orderBy: [{ group: { number: "asc" } }, { lastName: "asc" }, { firstName: "asc" }],
@@ -29,9 +29,10 @@ export default async function PublisherLinksPage() {
   // Tokens are created here, not on first copy, so every link can be shown and
   // exported straight away. It is idempotent, and a token grants nothing until
   // the link is actually sent to someone.
+  const tokens = await ensureSelfTokens(publishers.map((p) => p.id));
   const rows: { id: string; name: string; group: string; url: string }[] = [];
   for (const p of publishers) {
-    const token = p.selfToken ?? (await ensureSelfToken(p.id));
+    const token = tokens.get(p.id);
     if (!token || !origin) continue;
     rows.push({
       id: p.id,
@@ -83,13 +84,7 @@ export default async function PublisherLinksPage() {
                 <Td className="font-medium whitespace-nowrap">{r.name}</Td>
                 <Td className="text-ink-soft whitespace-nowrap">{r.group}</Td>
                 <Td>
-                  <input
-                    readOnly
-                    value={r.url}
-                    onFocus={(e) => e.currentTarget.select()}
-                    aria-label={`Update link for ${r.name}`}
-                    className="field-input w-full min-w-[16rem] font-mono text-xs"
-                  />
+                  <LinkInput url={r.url} publisherName={r.name} />
                 </Td>
                 <Td align="right">
                   <CopyLinkButton url={r.url} />

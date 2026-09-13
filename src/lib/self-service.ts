@@ -4,22 +4,33 @@ import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 
 /**
- * Returns the publisher's personal link token, creating one the first time it
- * is asked for. Tokens are 192 bits of randomness in URL-safe form, so a link
+ * Every publisher's personal link token, creating the missing ones in a single
+ * transaction. Tokens are 192 bits of randomness in URL-safe form, so a link
  * cannot be guessed; it is the only thing standing between a publisher's
- * record and anyone who has the URL.
+ * record and anyone who has the URL. One read and one write for the whole
+ * congregation — a per-publisher loop would cost two database round trips
+ * each, far too slow inside one serverless request.
  */
-export async function ensureSelfToken(publisherId: string): Promise<string | null> {
-  const existing = await prisma.publisher.findUnique({
-    where: { id: publisherId },
-    select: { selfToken: true },
-  });
-  if (!existing) return null;
-  if (existing.selfToken) return existing.selfToken;
+export async function ensureSelfTokens(ids: string[]): Promise<Map<string, string>> {
+  const tokens = new Map<string, string>();
+  if (ids.length === 0) return tokens;
 
-  const token = randomBytes(24).toString("base64url");
-  await prisma.publisher.update({ where: { id: publisherId }, data: { selfToken: token } });
-  return token;
+  const rows = await prisma.publisher.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, selfToken: true },
+  });
+  const missing: { id: string; token: string }[] = [];
+  for (const r of rows) {
+    if (r.selfToken) tokens.set(r.id, r.selfToken);
+    else missing.push({ id: r.id, token: randomBytes(24).toString("base64url") });
+  }
+  if (missing.length) {
+    await prisma.$transaction(
+      missing.map((m) => prisma.publisher.update({ where: { id: m.id }, data: { selfToken: m.token } })),
+    );
+    for (const m of missing) tokens.set(m.id, m.token);
+  }
+  return tokens;
 }
 
 /** Absolute origin of the current request, to build shareable /my links. */

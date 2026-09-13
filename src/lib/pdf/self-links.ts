@@ -3,7 +3,7 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import QRCode from "qrcode";
 import { prisma } from "@/lib/prisma";
 import { formatDate, displayName } from "@/lib/format";
-import { ensureSelfToken, requestOrigin } from "@/lib/self-service";
+import { ensureSelfTokens, requestOrigin } from "@/lib/self-service";
 
 const INK = rgb(0.106, 0.173, 0.145);
 const SOFT = rgb(0.45, 0.5, 0.47);
@@ -67,11 +67,11 @@ export async function buildSelfLinksSheet(): Promise<Uint8Array> {
       id: true,
       firstName: true,
       lastName: true,
-      selfToken: true,
       group: { select: { number: true, name: true } },
     },
     orderBy: [{ group: { number: "asc" } }, { lastName: "asc" }, { firstName: "asc" }],
   });
+  const tokens = await ensureSelfTokens(publishers.map((p) => p.id));
 
   const pdf = await PDFDocument.create();
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
@@ -88,7 +88,7 @@ export async function buildSelfLinksSheet(): Promise<Uint8Array> {
   let placed = 0;
 
   for (const p of publishers) {
-    const token = p.selfToken ?? (await ensureSelfToken(p.id));
+    const token = tokens.get(p.id);
     if (!token || !origin) continue;
     const link = `${origin}/my/${token}`;
 
