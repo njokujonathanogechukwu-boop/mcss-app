@@ -4,6 +4,7 @@ import { readSession } from "@/lib/session";
 import { can } from "@/lib/rbac";
 import { displayName } from "@/lib/format";
 import { ensureSelfToken, requestOrigin } from "@/lib/self-service";
+import { waHref } from "@/lib/reminders";
 import { buildSelfLinksSheet } from "@/lib/pdf/self-links";
 
 export const dynamic = "force-dynamic";
@@ -46,6 +47,7 @@ export async function GET(request: Request) {
       id: true,
       firstName: true,
       lastName: true,
+      phone: true,
       selfToken: true,
       group: { select: { number: true, name: true } },
     },
@@ -56,14 +58,16 @@ export async function GET(request: Request) {
   for (const p of publishers) {
     const token = p.selfToken ?? (await ensureSelfToken(p.id));
     if (!token) continue;
+    const link = `${origin}/my/${token}`;
     rows.push([
       p.group ? `${p.group.number} — ${p.group.name}` : "No group",
       displayName(p),
-      `${origin}/my/${token}`,
+      link,
+      waHref(p.phone, `Dear ${p.firstName}, please open this personal page to check and update your details with the congregation: ${link}`) ?? "",
     ]);
   }
 
-  const header = ["Service group", "Publisher", "Update link"];
+  const header = ["Service group", "Publisher", "Update link", "WhatsApp (tap to send)"];
   const csv = "\uFEFF" + [header, ...rows].map((r) => r.map(cell).join(",")).join("\r\n");
   return new NextResponse(csv, {
     headers: {
