@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
-import { publisherSchema, transferSchema, fieldErrors } from "@/lib/validation";
+import { publisherSchema, transferSchema, quickPublisherSchema, fieldErrors } from "@/lib/validation";
 
 export type FormState = { error?: string; errors?: Record<string, string>; ok?: string };
 
@@ -87,6 +87,31 @@ export async function updatePublisher(
   revalidatePath("/publishers");
   revalidatePath(`/publishers/${id}`);
   redirect(`/publishers/${id}?saved=1`);
+}
+
+export async function quickUpdatePublisher(
+  id: string,
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const auth = await guard("publisher:write");
+  if (!auth.ok) return { error: auth.error };
+
+  const parsed = quickPublisherSchema.safeParse({
+    gender: formData.get("gender"),
+    isBaptized: formData.get("isBaptized") ?? undefined,
+    baptismDate: formData.get("baptismDate") ?? "",
+  });
+  if (!parsed.success) return { errors: fieldErrors(parsed.error) };
+
+  const updated = await prisma.publisher.update({ where: { id }, data: parsed.data });
+  await recordAudit(
+    auth.session.userId, "updated", "Publisher", id,
+    `Quick-edited sex and baptism for ${updated.firstName} ${updated.lastName}`,
+  );
+
+  revalidatePath("/publishers");
+  return { ok: "Saved." };
 }
 
 export async function transferPublisher(

@@ -131,6 +131,13 @@ export const selfUpdateSchema = z.object({
   emergencyContactPhone: optionalString,
 });
 
+/** Inline row edits on the publishers list: sex and baptism details only. */
+export const quickPublisherSchema = z.object({
+  gender: z.enum(["MALE", "FEMALE"]),
+  isBaptized: checkbox,
+  baptismDate: optionalDate,
+});
+
 export const attendanceSchema = z.object({
   date: z.string().refine((v) => !Number.isNaN(Date.parse(v)), "Enter a valid date"),
   meetingType: z.enum(["MIDWEEK", "WEEKEND"]),

@@ -47,6 +47,11 @@ export function toDateTimeInput(value: Date | string | null | undefined) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+export const GENDER_LABELS: Record<string, string> = {
+  MALE: "Male",
+  FEMALE: "Female",
+};
+
 export const APPOINTMENT_LABELS: Record<string, string> = {
   PUBLISHER: "Publisher",
   MINISTERIAL_SERVANT: "Ministerial servant",

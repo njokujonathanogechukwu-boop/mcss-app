@@ -3,10 +3,11 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
-import { displayName, formatDate, APPOINTMENT_LABELS, PIONEER_LABELS, STATUS_LABELS } from "@/lib/format";
-import { PageHeader, DataTable, Th, Td, EmptyState } from "@/components/shell";
-import { Badge, Button } from "@/components/ui";
+import { displayName, formatDate, toDateInput, APPOINTMENT_LABELS, PIONEER_LABELS, STATUS_LABELS, GENDER_LABELS } from "@/lib/format";
+import { PageHeader, DataTable, Th, EmptyState } from "@/components/shell";
+import { Button } from "@/components/ui";
 import { currentServiceYear } from "@/lib/service-year";
+import { PublisherRow } from "./publisher-row";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +48,7 @@ export default async function PublishersPage({
   const orderBy: Prisma.PublisherOrderByWithRelationInput[] = ({
     name: [{ lastName: dir }, { firstName: dir }],
     group: [{ group: { number: dir } }, { lastName: "asc" }],
+    gender: [{ gender: dir }, { lastName: "asc" }],
     appointment: [{ appointment: dir }, { lastName: "asc" }],
     pioneer: [{ pioneerStatus: dir }, { lastName: "asc" }],
     baptized: [{ baptismDate: dir }, { lastName: "asc" }],
@@ -183,32 +185,38 @@ export default async function PublishersPage({
             <tr>
               <Th><Link href={sortHref("name")} className="hover:text-pine">Publisher{arrow("name")}</Link></Th>
               <Th><Link href={sortHref("group")} className="hover:text-pine">Group{arrow("group")}</Link></Th>
+              <Th><Link href={sortHref("gender")} className="hover:text-pine">Sex{arrow("gender")}</Link></Th>
               <Th><Link href={sortHref("appointment")} className="hover:text-pine">Appointment{arrow("appointment")}</Link></Th>
               <Th><Link href={sortHref("pioneer")} className="hover:text-pine">Pioneer{arrow("pioneer")}</Link></Th>
               <Th><Link href={sortHref("baptized")} className="hover:text-pine">Baptized{arrow("baptized")}</Link></Th>
               {showContact && <Th>Phone</Th>}
               <Th align="right"><Link href={sortHref("status")} className="hover:text-pine">Standing{arrow("status")}</Link></Th>
+              {canWrite && <Th align="right"></Th>}
             </tr>
           </thead>
           <tbody>
             {publishers.map((p) => (
-              <tr key={p.id} className="hover:bg-paper">
-                <Td>
-                  <Link href={`/publishers/${p.id}`} className="font-medium text-ink hover:text-pine hover:underline">
-                    {displayName(p)}
-                  </Link>
-                </Td>
-                <Td className="text-ink-soft">
-                  {p.group ? `${p.group.number} — ${p.group.name}` : <span className="text-ink-faint">—</span>}
-                </Td>
-                <Td className="text-ink-soft">{APPOINTMENT_LABELS[p.appointment]}</Td>
-                <Td className="text-ink-soft">{PIONEER_LABELS[p.pioneerStatus]}</Td>
-                <Td className="text-ink-soft">{p.isBaptized ? formatDate(p.baptismDate) : "—"}</Td>
-                {showContact && <Td className="text-ink-soft">{p.phone ?? "—"}</Td>}
-                <Td align="right">
-                  <Badge tone={STATUS_TONE[p.status]}>{STATUS_LABELS[p.status]}</Badge>
-                </Td>
-              </tr>
+              <PublisherRow
+                key={p.id}
+                showContact={showContact}
+                canWrite={canWrite}
+                colSpan={8 + (showContact ? 1 : 0) + (canWrite ? 1 : 0)}
+                p={{
+                  id: p.id,
+                  name: displayName(p),
+                  groupLabel: p.group ? `${p.group.number} — ${p.group.name}` : null,
+                  genderLabel: GENDER_LABELS[p.gender] ?? p.gender,
+                  gender: p.gender,
+                  appointment: APPOINTMENT_LABELS[p.appointment],
+                  pioneer: PIONEER_LABELS[p.pioneerStatus],
+                  baptized: p.isBaptized,
+                  baptizedLabel: p.baptismDate ? `Baptized · ${formatDate(p.baptismDate)}` : "Baptized",
+                  baptismDateInput: toDateInput(p.baptismDate),
+                  phone: p.phone,
+                  statusLabel: STATUS_LABELS[p.status],
+                  statusTone: STATUS_TONE[p.status],
+                }}
+              />
             ))}
           </tbody>
         </DataTable>
