@@ -119,9 +119,20 @@ export default async function RecordsPage({
         title="Records check"
         description={`${summary.complete} of ${summary.total} active publishers have a complete file. Pick a card to see who is missing what, then fix it in place.`}
         actions={
-          <Link href="/m/records">
-            <Button variant="secondary" size="sm">Open phone app</Button>
-          </Link>
+          <>
+            {can(user.role, "export:run") && showContact && (
+              <a
+                href={`/api/exports/publishers${sp.group ? `?group=${sp.group}` : ""}`}
+                target="_blank"
+                rel="noopener"
+              >
+                <Button variant="secondary" size="sm">Download bio-data &amp; contacts</Button>
+              </a>
+            )}
+            <Link href="/m/records">
+              <Button variant="secondary" size="sm">Open phone app</Button>
+            </Link>
+          </>
         }
       />
 

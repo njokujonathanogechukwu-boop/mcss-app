@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { DataTable, Th, Td } from "@/components/shell";
 import { Badge, Button } from "@/components/ui";
 import { RecordFixForm } from "./record-fix-form";
 import type { Review } from "@/lib/completeness";
+
+type SortKey = "name" | "group" | "issues";
+type Sort = { key: SortKey; dir: "asc" | "desc" };
 
 function Issues({ review }: { review: Review }) {
   const m = review.missing;
@@ -38,20 +41,57 @@ export function ReviewTable({
   flags: { canEditPublisher: boolean; canEditContact: boolean; canEditReport: boolean };
 }) {
   const [open, setOpen] = useState<string | null>(null);
+  const [sort, setSort] = useState<Sort>({ key: "issues", dir: "desc" });
   const canEdit = flags.canEditPublisher || flags.canEditReport;
+
+  const sorted = useMemo(() => {
+    const value = (r: Review): string | number =>
+      sort.key === "name" ? r.name : sort.key === "group" ? (r.group ?? "") : r.issueCount;
+    return [...reviews].sort((a, b) => {
+      const av = value(a);
+      const bv = value(b);
+      let c =
+        typeof av === "number" && typeof bv === "number"
+          ? av - bv
+          : String(av).localeCompare(String(bv));
+      if (c === 0) c = a.name.localeCompare(b.name);
+      return sort.dir === "asc" ? c : -c;
+    });
+  }, [reviews, sort]);
+
+  const toggle = (key: SortKey) =>
+    setSort((s) =>
+      s.key === key
+        ? { key, dir: s.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: key === "issues" ? "desc" : "asc" },
+    );
+
+  const sortTh = (label: string, key: SortKey) => (
+    <Th>
+      <button
+        type="button"
+        onClick={() => toggle(key)}
+        className="text-xs font-medium text-ink-soft hover:text-ink"
+        aria-label={`Sort by ${label}`}
+      >
+        {label}
+        {sort.key === key ? (sort.dir === "asc" ? " ↑" : " ↓") : ""}
+      </button>
+    </Th>
+  );
 
   return (
     <DataTable>
       <thead>
         <tr>
-          <Th>Publisher</Th>
-          <Th>Group</Th>
-          <Th>Missing</Th>
+          {sortTh("Publisher", "name")}
+          {sortTh("Group", "group")}
+          {sortTh("Missing", "issues")}
           <Th align="right"></Th>
         </tr>
       </thead>
       <tbody>
-        {reviews.map((r) => {
+        {sorted.map((r) => {
           const isOpen = open === r.id;
           return (
             <tr key={r.id} className={isOpen ? "bg-paper align-top" : "hover:bg-paper align-top"}>
