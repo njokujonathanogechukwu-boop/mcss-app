@@ -22,5 +22,8 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|webp)$).*)"],
+  // sw.js and the webmanifest carry no congregation data — the worker caches
+  // only the two icons — but both must be reachable while signed out, or the
+  // phone app can never register its worker or be installed.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|sw\\.js|.*\\.(?:webmanifest|svg|png|jpg|webp|ico)$).*)"],
 };
