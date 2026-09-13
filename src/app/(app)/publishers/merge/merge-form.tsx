@@ -29,7 +29,7 @@ export function MergeForm({ a, b, overlap }: { a: MergeCandidate; b: MergeCandid
       className={`block cursor-pointer rounded border p-4 ${keep === p.id ? "border-pine bg-pine-light/40" : "border-rule bg-surface hover:border-rule-strong"}`}
     >
       <div className="flex items-start gap-3">
-        <input type="radio" name="keep" value={p.id} checked={keep === p.id} onChange={() => setKeep(p.id)} className="mt-1 text-pine focus:ring-pine" />
+        <input type="radio" name="keep" value={p.id} defaultChecked={keep === p.id} onChange={() => setKeep(p.id)} className="mt-1 text-pine focus:ring-pine" />
         <div className="min-w-0 text-sm">
           <p className="font-medium text-ink">{p.name}</p>
           <dl className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-ink-soft">

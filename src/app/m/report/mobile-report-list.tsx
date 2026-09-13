@@ -57,6 +57,24 @@ function ReportForm({ row, month }: { row: ReportRow; month: { year: number; mon
 
       {shared && (
         <div className="space-y-4">
+          {!row.isPioneer && (
+            <button
+              type="button"
+              onClick={() => setAux((v) => !v)}
+              className={`flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left text-sm transition-colors ${
+                aux ? "border-pine bg-pine-light text-ink" : "border-rule bg-surface text-ink-soft"
+              }`}
+            >
+              <span className="font-medium">Auxiliary pioneered this month</span>
+              <span
+                aria-hidden
+                className={`grid h-6 w-6 place-items-center rounded-full ${aux ? "bg-pine text-white" : "bg-paper text-ink-faint"}`}
+              >
+                <Check size={15} />
+              </span>
+            </button>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <label className="block">
               <span className="field-label">Bible studies</span>
@@ -71,7 +89,7 @@ function ReportForm({ row, month }: { row: ReportRow; month: { year: number; mon
                 placeholder="0"
               />
             </label>
-            {row.isPioneer ? (
+            {(row.isPioneer || aux) && (
               <label className="block">
                 <span className="field-label">Hours</span>
                 <input
@@ -85,17 +103,6 @@ function ReportForm({ row, month }: { row: ReportRow; month: { year: number; mon
                   placeholder="0"
                 />
               </label>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setAux((v) => !v)}
-                className={`mt-6 flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-xs font-medium transition-colors ${
-                  aux ? "border-pine bg-pine-light text-pine" : "border-rule bg-surface text-ink-soft"
-                }`}
-              >
-                {aux ? <Check size={14} /> : <CircleDashed size={14} />}
-                Auxiliary pioneer
-              </button>
             )}
           </div>
 

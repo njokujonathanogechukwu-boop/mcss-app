@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { TextField, TextArea, SelectField, CheckField } from "@/components/fields";
 import { SubmitButton } from "@/components/ui";
 import { Notice } from "@/components/shell";
@@ -23,6 +23,7 @@ export function RecordFixForm({
   flags: { canEditPublisher: boolean; canEditContact: boolean; canEditReport: boolean };
 }) {
   const [state, formAction] = useActionState<RecordFixState, FormData>(saveRecordFix, {});
+  const [aux, setAux] = useState(false);
   const isPioneer = review.pioneerStatus !== "NONE";
 
   const showBio = flags.canEditPublisher;
@@ -142,6 +143,14 @@ export function RecordFixForm({
             error={state.errors?.reportPeriod}
           />
           <CheckField label="Shared in the ministry" name="reportShared" defaultChecked={false} />
+          {!isPioneer && (
+            <CheckField
+              label="Auxiliary pioneered that month"
+              name="reportAux"
+              defaultChecked={aux}
+              onChange={(e) => setAux(e.target.checked)}
+            />
+          )}
           <div className="grid gap-4 sm:grid-cols-2">
             <TextField
               label="Bible studies"
@@ -151,7 +160,7 @@ export function RecordFixForm({
               placeholder="0"
               error={state.errors?.reportStudies}
             />
-            {isPioneer ? (
+            {(isPioneer || aux) && (
               <TextField
                 label="Hours"
                 name="reportHours"
@@ -160,16 +169,12 @@ export function RecordFixForm({
                 placeholder="0"
                 error={state.errors?.reportHours}
               />
-            ) : (
-              <div className="flex items-end">
-                <CheckField label="Auxiliary pioneered that month" name="reportAux" defaultChecked={false} />
-              </div>
             )}
           </div>
           <p className="text-xs text-ink-faint">
             {isPioneer
               ? "Pioneers report hours. Leave everything empty to record that they did not share."
-              : "Publishers report participation only. Tick auxiliary if they pioneered that month."}
+              : "Publishers report participation only. Tick auxiliary if they pioneered that month, then add their hours."}
           </p>
         </fieldset>
       )}

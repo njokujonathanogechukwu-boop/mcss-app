@@ -125,7 +125,10 @@ export async function saveRecordFix(_prev: RecordFixState, formData: FormData): 
       const data = {
         sharedInMinistry: input.reportShared,
         bibleStudies: input.reportShared && input.reportStudies !== "" ? input.reportStudies : 0,
-        hours: input.reportShared && isPioneer && input.reportHours !== "" ? input.reportHours : null,
+        hours:
+          input.reportShared && pioneerStatusUsed !== "NONE" && input.reportHours !== ""
+            ? input.reportHours
+            : null,
         pioneerStatusUsed: pioneerStatusUsed as "NONE" | "AUXILIARY" | "REGULAR" | "SPECIAL",
         submittedById: session.userId,
       };

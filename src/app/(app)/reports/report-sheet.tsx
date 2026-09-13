@@ -96,11 +96,15 @@ function Row({ row }: { row: SheetRow }) {
       </Td>
 
       <Td align="center">
+        {/* React resets the form on every action submit, which restores each
+            control to its defaultChecked. A `checked` prop is never written
+            back to that attribute, so a controlled box here silently unticks
+            after a save and the next save deletes the report. */}
         <input
           type="checkbox"
           name={`shared.${row.id}`}
           value="true"
-          checked={shared}
+          defaultChecked={shared}
           onChange={(e) => setShared(e.target.checked)}
           aria-label={`${row.name} shared in the ministry`}
           className="h-4 w-4 rounded-sm border-rule-strong text-pine focus:ring-pine"
@@ -126,7 +130,7 @@ function Row({ row }: { row: SheetRow }) {
             type="checkbox"
             name={`aux.${row.id}`}
             value="true"
-            checked={aux}
+            defaultChecked={aux}
             onChange={(e) => setAux(e.target.checked)}
             disabled={!shared}
             aria-label={`${row.name} served as an auxiliary pioneer`}
