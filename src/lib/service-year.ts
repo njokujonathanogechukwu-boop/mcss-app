@@ -32,10 +32,20 @@ export const MONTH_SHORT = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
+/** Sunday first, to match Date#getUTCDay(). */
+export const WEEKDAY_NAMES = [
+  "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+];
+
 export type ServiceMonth = { year: number; month: number; label: string; short: string };
 
 export function serviceYearOf(year: number, month: number): number {
   return month >= 9 ? year + 1 : year;
+}
+
+/** The calendar year a month falls in, given the service year it belongs to. */
+export function calendarYearOf(serviceYear: number, month: number): number {
+  return month >= 9 ? serviceYear - 1 : serviceYear;
 }
 
 export function currentServiceYear(now = new Date()): number {
@@ -61,6 +71,23 @@ export function serviceYearMonths(serviceYear: number): ServiceMonth[] {
 
 export function serviceYearLabel(serviceYear: number): string {
   return `${serviceYear - 1}/${String(serviceYear).slice(2)}`;
+}
+
+/** The September-to-August window a service year covers, as text. */
+export function serviceYearSpan(serviceYear: number): string {
+  return `September ${serviceYear - 1} to August ${serviceYear}`;
+}
+
+/** Morning, afternoon or evening at the congregation, for greeting someone. */
+export function dayPart(now = new Date()): "morning" | "afternoon" | "evening" {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: CONGREGATION_TIMEZONE,
+      hour: "2-digit",
+      hour12: false,
+    }).format(now),
+  );
+  return hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
 }
 
 export function serviceYearRange(serviceYear: number) {

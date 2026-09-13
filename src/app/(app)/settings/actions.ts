@@ -63,6 +63,19 @@ export async function setUserRole(formData: FormData) {
   revalidatePath("/settings");
 }
 
+export async function renameUser(formData: FormData) {
+  const auth = await guard("user:manage");
+  if (!auth.ok) return;
+
+  const id = String(formData.get("id"));
+  const name = userSchema.shape.name.safeParse(formData.get("name"));
+  if (!name.success) return;
+
+  await prisma.user.update({ where: { id }, data: { name: name.data } });
+  await recordAudit(auth.session.userId, "updated", "User", id, `Renamed an account to ${name.data}`);
+  revalidatePath("/settings");
+}
+
 export async function toggleUser(formData: FormData) {
   const auth = await guard("user:manage");
   if (!auth.ok) return;

@@ -5,7 +5,7 @@ import { displayName, formatDateTime } from "@/lib/format";
 import { PageHeader, Section, DataTable, Th, Td } from "@/components/shell";
 import { Badge } from "@/components/ui";
 import { NewUserForm, PasswordForm, FormUpload } from "./forms";
-import { setUserRole, toggleUser, removeForm } from "./actions";
+import { setUserRole, renameUser, toggleUser, removeForm } from "./actions";
 import { listTemplates, FORM_LABELS } from "@/lib/forms";
 import { Button } from "@/components/ui";
 import type { FormKind } from "@prisma/client";
@@ -57,9 +57,22 @@ export default async function SettingsPage() {
             {users.map((u) => (
               <tr key={u.id}>
                 <Td>
-                  {u.name}
-                  {u.id === session.userId && <span className="ml-2"><Badge>You</Badge></span>}
-                  {!u.active && <span className="ml-2"><Badge tone="bad">Suspended</Badge></span>}
+                  <form action={renameUser} className="flex items-center gap-1.5">
+                    <input type="hidden" name="id" value={u.id} />
+                    <input
+                      name="name"
+                      defaultValue={u.name}
+                      className="w-40 rounded border border-rule-strong bg-surface px-2 py-1 text-xs"
+                      aria-label={`Name shown for ${u.name}`}
+                    />
+                    <button className="text-xs text-pine hover:underline">Rename</button>
+                  </form>
+                  {(u.id === session.userId || !u.active) && (
+                    <div className="mt-1 flex items-center gap-1.5">
+                      {u.id === session.userId && <Badge>You</Badge>}
+                      {!u.active && <Badge tone="bad">Suspended</Badge>}
+                    </div>
+                  )}
                   {u.publisher && (
                     <span className="block text-xxs text-ink-faint">
                       Record: {displayName(u.publisher)}

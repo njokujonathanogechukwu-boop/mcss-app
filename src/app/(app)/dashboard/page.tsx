@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import {
-  currentServiceYear, serviceYearMonths, serviceYearLabel, reportingMonth, monthLabel, serviceYearOptions, serviceYearOf,
+  currentServiceYear, serviceYearMonths, serviceYearLabel, serviceYearSpan, reportingMonth, monthLabel, serviceYearOptions, serviceYearOf, dayPart,
 } from "@/lib/service-year";
 import { analyse, parsePeriod, periodKey } from "@/lib/analysis";
 import { formatDate, formatTimeRange, displayName } from "@/lib/format";
@@ -20,9 +20,13 @@ export default async function DashboardPage({
   const user = await requireUser();
   const { denied, sy, period: periodParam } = await searchParams;
 
+  const now = new Date();
+  const thisYear = currentServiceYear(now);
+  const collecting = reportingMonth(now);
+
   // The month being looked at defaults to the one reports are being collected
   // for; the strip follows whichever service year that month falls in.
-  const period = parsePeriod(periodParam) ?? reportingMonth();
+  const period = parsePeriod(periodParam) ?? collecting;
   const serviceYear = Number(sy) || serviceYearOf(period.year, period.month);
   const months = serviceYearMonths(serviceYear);
   const monthOptions = serviceYearMonths(serviceYear).filter(
@@ -74,8 +78,8 @@ export default async function DashboardPage({
   return (
     <>
       <PageHeader
-        title={`Good day, ${user.name.split(" ")[0]}`}
-        description={`Service year ${serviceYearLabel(serviceYear)}. Reports are currently being collected for ${monthLabel(reportingMonth().year, reportingMonth().month)}.`}
+        title={`Good ${dayPart(now)}, ${user.name.split(" ")[0]}`}
+        description={`Service year ${serviceYearLabel(thisYear)} (${serviceYearSpan(thisYear)}). Reports for ${monthLabel(collecting.year, collecting.month)} are being collected.`}
         actions={
           <>
             <form method="get" className="flex items-center gap-2">
