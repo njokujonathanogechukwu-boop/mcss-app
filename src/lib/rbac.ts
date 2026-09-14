@@ -19,6 +19,12 @@ export const PERMISSIONS = {
   "forms:manage": ["SECRETARY", "COORDINATOR"],
   "boe:read": ["SECRETARY", "COORDINATOR", "ELDER"],
   "boe:write": ["SECRETARY", "COORDINATOR", "ELDER"],
+  "task:read": ["SECRETARY", "COORDINATOR", "ELDER", "SERVANT", "VIEWER"],
+  "task:write": ["SECRETARY", "COORDINATOR", "ELDER", "SERVANT"],
+  "announcement:read": ["SECRETARY", "COORDINATOR", "ELDER", "SERVANT", "VIEWER"],
+  "announcement:write": ["SECRETARY", "COORDINATOR", "ELDER", "SERVANT"],
+  // Self-approval: the secretary (or coordinator) both composes and approves.
+  "announcement:approve": ["SECRETARY", "COORDINATOR"],
   "import:run": ["SECRETARY", "COORDINATOR"],
   "export:run": ["SECRETARY", "COORDINATOR", "ELDER"],
   "user:manage": ["SECRETARY", "COORDINATOR"],

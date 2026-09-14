@@ -80,6 +80,18 @@ export const DECISION_LABELS: Record<string, string> = {
   DEFERRED: "Deferred",
 };
 
+export const TASK_LABELS: Record<string, string> = {
+  OPEN: "Open",
+  IN_PROGRESS: "In progress",
+  DONE: "Done",
+};
+
+export const ANNOUNCEMENT_LABELS: Record<string, string> = {
+  DRAFT: "Draft",
+  APPROVED: "Ready to announce",
+  ANNOUNCED: "Announced",
+};
+
 export const BOOKING_LABELS: Record<string, string> = {
   PENDING: "Pending",
   APPROVED: "Approved",

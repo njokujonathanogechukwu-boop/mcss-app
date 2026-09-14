@@ -216,6 +216,25 @@ export const decisionSchema = z.object({
   notes: optionalString,
 });
 
+export const taskSchema = z.object({
+  title: z.string().trim().min(2, "Say what needs doing").max(200),
+  detail: optionalString,
+  dueDate: optionalDate,
+  assigneeId: optionalString,
+});
+
+/**
+ * An announcement as composed. `status` is DRAFT when it is still being
+ * written or APPROVED when the secretary finalises it (self-approval); the
+ * ANNOUNCED state is set later by marking it announced.
+ */
+export const announcementSchema = z.object({
+  title: z.string().trim().min(2, "Give the announcement a title").max(200),
+  body: z.string().trim().min(2, "Write the announcement, or draft it with AI").max(4000),
+  eventDate: optionalDate,
+  status: z.enum(["DRAFT", "APPROVED"]),
+});
+
 export const userSchema = z.object({
   name: z.string().trim().min(2, "Enter the person's name").max(120),
   email: z.string().trim().email("Enter a valid email").max(160),
