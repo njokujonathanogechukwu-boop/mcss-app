@@ -42,6 +42,7 @@ export default async function EditPublisherPage({
             ...publisher,
             dateOfBirth: toDateInput(publisher.dateOfBirth),
             baptismDate: toDateInput(publisher.baptismDate),
+            sinceDate: toDateInput(publisher.sinceDate),
           }}
         />
       </div>

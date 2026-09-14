@@ -67,6 +67,7 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
       firstName: true,
       lastName: true,
       groupId: true,
+      sinceDate: true,
       group: {
         select: {
           number: true,
@@ -80,6 +81,10 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
     orderBy: [{ group: { number: "asc" } }, { lastName: "asc" }, { firstName: "asc" }],
   });
 
+  // A publisher recorded as moving in or starting after the month asked about
+  // was not on the roll yet, so nothing was expected of them for it.
+  const monthEnd = new Date(Date.UTC(year, month, 0, 23, 59, 59));
+
   type Bucket = {
     number: number | null;
     name: string | null;
@@ -91,6 +96,7 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
   const buckets = new Map<string, Bucket>();
 
   for (const p of publishers) {
+    if (p.sinceDate && p.sinceDate > monthEnd) continue;
     const key = p.groupId ?? "none";
     let bucket = buckets.get(key);
     if (!bucket) {

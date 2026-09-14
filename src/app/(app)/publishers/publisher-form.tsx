@@ -19,6 +19,8 @@ type Publisher = {
   appointment?: string;
   pioneerStatus?: string;
   status?: string;
+  sinceDate?: string;
+  sinceKind?: string | null;
   privileges?: string[];
   phone?: string | null;
   email?: string | null;
@@ -113,6 +115,19 @@ export function PublisherForm({
             label="Service group" name="groupId" defaultValue={publisher.groupId ?? ""} error={e.groupId}
             placeholder="Not assigned"
             options={groups.map((g) => ({ value: g.id, label: `${g.number} — ${g.name}` }))}
+          />
+          <TextField
+            label="With the congregation since" name="sinceDate" type="date"
+            defaultValue={publisher.sinceDate} error={e.sinceDate}
+            hint="Leave blank for publishers already on the books."
+          />
+          <SelectField
+            label="How they came on the roll" name="sinceKind" defaultValue={publisher.sinceKind ?? ""} error={e.sinceKind}
+            placeholder="Not recorded"
+            options={[
+              { value: "MOVED_IN", label: "Moved in from another congregation" },
+              { value: "STARTED_PUBLISHING", label: "Started publishing here" },
+            ]}
           />
         </div>
         <TextField

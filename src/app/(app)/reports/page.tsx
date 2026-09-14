@@ -44,24 +44,29 @@ export default async function ReportsPage({
     prisma.serviceGroup.findMany({ where: { active: true }, orderBy: { number: "asc" } }),
   ]);
 
-  const rows: SheetRow[] = publishers.map((p) => {
-    const existing = p.reports[0];
-    return {
-      id: p.id,
-      name: displayName(p),
-      group: p.group ? `Group ${p.group.number}` : "No group",
-      pioneerStatus: p.pioneerStatus,
-      existing: existing
-        ? {
-            outcome: existing.outcome,
-            bibleStudies: existing.bibleStudies,
-            hours: existing.hours,
-            pioneerStatusUsed: existing.pioneerStatusUsed,
-            remarks: existing.remarks,
-          }
-        : null,
-    };
-  });
+  // A publisher recorded as moving in or starting after this month was not on
+  // the roll yet, so no report is expected of them for it.
+  const monthEnd = new Date(Date.UTC(year, month, 0, 23, 59, 59));
+  const rows: SheetRow[] = publishers
+    .filter((p) => !p.sinceDate || p.sinceDate <= monthEnd)
+    .map((p) => {
+      const existing = p.reports[0];
+      return {
+        id: p.id,
+        name: displayName(p),
+        group: p.group ? `Group ${p.group.number}` : "No group",
+        pioneerStatus: p.pioneerStatus,
+        existing: existing
+          ? {
+              outcome: existing.outcome,
+              bibleStudies: existing.bibleStudies,
+              hours: existing.hours,
+              pioneerStatusUsed: existing.pioneerStatusUsed,
+              remarks: existing.remarks,
+            }
+          : null,
+      };
+    });
 
   const shared = rows.filter((r) => r.existing?.outcome === "SHARED").length;
   const didNotPreach = rows.filter((r) => r.existing?.outcome === "DID_NOT_PREACH").length;

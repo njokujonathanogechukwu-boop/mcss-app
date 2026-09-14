@@ -119,6 +119,20 @@ export default async function PublisherPage({
         <Fact label="Baptized" value={publisher.isBaptized ? formatDate(publisher.baptismDate) : "Not baptized"} />
         <Fact label="Date of birth" value={formatDate(publisher.dateOfBirth)} />
         <Fact label="Hope" value={publisher.isAnointed ? "Anointed" : "Other sheep"} />
+        <Fact
+          label="With the congregation"
+          value={
+            publisher.sinceDate
+              ? `${formatDate(publisher.sinceDate)} · ${
+                  publisher.sinceKind === "MOVED_IN"
+                    ? "moved in"
+                    : publisher.sinceKind === "STARTED_PUBLISHING"
+                      ? "started publishing"
+                      : "on the roll"
+                }`
+              : "Not recorded"
+          }
+        />
       </div>
 
       {held.length > 0 && (

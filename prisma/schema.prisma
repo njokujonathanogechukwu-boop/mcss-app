@@ -48,6 +48,11 @@ enum PublisherStatus {
   DECEASED
 }
 
+enum SinceKind {
+  MOVED_IN
+  STARTED_PUBLISHING
+}
+
 enum MeetingType {
   MIDWEEK
   WEEKEND
@@ -153,6 +158,13 @@ model Publisher {
   pioneerStatus PioneerStatus   @default(NONE)
   status        PublisherStatus @default(ACTIVE)
   privileges    String[]        @default([])
+
+  // When they came onto this congregation's roll: moved in from another
+  // congregation, or took up publishing here. Null for publishers already on
+  // the books before this was tracked; nothing is expected of a publisher
+  // before this date, so reminders and the report sheet skip earlier months.
+  sinceDate DateTime?  @db.Date
+  sinceKind SinceKind?
 
   phone                 String?
   email                 String?

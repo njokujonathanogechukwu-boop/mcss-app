@@ -20,6 +20,8 @@ function readPublisher(formData: FormData) {
     appointment: formData.get("appointment"),
     pioneerStatus: formData.get("pioneerStatus"),
     status: formData.get("status"),
+    sinceDate: formData.get("sinceDate") ?? "",
+    sinceKind: String(formData.get("sinceKind") ?? "") || null,
     privileges: String(formData.get("privileges") ?? "")
       .split(",")
       .map((s) => s.trim())

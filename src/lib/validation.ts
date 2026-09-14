@@ -32,6 +32,8 @@ export const publisherSchema = z.object({
   appointment: z.enum(["PUBLISHER", "MINISTERIAL_SERVANT", "ELDER"]),
   pioneerStatus: z.enum(["NONE", "AUXILIARY", "REGULAR", "SPECIAL"]),
   status: z.enum(["ACTIVE", "IRREGULAR", "INACTIVE", "TRANSFERRED_OUT", "DECEASED"]),
+  sinceDate: optionalDate,
+  sinceKind: z.enum(["MOVED_IN", "STARTED_PUBLISHING"]).nullable(),
   privileges: z.array(z.string().trim().min(1)).default([]),
   phone: optionalString,
   email: optionalEmail,
