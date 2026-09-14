@@ -71,7 +71,7 @@ export default async function S10Page({ searchParams }: { searchParams: Promise<
 
       <Section
         title="1 · Attendance and publishers"
-        description="Averages are the service-year totals from the meeting attendance record, rounded to the nearest whole number — the same figures the S-88 carries."
+        description="Averages are the service-year totals from the meeting attendance record, rounded to the nearest whole number — the same figures the S-88 carries. If the congregation was formed during the service year, the figures cover only the months it has been active: months with no attendance recorded do not pull the averages down."
       >
         <div className="grid gap-3 sm:grid-cols-2">
           <Figure label="Weekend meeting" value={f.weekendAverage ?? "—"} hint={`${f.weekendMeetings} meetings counted`} />
@@ -83,12 +83,12 @@ export default async function S10Page({ searchParams }: { searchParams: Promise<
           <Figure
             label="All active publishers"
             value={f.allActive.length}
-            hint={`Reported at least once between ${f.activeWindow}. Includes pioneers, unbaptized and irregular publishers, reactivated, deaf, blind, incarcerated and special full-time servants.`}
+            hint={`Count all persons in the congregation who reported at least once in the last six months (${f.activeWindow}). Includes pioneers, unbaptized and irregular publishers, reactivated, deaf, blind, incarcerated and special full-time servants.`}
           />
           <Figure
             label="New inactive publishers"
             value={f.newInactive.length}
-            hint="First went six consecutive months without a report inside this service year. Earlier drop-offs are not counted."
+            hint="Publishers who have not reported for six consecutive months, that period closing inside this service year. Do not include those who became inactive in previous service years and have remained inactive — only each publisher's first six-month gap is looked at."
           />
           <Figure
             label="Reactivated publishers"
