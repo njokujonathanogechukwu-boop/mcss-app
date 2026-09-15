@@ -17,7 +17,7 @@ export async function GET() {
     return new NextResponse("Only the secretary or coordinator can download a backup.", { status: 403 });
   }
 
-  const [publishers, groups, reports, attendance, memorials, resources, bookings, decisions, transfers, privileges, assignments, users, audit] =
+  const [publishers, groups, reports, attendance, memorials, resources, bookings, decisions, transfers, privileges, assignments, users, audit, auxPioneers, tasks, announcements, standing] =
     await Promise.all([
       prisma.publisher.findMany(),
       prisma.serviceGroup.findMany(),
@@ -32,6 +32,10 @@ export async function GET() {
       prisma.publisherPrivilege.findMany(),
       prisma.user.findMany({ select: { id: true, email: true, name: true, role: true, active: true, publisherId: true, createdAt: true } }),
       prisma.auditLog.findMany({ orderBy: { createdAt: "asc" } }),
+      prisma.auxiliaryPioneer.findMany(),
+      prisma.task.findMany(),
+      prisma.announcement.findMany(),
+      prisma.standingRecord.findMany(),
     ]);
 
   const backup = {
@@ -39,6 +43,7 @@ export async function GET() {
     exportedBy: session.email,
     application: "Maitama Congregation Secretary System",
     publishers, groups, reports, attendance, memorials, resources, bookings, decisions, transfers, privileges, assignments, users, audit,
+    auxPioneers, tasks, announcements, standing,
   };
 
   const stamp = new Date().toISOString().slice(0, 10);

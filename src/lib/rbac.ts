@@ -19,6 +19,10 @@ export const PERMISSIONS = {
   "forms:manage": ["SECRETARY", "COORDINATOR"],
   "boe:read": ["SECRETARY", "COORDINATOR", "ELDER"],
   "boe:write": ["SECRETARY", "COORDINATOR", "ELDER"],
+  // Reproofs, removals, reinstatements and restrictions: elders only, and never
+  // part of the meeting summary that goes round the body of elders.
+  "standing:read": ["SECRETARY", "COORDINATOR", "ELDER"],
+  "standing:write": ["SECRETARY", "COORDINATOR", "ELDER"],
   "task:read": ["SECRETARY", "COORDINATOR", "ELDER", "SERVANT", "VIEWER"],
   "task:write": ["SECRETARY", "COORDINATOR", "ELDER", "SERVANT"],
   "announcement:read": ["SECRETARY", "COORDINATOR", "ELDER", "SERVANT", "VIEWER"],

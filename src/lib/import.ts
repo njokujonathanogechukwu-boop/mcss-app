@@ -79,6 +79,8 @@ function parsePioneer(value: string) {
 function parseStatus(value: string) {
   const v = value.trim().toLowerCase();
   if (!v) return "ACTIVE" as const;
+  if (v.includes("disfellowship")) return "DISFELLOWSHIPPED" as const;
+  if (v.includes("disassociat")) return "DISASSOCIATED" as const;
   if (v.includes("irregular")) return "IRREGULAR" as const;
   if (v.includes("inactive") || v === "no" || v === "false") return "INACTIVE" as const;
   if (v.includes("transfer")) return "TRANSFERRED_OUT" as const;
@@ -107,7 +109,7 @@ export type ParsedRow = {
   isBaptized: boolean;
   appointment: "PUBLISHER" | "MINISTERIAL_SERVANT" | "ELDER";
   pioneerStatus: "NONE" | "AUXILIARY" | "REGULAR" | "SPECIAL";
-  status: "ACTIVE" | "IRREGULAR" | "INACTIVE" | "TRANSFERRED_OUT" | "DECEASED";
+  status: "ACTIVE" | "IRREGULAR" | "INACTIVE" | "DISFELLOWSHIPPED" | "DISASSOCIATED" | "TRANSFERRED_OUT" | "DECEASED";
   groupLabel: string | null;
   phone: string | null;
   email: string | null;

@@ -44,8 +44,21 @@ enum PublisherStatus {
   ACTIVE
   IRREGULAR
   INACTIVE
+  DISFELLOWSHIPPED
+  DISASSOCIATED
   TRANSFERRED_OUT
   DECEASED
+}
+
+// What the body of elders records about a publisher's standing. Kept apart
+// from BoeDecision because these matters are confidential and are never part
+// of the meeting summary shared with the elders.
+enum StandingKind {
+  REPROVED
+  DISFELLOWSHIPPED
+  DISASSOCIATED
+  REINSTATED
+  RESTRICTION
 }
 
 enum SinceKind {
@@ -120,6 +133,7 @@ model User {
   auditEntries      AuditLog[]
   createdTasks        Task[]         @relation("TaskCreator")
   createdAnnouncements Announcement[] @relation("AnnouncementCreator")
+  recordedStandings    StandingRecord[] @relation("StandingRecorder")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -207,6 +221,7 @@ model Publisher {
   privilegeAssignments PublisherPrivilege[] @relation("PublisherPrivileges")
   assignedTasks        Task[]               @relation("TaskAssignee")
   auxApprovals         AuxiliaryPioneer[]   @relation("AuxApprovals")
+  standingRecords      StandingRecord[]     @relation("PublisherStanding")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -214,6 +229,31 @@ model Publisher {
   @@index([lastName, firstName])
   @@index([groupId])
   @@index([status])
+}
+
+// One row per dated event in a publisher's standing: a reproof, a removal, a
+// reinstatement or a restriction. `announcedDate` is the date the announcement
+// was read to the congregation, if there was one; `liftedDate` applies only to
+// restrictions and stays null while they are still running.
+model StandingRecord {
+  id          String       @id @default(cuid())
+  publisherId String
+  publisher   Publisher    @relation("PublisherStanding", fields: [publisherId], references: [id], onDelete: Cascade)
+  kind        StandingKind
+
+  eventDate     DateTime  @db.Date
+  announcedDate DateTime? @db.Date
+  liftedDate    DateTime? @db.Date
+  notes         String?
+
+  recordedById String?
+  recordedBy   User?     @relation("StandingRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([publisherId, eventDate])
+  @@index([kind])
 }
 
 model TransferLog {

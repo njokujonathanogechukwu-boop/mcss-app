@@ -69,8 +69,38 @@ export const STATUS_LABELS: Record<string, string> = {
   ACTIVE: "Active",
   IRREGULAR: "Irregular",
   INACTIVE: "Inactive",
+  DISFELLOWSHIPPED: "Disfellowshipped",
+  DISASSOCIATED: "Disassociated",
   TRANSFERRED_OUT: "Transferred out",
   DECEASED: "Deceased",
+};
+
+export const STANDING_LABELS: Record<string, string> = {
+  REPROVED: "Reproved",
+  DISFELLOWSHIPPED: "Disfellowshipped",
+  DISASSOCIATED: "Disassociated",
+  REINSTATED: "Reinstated",
+  RESTRICTION: "Restrictions placed",
+};
+
+export type BadgeTone = "good" | "warn" | "bad" | "neutral";
+
+export const STATUS_TONE: Record<string, BadgeTone> = {
+  ACTIVE: "good",
+  IRREGULAR: "warn",
+  INACTIVE: "bad",
+  DISFELLOWSHIPPED: "bad",
+  DISASSOCIATED: "bad",
+  TRANSFERRED_OUT: "neutral",
+  DECEASED: "neutral",
+};
+
+export const STANDING_TONE: Record<string, BadgeTone> = {
+  REPROVED: "warn",
+  DISFELLOWSHIPPED: "bad",
+  DISASSOCIATED: "bad",
+  REINSTATED: "good",
+  RESTRICTION: "warn",
 };
 
 export const DECISION_LABELS: Record<string, string> = {

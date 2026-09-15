@@ -3,18 +3,13 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
-import { displayName, formatDate, toDateInput, APPOINTMENT_LABELS, PIONEER_LABELS, STATUS_LABELS, GENDER_LABELS } from "@/lib/format";
+import { displayName, formatDate, toDateInput, APPOINTMENT_LABELS, PIONEER_LABELS, STATUS_LABELS, STATUS_TONE, GENDER_LABELS } from "@/lib/format";
 import { PageHeader, DataTable, Th, EmptyState } from "@/components/shell";
 import { Button } from "@/components/ui";
 import { currentServiceYear } from "@/lib/service-year";
 import { PublisherRow } from "./publisher-row";
 
 export const dynamic = "force-dynamic";
-
-const STATUS_TONE: Record<string, "good" | "warn" | "bad" | "neutral"> = {
-  ACTIVE: "good", IRREGULAR: "warn", INACTIVE: "bad",
-  TRANSFERRED_OUT: "neutral", DECEASED: "neutral",
-};
 
 export default async function PublishersPage({
   searchParams,

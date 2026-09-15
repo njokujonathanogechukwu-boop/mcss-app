@@ -1,8 +1,9 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { displayName, formatDate, DECISION_LABELS } from "@/lib/format";
 import { PageHeader, Section, EmptyState, Panel } from "@/components/shell";
-import { Badge } from "@/components/ui";
+import { Badge, Button } from "@/components/ui";
 import { DecisionForm } from "./decision-form";
 import { DecisionEdit } from "./decision-edit";
 import { setDecisionStatus } from "./actions";
@@ -48,7 +49,12 @@ export default async function BoePage() {
     <>
       <PageHeader
         title="Items from the body of elders"
-        description="Decisions, who is carrying them out, and when they are due. Confidential judicial matters do not belong here."
+        description="Decisions, who is carrying them out, and when they are due. Reproofs, removals, reinstatements and restrictions are kept apart under Publisher standing and never appear in these meeting summaries."
+        actions={
+          <Link href="/boe/standing">
+            <Button variant="secondary" size="sm">Publisher standing</Button>
+          </Link>
+        }
       />
 
       {overdue.length > 0 && (

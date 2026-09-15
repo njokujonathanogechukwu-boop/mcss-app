@@ -103,10 +103,13 @@ export function PublisherForm({
           />
           <SelectField
             label="Record status" name="status" defaultValue={publisher.status ?? "ACTIVE"} error={e.status}
+            hint="Disfellowshipped and disassociated are normally set for you when the standing event is recorded."
             options={[
               { value: "ACTIVE", label: "Active" },
               { value: "IRREGULAR", label: "Irregular" },
               { value: "INACTIVE", label: "Inactive" },
+              { value: "DISFELLOWSHIPPED", label: "Disfellowshipped" },
+              { value: "DISASSOCIATED", label: "Disassociated" },
               { value: "TRANSFERRED_OUT", label: "Transferred out" },
               { value: "DECEASED", label: "Deceased" },
             ]}

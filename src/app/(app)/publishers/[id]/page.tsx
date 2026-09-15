@@ -8,6 +8,7 @@ import {
 } from "@/lib/service-year";
 import {
   displayName, formatDate, APPOINTMENT_LABELS, PIONEER_LABELS, STATUS_LABELS, reportsHours,
+  STANDING_LABELS, STANDING_TONE,
 } from "@/lib/format";
 import { PageHeader, Section, DataTable, Th, Td, Notice, Panel } from "@/components/shell";
 import { Badge, Button } from "@/components/ui";
@@ -58,6 +59,12 @@ export default async function PublisherPage({
         where: { id: { not: id } },
         select: { id: true, firstName: true, lastName: true, group: { select: { number: true } } },
         orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+      })
+    : [];
+  const standing = can(user.role, "standing:read")
+    ? await prisma.standingRecord.findMany({
+        where: { publisherId: id },
+        orderBy: [{ eventDate: "desc" }, { createdAt: "desc" }],
       })
     : [];
   const [reports, groups] = await Promise.all([
@@ -145,6 +152,34 @@ export default async function PublisherPage({
               <Badge key={p}>{p}</Badge>
             ))}
           </div>
+        </Section>
+      )}
+
+      {standing.length > 0 && (
+        <Section
+          title="Standing"
+          description="Confidential — elders only."
+          actions={<Link href="/boe/standing" className="text-xs text-pine hover:underline">Manage</Link>}
+        >
+          <ul className="divide-y divide-rule rounded border border-rule bg-surface">
+            {standing.map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5">
+                <Badge tone={STANDING_TONE[r.kind] ?? "neutral"}>
+                  {STANDING_LABELS[r.kind] ?? r.kind}
+                </Badge>
+                <span className="text-xs text-ink-soft">{formatDate(r.eventDate)}</span>
+                {r.announcedDate && (
+                  <span className="text-xs text-ink-faint">announced {formatDate(r.announcedDate)}</span>
+                )}
+                {r.kind === "RESTRICTION" && (
+                  <span className={`text-xs ${r.liftedDate ? "text-pine-dark" : "text-clay"}`}>
+                    {r.liftedDate ? `lifted ${formatDate(r.liftedDate)}` : "still running"}
+                  </span>
+                )}
+                {r.notes && <span className="text-xs text-ink-soft">{r.notes}</span>}
+              </li>
+            ))}
+          </ul>
         </Section>
       )}
 

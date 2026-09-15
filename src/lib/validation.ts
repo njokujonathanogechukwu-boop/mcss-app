@@ -31,7 +31,7 @@ export const publisherSchema = z.object({
   isAnointed: z.coerce.boolean(),
   appointment: z.enum(["PUBLISHER", "MINISTERIAL_SERVANT", "ELDER"]),
   pioneerStatus: z.enum(["NONE", "AUXILIARY", "REGULAR", "SPECIAL"]),
-  status: z.enum(["ACTIVE", "IRREGULAR", "INACTIVE", "TRANSFERRED_OUT", "DECEASED"]),
+  status: z.enum(["ACTIVE", "IRREGULAR", "INACTIVE", "DISFELLOWSHIPPED", "DISASSOCIATED", "TRANSFERRED_OUT", "DECEASED"]),
   sinceDate: optionalDate,
   sinceKind: z.enum(["MOVED_IN", "STARTED_PUBLISHING"]).nullable(),
   privileges: z.array(z.string().trim().min(1)).default([]),
@@ -214,6 +214,31 @@ export const decisionSchema = z.object({
   targetDate: optionalDate,
   status: z.enum(["OPEN", "IN_PROGRESS", "COMPLETED", "DEFERRED"]),
   notes: optionalString,
+});
+
+const requiredDate = (message: string) =>
+  z
+    .string()
+    .trim()
+    .refine((v) => !Number.isNaN(Date.parse(v)), message)
+    .transform((v) => new Date(v));
+
+/**
+ * One dated entry in a publisher's standing. The announcement date is optional
+ * because a reproof is not always announced to the congregation; restrictions
+ * are closed off later by liftSchema rather than when they are recorded.
+ */
+export const standingSchema = z.object({
+  publisherId: z.string().min(1, "Choose the publisher"),
+  kind: z.enum(["REPROVED", "DISFELLOWSHIPPED", "DISASSOCIATED", "REINSTATED", "RESTRICTION"]),
+  eventDate: requiredDate("Enter the date this happened"),
+  announcedDate: optionalDate,
+  notes: optionalString,
+});
+
+export const liftSchema = z.object({
+  id: z.string().min(1, "Missing record."),
+  liftedDate: requiredDate("Enter the date the restrictions were lifted"),
 });
 
 export const taskSchema = z.object({
