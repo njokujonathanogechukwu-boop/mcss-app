@@ -7,7 +7,7 @@ import clsx from "clsx";
 import {
   LayoutDashboard, Users, UsersRound, ClipboardList, CalendarCheck,
   Building2, Gavel, Upload, Settings, Menu, X, LogOut, Award,
-  ClipboardCheck, Smartphone, ListTodo,
+  ClipboardCheck, Smartphone, ListTodo, Mail,
 } from "lucide-react";
 import type { Role } from "@prisma/client";
 import { can, ROLE_LABELS, type Permission } from "@/lib/rbac";
@@ -23,6 +23,7 @@ const LINKS: { href: string; label: string; icon: typeof Users; permission: Perm
   { href: "/privileges", label: "Privileges", icon: Award, permission: "privilege:read" },
   { href: "/boe", label: "Elders' items", icon: Gavel, permission: "boe:read" },
   { href: "/tasks", label: "Tasks & announcements", icon: ListTodo, permission: "task:read" },
+  { href: "/mail", label: "Email", icon: Mail, permission: "mail:send" },
   { href: "/import", label: "Import records", icon: Upload, permission: "import:run" },
   { href: "/m", label: "Phone entry", icon: Smartphone, permission: "report:read" },
   { href: "/settings", label: "Accounts", icon: Settings, permission: "user:manage" },

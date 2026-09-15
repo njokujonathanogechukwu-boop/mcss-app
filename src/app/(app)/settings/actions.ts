@@ -5,6 +5,9 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
 import { userSchema, passwordSchema, fieldErrors } from "@/lib/validation";
+import { sendEmail } from "@/lib/email";
+import { requestOrigin } from "@/lib/self-service";
+import { ROLE_LABELS } from "@/lib/rbac";
 import { inspectTemplate, type TemplateSummary } from "@/lib/pdf/fill";
 import type { FormKind } from "@prisma/client";
 
@@ -41,7 +44,53 @@ export async function createUser(_prev: UserState, formData: FormData): Promise<
 
   await recordAudit(auth.session.userId, "created", "User", user.id, `Created an account for ${user.name}`);
   revalidatePath("/settings");
-  return { ok: `Account created for ${user.name}. Ask them to change the password when they first sign in.` };
+
+  let mailNote = "";
+  if (formData.get("welcomeEmail") === "true") {
+    const origin = await requestOrigin();
+    const role = ROLE_LABELS[user.role];
+    const firstPassword = formData.get("welcomePassword") === "true" ? password.data : null;
+    const result = await sendEmail(
+      [email],
+      "Your Maitama Congregation account",
+      welcomeBody(user.name, origin, email, role, firstPassword),
+      "ACCOUNT",
+      // The stored copy drops the password: the mail log goes into the backup.
+      firstPassword ? welcomeBody(user.name, origin, email, role, null) : undefined,
+    );
+    mailNote = result.ok
+      ? ` A welcome email went to ${email}.`
+      : ` The welcome email did not go out: ${result.error}`;
+  }
+
+  return {
+    ok: `Account created for ${user.name}. Ask them to change the password when they first sign in.${mailNote}`,
+  };
+}
+
+/** What a new account holder is told when the platform emails them. */
+function welcomeBody(
+  name: string,
+  origin: string | null,
+  email: string,
+  role: string,
+  firstPassword: string | null,
+): string {
+  return [
+    `Dear ${name},`,
+    "",
+    `An account has been opened for you on the Maitama Congregation Secretary System as ${role}.`,
+    "",
+    `Sign in at: ${origin ? `${origin}/login` : "the system's sign-in page"}`,
+    `Email: ${email}`,
+    ...(firstPassword
+      ? [`First password: ${firstPassword}`, "", "Change it as soon as you sign in, under Accounts → Change my password."]
+      : ["", "The secretary will give you your password separately. Change it once you sign in, under Accounts → Change my password."]),
+    "",
+    "If you were not expecting this, please tell the congregation secretary.",
+    "",
+    "Maitama Congregation Secretary",
+  ].join("\n");
 }
 
 export async function setUserRole(formData: FormData) {

@@ -134,6 +134,7 @@ model User {
   createdTasks        Task[]         @relation("TaskCreator")
   createdAnnouncements Announcement[] @relation("AnnouncementCreator")
   recordedStandings    StandingRecord[] @relation("StandingRecorder")
+  sentMail             OutboundMail[]   @relation("MailSender")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -477,6 +478,31 @@ model Announcement {
   updatedAt   DateTime  @updatedAt
 
   @@index([status, eventDate])
+}
+
+// ----------------------------------------------------- outgoing mail
+
+// A copy of every email the platform sends, so the secretary can see what went
+// out, to whom, and whether it was delivered to the mail server. `kind` is one
+// of REMINDER, UPDATE_LINK, ANNOUNCEMENT, ACCOUNT or GENERAL.
+model OutboundMail {
+  id      String  @id @default(cuid())
+  to      String
+  subject String
+  body    String
+  kind    String  @default("GENERAL")
+
+  provider String
+  ok       Boolean
+  error    String?
+
+  sentById String?
+  sentBy   User?   @relation("MailSender", fields: [sentById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([kind])
 }
 
 // ---------------------------------------------------------------- memorial

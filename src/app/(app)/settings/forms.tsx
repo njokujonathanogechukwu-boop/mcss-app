@@ -35,6 +35,8 @@ export function NewUserForm({
   const [role, setRole] = useState("VIEWER");
   const [password, setPassword] = useState("");
   const [active, setActive] = useState(true);
+  const [welcome, setWelcome] = useState(false);
+  const [welcomePassword, setWelcomePassword] = useState(false);
   const [saved, setSaved] = useState(0);
   useEffect(() => {
     if (state.ok) setSaved((n) => n + 1);
@@ -91,6 +93,24 @@ export function NewUserForm({
         label="Account can sign in" name="active" checked={active}
         onChange={(e) => setActive(e.target.checked)}
       />
+
+      <div className="border-t border-rule pt-2">
+        <CheckField
+          label="Email them the sign-in address" name="welcomeEmail" checked={welcome}
+          onChange={(e) => {
+            setWelcome(e.target.checked);
+            if (!e.target.checked) setWelcomePassword(false);
+          }}
+          hint="A short welcome from the congregation's mail account. Needs MAIL_USER and MAIL_APP_PASSWORD to be set up."
+        />
+        <CheckField
+          label="Include the first password in that email" name="welcomePassword"
+          checked={welcomePassword} disabled={!welcome}
+          onChange={(e) => setWelcomePassword(e.target.checked)}
+          hint="Email is not a safe place for a password — only tick this if you would otherwise send it separately."
+        />
+      </div>
+
       <SubmitButton pendingLabel="Creating…">Create account</SubmitButton>
     </form>
   );

@@ -261,6 +261,20 @@ export const announcementSchema = z.object({
 });
 
 /**
+ * A message written on the Email page. Who it goes to is chosen by audience:
+ * addresses typed in, one service group, or every publisher with an email.
+ * Typed addresses are checked one by one in the action, since they arrive as a
+ * single free-text blob.
+ */
+export const mailSchema = z.object({
+  audience: z.enum(["manual", "group", "all"]),
+  addresses: z.string().trim().max(4000),
+  groupId: optionalString,
+  subject: z.string().trim().min(2, "Write a subject").max(200),
+  body: z.string().trim().min(2, "Write the message").max(20000),
+});
+
+/**
  * An approved auxiliary pioneer application. `start` is "YYYY-MM"; `months`
  * blank means indefinite from the start month.
  */

@@ -27,7 +27,7 @@ export async function GET(request: Request) {
   }
 
   if (!emailConfigured()) {
-    return NextResponse.json({ error: "RESEND_API_KEY is not configured; nothing sent." }, { status: 200 });
+    return NextResponse.json({ error: "No mail account is configured; nothing sent." }, { status: 200 });
   }
 
   const { year, month } = reportingMonth();

@@ -196,7 +196,7 @@ export async function sendReminderEmails(year: number, month: number): Promise<S
       summary.noEmail++;
       continue;
     }
-    const result = await sendEmail(g.emails, `Field service report reminder — ${g.title} (${label})`, g.message);
+    const result = await sendEmail(g.emails, `Field service report reminder — ${g.title} (${label})`, g.message, "REMINDER");
     if (result.ok) summary.sent++;
     else {
       summary.failed++;

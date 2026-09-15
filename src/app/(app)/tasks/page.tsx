@@ -19,6 +19,7 @@ export default async function TasksPage() {
   const canWriteTask = can(user.role, "task:write");
   const canWriteAnn = can(user.role, "announcement:write");
   const canApprove = can(user.role, "announcement:approve");
+  const canMail = can(user.role, "mail:send");
 
   const [openTasks, doneTasks, people, drafts, ready, announced] = await Promise.all([
     prisma.task.findMany({
@@ -105,6 +106,14 @@ export default async function TasksPage() {
                           Mark announced
                         </button>
                       </form>
+                    )}
+                    {canMail && (
+                      <Link
+                        href={`/mail?announcement=${a.id}`}
+                        className="rounded border border-rule-strong px-2 py-1 text-xs text-ink-soft hover:border-pine hover:text-pine"
+                      >
+                        Email it
+                      </Link>
                     )}
                     {canWriteAnn && (
                       <>

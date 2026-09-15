@@ -35,8 +35,8 @@ function body(name: string, link: string): string {
 
 /**
  * Emails every publisher who has an email address their personal update link.
- * Sends four at a time so a full congregation stays inside Resend's rate limit
- * and the request's time budget.
+ * Sends four at a time so a full congregation stays inside the sending
+ * account's daily allowance and the request's time budget.
  */
 export async function sendSelfLinkEmails(): Promise<SelfLinkMailSummary> {
   if (!emailConfigured()) return { configured: false, sent: 0, withoutEmail: 0, failed: [] };
@@ -71,7 +71,7 @@ export async function sendSelfLinkEmails(): Promise<SelfLinkMailSummary> {
         failed.push(`${displayName(p)}: no link could be created.`);
         continue;
       }
-      const result = await sendEmail([p.email], SUBJECT, body(p.firstName, `${origin}/my/${token}`));
+      const result = await sendEmail([p.email], SUBJECT, body(p.firstName, `${origin}/my/${token}`), "UPDATE_LINK");
       if (result.ok) sent++;
       else failed.push(`${displayName(p)}: ${result.error}`);
     }
