@@ -18,6 +18,7 @@ export function NamePicker({
   emptyLabel,
   ariaLabel,
   className = "",
+  clearOnSubmit = true,
 }: {
   id: string;
   name: string;
@@ -27,6 +28,10 @@ export function NamePicker({
   emptyLabel?: string;
   ariaLabel?: string;
   className?: string;
+  /** Blank the pick once the form posts. Forms that must keep the pick when
+   * validation fails (e.g. adding an account) turn this off and reset by
+   * remounting instead. */
+  clearOnSubmit?: boolean;
 }) {
   const [selected, setSelected] = useState(defaultValue);
   const [text, setText] = useState(
@@ -39,6 +44,7 @@ export function NamePicker({
   // Once the surrounding form posts, the choice has been sent; blank the field
   // so the next entry starts clean instead of showing the last name.
   useEffect(() => {
+    if (!clearOnSubmit) return;
     const form = inputRef.current?.form;
     if (!form) return;
     const clear = () => {
@@ -52,7 +58,7 @@ export function NamePicker({
     };
     form.addEventListener("submit", clear);
     return () => form.removeEventListener("submit", clear);
-  }, []);
+  }, [clearOnSubmit]);
 
   const filtered = useMemo(() => {
     const q = text.trim().toLowerCase();

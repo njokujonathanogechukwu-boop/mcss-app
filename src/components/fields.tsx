@@ -66,12 +66,13 @@ export function SelectField({
 }
 
 export function NameField({
-  label, name, hint, error, options, defaultValue, placeholder, emptyLabel,
+  label, name, hint, error, options, defaultValue, placeholder, emptyLabel, clearOnSubmit,
 }: Base & {
   options: { value: string; label: string }[];
   defaultValue?: string;
   placeholder?: string;
   emptyLabel?: string;
+  clearOnSubmit?: boolean;
 }) {
   return (
     <Wrapper label={label} name={name} hint={hint} error={error}>
@@ -82,6 +83,7 @@ export function NameField({
         defaultValue={defaultValue}
         placeholder={placeholder}
         emptyLabel={emptyLabel}
+        clearOnSubmit={clearOnSubmit}
       />
     </Wrapper>
   );
