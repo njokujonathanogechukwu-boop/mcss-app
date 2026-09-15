@@ -206,6 +206,7 @@ model Publisher {
   userAccount          User?                @relation("UserPublisher")
   privilegeAssignments PublisherPrivilege[] @relation("PublisherPrivileges")
   assignedTasks        Task[]               @relation("TaskAssignee")
+  auxApprovals         AuxiliaryPioneer[]   @relation("AuxApprovals")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -287,6 +288,30 @@ model ReportPeriod {
 
   @@unique([year, month])
   @@index([year, month])
+}
+
+// An approved auxiliary pioneer application. The form states either a number
+// of months from the start month or indefinite service; `months` null means
+// indefinite until the secretary closes it. Recording an approval also sets
+// the publisher's pioneerStatus to AUXILIARY so hours are expected.
+model AuxiliaryPioneer {
+  id          String    @id @default(cuid())
+  publisherId String
+  publisher   Publisher @relation("AuxApprovals", fields: [publisherId], references: [id], onDelete: Cascade)
+
+  startYear  Int
+  startMonth Int
+  months     Int?
+
+  approvedAt  DateTime  @default(now())
+  announcedAt DateTime?
+  notes       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([publisherId])
+  @@index([startYear, startMonth])
 }
 
 // ------------------------------------------------------------ attendance

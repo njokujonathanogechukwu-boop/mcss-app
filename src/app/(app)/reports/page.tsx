@@ -96,6 +96,9 @@ export default async function ReportsPage({
             <Link href={`/reports/reminders?period=${year}-${month}`}>
               <Button variant="secondary" size="sm">Who has not reported</Button>
             </Link>
+            <Link href={`/reports/auxiliary?period=${year}-${month}`}>
+              <Button variant="secondary" size="sm">Auxiliary pioneers</Button>
+            </Link>
             <Link href={`/reports/summary?sy=${serviceYear}`}>
               <Button variant="secondary" size="sm">Service year summary</Button>
             </Link>

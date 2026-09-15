@@ -235,6 +235,22 @@ export const announcementSchema = z.object({
   status: z.enum(["DRAFT", "APPROVED"]),
 });
 
+/**
+ * An approved auxiliary pioneer application. `start` is "YYYY-MM"; `months`
+ * blank means indefinite from the start month.
+ */
+export const auxSchema = z.object({
+  publisherId: z.string().min(1, "Choose the publisher"),
+  start: z
+    .string()
+    .regex(/^\d{4}-(?:0[1-9]|1[0-2])$/, "Choose the month their service starts"),
+  months: z
+    .union([z.literal(""), z.coerce.number().int("Whole months only").min(1).max(60)])
+    .transform((v) => (v === "" ? null : v))
+    .nullable(),
+  notes: optionalString,
+});
+
 export const userSchema = z.object({
   name: z.string().trim().min(2, "Enter the person's name").max(120),
   email: z.string().trim().email("Enter a valid email").max(160),
