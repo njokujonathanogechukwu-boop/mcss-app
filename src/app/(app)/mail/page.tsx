@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
-import { emailFrom, mailProvider } from "@/lib/email";
+import { emailFrom, mailDiagnostics, mailProvider } from "@/lib/email";
 import { audienceOptions } from "@/lib/mail-audience";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { PageHeader, Section, EmptyState, DataTable, Th, Td, Panel } from "@/components/shell";
 import { Badge, Button } from "@/components/ui";
 import { ComposeForm } from "./compose-form";
+import { TestMailForm } from "./test-form";
 
 export const dynamic = "force-dynamic";
 // A congregation-wide mail goes out one message at a time; the page's action
@@ -23,9 +24,11 @@ const KIND_LABEL: Record<string, string> = {
 
 const SETUP_STEPS = [
   "Create a Gmail account for the congregation, for example maitamasecretary@gmail.com.",
-  "Turn on 2-Step Verification for that account (Google → Security → 2-Step Verification).",
-  "Create an app password (Google → Security → App passwords). It is 16 letters, with no spaces.",
-  "In Vercel → Settings → Environment variables add MAIL_USER (the address) and MAIL_APP_PASSWORD (the app password), then redeploy.",
+  "Turn on 2-Step Verification for that account (Google → Security → 2-Step Verification). Without it Google will not issue an app password and will refuse every sign-in.",
+  "Create an app password (Google → Security → App passwords). It is 16 letters; spaces in it are removed for you.",
+  "In Vercel → your project → Settings → Environment variables, add MAIL_USER (the address) and MAIL_APP_PASSWORD (the app password) for Production.",
+  "Redeploy. A variable added in Vercel does not reach the running app until the next deployment.",
+  "Press Test the connection below and read what it says.",
 ];
 
 export default async function MailPage({
@@ -33,7 +36,7 @@ export default async function MailPage({
 }: {
   searchParams: Promise<{ announcement?: string }>;
 }) {
-  await requirePermission("mail:send");
+  const user = await requirePermission("mail:send");
   const sp = await searchParams;
 
   const [options, recent, announcement] = await Promise.all([
@@ -45,6 +48,7 @@ export default async function MailPage({
   ]);
 
   const provider = mailProvider();
+  const d = mailDiagnostics();
 
   return (
     <>
@@ -105,6 +109,46 @@ export default async function MailPage({
             </>
           )}
         </Panel>
+      </Section>
+
+      <Section
+        title="Is it working?"
+        description="Signs in to the mail account and sends one test message to an address you choose. Nothing goes to any publisher."
+      >
+        <div className="space-y-4">
+          <p className="rounded border border-rule bg-paper px-3 py-2 text-xs text-ink-soft">
+            What this deployment can see:{" "}
+            <span className={d.user ? "text-ink" : "text-clay"}>
+              MAIL_USER {d.user ?? "not set"}
+            </span>
+            {" · "}
+            <span className={d.passwordChars ? "text-ink" : "text-clay"}>
+              MAIL_APP_PASSWORD {d.passwordChars ? `${d.passwordChars} characters` : "not set"}
+            </span>
+            {" · "}
+            <span className={d.resendKey ? "text-ink" : "text-ink-faint"}>
+              RESEND_API_KEY {d.resendKey ? "set" : "not set"}
+            </span>
+          </p>
+
+          {!d.provider && (
+            <p className="text-xs text-clay">
+              Nothing can send until both MAIL_USER and MAIL_APP_PASSWORD are set here, and set for
+              the Production environment. After adding them, redeploy — an environment variable only
+              reaches the app on the next deployment, so the current one carries on with the old
+              settings.
+            </p>
+          )}
+          {d.passwordChars > 0 && d.passwordChars !== 16 && (
+            <p className="text-xs text-clay">
+              A Gmail app password is 16 letters. What reached this deployment is {d.passwordChars}{" "}
+              characters, so it is probably not the whole password. Spaces are removed for you, so
+              paste it exactly as Google shows it.
+            </p>
+          )}
+
+          <TestMailForm ownEmail={user.email} />
+        </div>
       </Section>
 
       {provider ? (

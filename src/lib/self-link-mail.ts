@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { displayName } from "@/lib/format";
-import { sendEmail, emailConfigured } from "@/lib/email";
+import { sendBatch, emailConfigured, type BatchRecipient } from "@/lib/email";
 import { ensureSelfTokens, requestOrigin } from "@/lib/self-service";
 
 export type SelfLinkMailSummary = {
@@ -35,8 +35,9 @@ function body(name: string, link: string): string {
 
 /**
  * Emails every publisher who has an email address their personal update link.
- * Sends four at a time so a full congregation stays inside the sending
- * account's daily allowance and the request's time budget.
+ * The whole congregation goes out over one connection to the mail account, so
+ * it stays inside both the sending account's daily allowance and the request's
+ * time budget.
  */
 export async function sendSelfLinkEmails(): Promise<SelfLinkMailSummary> {
   if (!emailConfigured()) return { configured: false, sent: 0, withoutEmail: 0, failed: [] };
@@ -58,25 +59,23 @@ export async function sendSelfLinkEmails(): Promise<SelfLinkMailSummary> {
   ]);
   const tokens = await ensureSelfTokens(withEmail.map((p) => p.id));
 
-  let sent = 0;
   const failed: string[] = [];
-  const queue = [...withEmail];
-
-  const worker = async () => {
-    for (;;) {
-      const p = queue.shift();
-      if (!p || !p.email) return;
-      const token = tokens.get(p.id);
-      if (!token) {
-        failed.push(`${displayName(p)}: no link could be created.`);
-        continue;
-      }
-      const result = await sendEmail([p.email], SUBJECT, body(p.firstName, `${origin}/my/${token}`), "UPDATE_LINK");
-      if (result.ok) sent++;
-      else failed.push(`${displayName(p)}: ${result.error}`);
+  const recipients: BatchRecipient[] = [];
+  for (const p of withEmail) {
+    const token = p.email ? tokens.get(p.id) : undefined;
+    if (!p.email || !token) {
+      failed.push(`${displayName(p)}: no link could be created.`);
+      continue;
     }
-  };
-  await Promise.all([worker(), worker(), worker(), worker()]);
+    recipients.push({
+      name: displayName(p),
+      email: p.email,
+      text: body(p.firstName, `${origin}/my/${token}`),
+    });
+  }
 
-  return { configured: true, sent, withoutEmail, failed };
+  const result = await sendBatch(recipients, SUBJECT, "", "UPDATE_LINK");
+  failed.push(...result.failed.map((f) => `${f.who}: ${f.error}`));
+
+  return { configured: true, sent: result.sent, withoutEmail, failed };
 }
