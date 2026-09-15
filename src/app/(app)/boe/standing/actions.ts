@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
 import { standingSchema, liftSchema, restrictionSchema, fieldErrors } from "@/lib/validation";
-import { displayName, STANDING_LABELS } from "@/lib/format";
+import { displayName, safeFileName, STANDING_LABELS } from "@/lib/format";
 
 export type StandingState = { error?: string; errors?: Record<string, string>; ok?: string };
 
@@ -258,4 +258,113 @@ export async function deleteStanding(formData: FormData) {
   );
 
   revalidate(record.publisherId);
+}
+
+/** Scanned letters, the completed S-77 and anything else the committee kept. */
+const ALLOWED_EXTENSIONS = ["pdf", "jpg", "jpeg", "png", "webp", "doc", "docx", "txt", "rtf", "msg", "eml"];
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_DOCUMENTS = 20;
+
+export type DocumentState = { error?: string; errors?: Record<string, string>; ok?: string };
+
+/**
+ * Adds documents to a case file. They are kept in the database beside the entry
+ * so the folder export can carry the whole case with it.
+ */
+export async function uploadCaseDocuments(
+  _prev: DocumentState,
+  formData: FormData,
+): Promise<DocumentState> {
+  const auth = await guard("standing:write");
+  if (!auth.ok) return { error: auth.error };
+
+  const recordId = String(formData.get("recordId"));
+  const record = await prisma.standingRecord.findUnique({
+    where: { id: recordId },
+    include: { publisher: { select: { id: true, firstName: true, lastName: true } } },
+  });
+  if (!record) return { error: "That entry is no longer on file." };
+
+  const files = formData
+    .getAll("documents")
+    .filter((f): f is File => f instanceof File && f.size > 0);
+  if (files.length === 0) return { errors: { documents: "Choose at least one file first." } };
+
+  const existing = await prisma.standingDocument.count({ where: { standingRecordId: recordId } });
+  if (existing + files.length > MAX_DOCUMENTS) {
+    return {
+      errors: {
+        documents: `A case file holds ${MAX_DOCUMENTS} documents at most, and this one already has ${existing}.`,
+      },
+    };
+  }
+
+  const rejected: string[] = [];
+  const accepted: { fileName: string; mimeType: string; size: number; bytes: Uint8Array<ArrayBuffer> }[] = [];
+  for (const file of files) {
+    const name = safeFileName(file.name);
+    const ext = name.split(".").pop()?.toLowerCase() ?? "";
+    if (!ALLOWED_EXTENSIONS.includes(ext)) {
+      rejected.push(`${name}: keep scans, photos and documents.`);
+      continue;
+    }
+    if (file.size > MAX_FILE_BYTES) {
+      rejected.push(`${name}: over 10 MB.`);
+      continue;
+    }
+    accepted.push({
+      fileName: name,
+      mimeType: file.type || "application/octet-stream",
+      size: file.size,
+      bytes: new Uint8Array((await file.arrayBuffer()) as ArrayBuffer),
+    });
+  }
+
+  if (accepted.length === 0) return { errors: { documents: rejected.join(" ") } };
+
+  await prisma.standingDocument.createMany({
+    data: accepted.map((d) => ({
+      standingRecordId: recordId,
+      fileName: d.fileName,
+      mimeType: d.mimeType,
+      size: d.size,
+      bytes: d.bytes,
+      uploadedById: auth.session.userId,
+    })),
+  });
+
+  await recordAudit(
+    auth.session.userId, "created", "StandingRecord", recordId,
+    `Added ${accepted.length} document${accepted.length === 1 ? "" : "s"} to the case file of ${displayName(record.publisher)}`,
+  );
+
+  revalidate(record.publisherId);
+  const message = `${accepted.length} document${accepted.length === 1 ? "" : "s"} added to the ${STANDING_LABELS[record.kind].toLowerCase()} case file.`;
+  return rejected.length > 0
+    ? { ok: `${message} Not added: ${rejected.join(" ")}` }
+    : { ok: message };
+}
+
+/** Takes a document off a case file. The entry itself is untouched. */
+export async function deleteCaseDocument(_prev: DocumentState, formData: FormData): Promise<DocumentState> {
+  const auth = await guard("standing:write");
+  if (!auth.ok) return { error: auth.error };
+
+  const id = String(formData.get("documentId"));
+  const doc = await prisma.standingDocument.findUnique({
+    where: { id },
+    include: {
+      standingRecord: { select: { publisherId: true, publisher: { select: { firstName: true, lastName: true } } } },
+    },
+  });
+  if (!doc) return { error: "That document is no longer on file." };
+
+  await prisma.standingDocument.delete({ where: { id } });
+  await recordAudit(
+    auth.session.userId, "deleted", "StandingRecord", doc.standingRecordId,
+    `Removed ${doc.fileName} from the case file of ${displayName(doc.standingRecord.publisher)}`,
+  );
+
+  revalidate(doc.standingRecord.publisherId);
+  return { ok: `${doc.fileName} taken off the case file.` };
 }

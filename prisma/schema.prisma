@@ -135,6 +135,7 @@ model User {
   createdAnnouncements Announcement[] @relation("AnnouncementCreator")
   recordedStandings    StandingRecord[] @relation("StandingRecorder")
   sentMail             OutboundMail[]   @relation("MailSender")
+  standingDocuments    StandingDocument[] @relation("StandingDocumentUploader")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -253,6 +254,8 @@ model StandingRecord {
   parent       StandingRecord?  @relation("StandingRestrictions", fields: [parentId], references: [id], onDelete: Cascade)
   restrictions StandingRecord[] @relation("StandingRestrictions")
 
+  documents StandingDocument[] @relation("StandingCaseDocuments")
+
   recordedById String?
   recordedBy   User?     @relation("StandingRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
 
@@ -262,6 +265,27 @@ model StandingRecord {
   @@index([publisherId, eventDate])
   @@index([kind])
   @@index([parentId])
+}
+
+// A case file's papers: the S-77 itself, a letter requesting reinstatement, a
+// letter of introduction, committee notes. Bytes live in the database because
+// the platform has no other place to keep them, and the entry owns them.
+model StandingDocument {
+  id               String         @id @default(cuid())
+  standingRecordId String
+  standingRecord   StandingRecord @relation("StandingCaseDocuments", fields: [standingRecordId], references: [id], onDelete: Cascade)
+
+  fileName String
+  mimeType String
+  size     Int
+  bytes    Bytes
+
+  uploadedById String?
+  uploadedBy   User?   @relation("StandingDocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([standingRecordId])
 }
 
 model TransferLog {

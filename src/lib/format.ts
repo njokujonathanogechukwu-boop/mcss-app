@@ -47,6 +47,16 @@ export function toDateTimeInput(value: Date | string | null | undefined) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** An uploaded name made safe to store and to put inside a zip. */
+export function safeFileName(name: string): string {
+  const base = name.split(/[\\/]/).pop() ?? "document";
+  const cleaned = base
+    .replace(/[<>:"|?*\u0000-\u001f]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned.slice(0, 120) || "document";
+}
+
 export const GENDER_LABELS: Record<string, string> = {
   MALE: "Male",
   FEMALE: "Female",
