@@ -18,6 +18,10 @@ const GMAIL_USER = process.env.MAIL_USER?.trim() || null;
 const GMAIL_PASSWORD = process.env.MAIL_APP_PASSWORD?.replace(/\s+/g, "") || null;
 const FROM_NAME = process.env.MAIL_FROM_NAME?.trim() || "Maitama Congregation";
 
+// The placeholder printed in .env.example is 16 letters once its spaces go, so
+// it passes every length check and is rejected by Gmail every time.
+const EXAMPLE_PASSWORD = "abcdefghijklmnop";
+
 export type MailProvider = "gmail" | "resend" | null;
 
 export const NOT_CONFIGURED =
@@ -45,6 +49,7 @@ export function mailDiagnostics() {
     provider: mailProvider(),
     user: GMAIL_USER,
     passwordChars: GMAIL_PASSWORD?.length ?? 0,
+    isExamplePassword: GMAIL_PASSWORD?.toLowerCase() === EXAMPLE_PASSWORD,
     fromName: FROM_NAME,
     resendKey: Boolean(process.env.RESEND_API_KEY),
   };

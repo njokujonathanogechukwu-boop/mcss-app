@@ -28,10 +28,21 @@ function describeSettings(): string {
   const d = mailDiagnostics();
   const password = d.passwordChars === 0
     ? "not set"
-    : `${d.passwordChars} characters${d.passwordChars === 16 ? "" : " — an app password is 16 letters"}`;
+    : d.isExamplePassword
+      ? "still the example from .env.example"
+      : `${d.passwordChars} characters${d.passwordChars === 16 ? "" : " — an app password is 16 letters"}`;
   return (
     `What the platform can see: MAIL_USER ${d.user ?? "not set"}, MAIL_APP_PASSWORD ${password}, ` +
     `RESEND_API_KEY ${d.resendKey ? "set" : "not set"}.`
+  );
+}
+
+function examplePasswordError(user: string | null): string {
+  return (
+    "MAIL_APP_PASSWORD is still the sample password printed in .env.example (abcd efgh ijkl mnop). " +
+    "It is not a real password, so Gmail will always refuse it. Make an app password for " +
+    `${user ?? "the congregation's Gmail account"} at Google → Security → App passwords, put that ` +
+    "in Vercel instead, and redeploy."
   );
 }
 
@@ -45,6 +56,9 @@ export async function sendMail(_prev: MailState, formData: FormData): Promise<Ma
   if (!auth.ok) return { error: auth.error };
 
   if (!emailConfigured()) return { error: NOT_CONFIGURED };
+
+  const settings = mailDiagnostics();
+  if (settings.isExamplePassword) return { error: examplePasswordError(settings.user) };
 
   const parsed = mailSchema.safeParse({
     audience: formData.get("audience"),
@@ -110,12 +124,15 @@ export async function testMailConnection(_prev: MailState, formData: FormData): 
   const to = typed || auth.session.email;
   if (!isEmailAddress(to)) return { errors: { to: `"${typed}" is not an email address.` } };
 
+  const settings = mailDiagnostics();
+  if (settings.isExamplePassword) return { error: examplePasswordError(settings.user) };
+
   const check = await verifyMailConnection();
   if (!check.ok) {
     return { error: `${check.error}\n\n${describeSettings()}` };
   }
 
-  const provider = mailDiagnostics().provider;
+  const provider = settings.provider;
   const result = await sendEmail(
     [to],
     "Test email from Maitama Congregation",

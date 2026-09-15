@@ -139,7 +139,15 @@ export default async function MailPage({
               settings.
             </p>
           )}
-          {d.passwordChars > 0 && d.passwordChars !== 16 && (
+          {d.isExamplePassword && (
+            <p className="text-xs text-clay">
+              MAIL_APP_PASSWORD is the sample password printed in <code>.env.example</code>, not a
+              real one, so Gmail refuses it every time. Sign in to {d.user ?? "the congregation's Gmail account"}{" "}
+              at myaccount.google.com, go to Security → App passwords, make one, put it in
+              MAIL_APP_PASSWORD in Vercel, and redeploy.
+            </p>
+          )}
+          {d.passwordChars > 0 && !d.isExamplePassword && d.passwordChars !== 16 && (
             <p className="text-xs text-clay">
               A Gmail app password is 16 letters. What reached this deployment is {d.passwordChars}{" "}
               characters, so it is probably not the whole password. Spaces are removed for you, so
