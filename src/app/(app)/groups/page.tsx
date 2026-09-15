@@ -18,7 +18,9 @@ export default async function GroupsPage() {
       include: {
         overseer: true,
         assistant: true,
-        _count: { select: { members: true } },
+        _count: {
+          select: { members: { where: { status: { in: ["ACTIVE", "IRREGULAR"] } } } },
+        },
       },
       orderBy: { number: "asc" },
     }),
@@ -61,7 +63,7 @@ export default async function GroupsPage() {
                 <Th>Group</Th>
                 <Th>Overseer</Th>
                 <Th>Assistant</Th>
-                <Th align="right">Publishers</Th>
+                <Th align="right">On the roll</Th>
                 <Th align="right"></Th>
               </tr>
             </thead>

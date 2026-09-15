@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { PublisherStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { currentServiceYear, serviceYearLabel, serviceYearOptions } from "@/lib/service-year";
-import { displayName, formatDate, APPOINTMENT_LABELS, PIONEER_LABELS } from "@/lib/format";
+import {
+  displayName, formatDate, APPOINTMENT_LABELS, PIONEER_LABELS, STATUS_LABELS, STATUS_TONE,
+} from "@/lib/format";
 import { PageHeader, Section, DataTable, Th, Td } from "@/components/shell";
 import { Badge, Button } from "@/components/ui";
 import { GroupForm } from "../group-form";
@@ -16,12 +19,13 @@ export default async function GroupPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ sy?: string }>;
+  searchParams: Promise<{ sy?: string; tab?: string }>;
 }) {
   const user = await requirePermission("group:read");
   const { id } = await params;
-  const { sy } = await searchParams;
+  const { sy, tab } = await searchParams;
   const serviceYear = Number(sy) || currentServiceYear();
+  const activeTab = tab === "moved" ? "moved" : "roster";
 
   const group = await prisma.serviceGroup.findUnique({
     where: { id },
@@ -44,11 +48,26 @@ export default async function GroupPage({
     select: { id: true, firstName: true, lastName: true, appointment: true },
   });
 
+  // The roll is what the Excel roster prints, so the two must agree.
+  const onRoll = (status: PublisherStatus) => status === "ACTIVE" || status === "IRREGULAR";
+  // A removal is elders-only, and this page is readable by servants and viewers,
+  // so a disfellowshipped or disassociated publisher is left off it entirely
+  // rather than shown without a reason.
+  const seesRemovals = can(user.role, "standing:read");
+  const roster = group.members.filter((m) => onRoll(m.status));
+  const movedOut = group.members.filter(
+    (m) =>
+      !onRoll(m.status) &&
+      (seesRemovals || (m.status !== "DISFELLOWSHIPPED" && m.status !== "DISASSOCIATED")),
+  );
+
   return (
     <>
       <PageHeader
         title={`Group ${group.number} — ${group.name}`}
-        description={`${group.members.length} publishers. Overseer: ${group.overseer ? displayName(group.overseer) : "not assigned"}.`}
+        description={`${roster.length} publisher${roster.length === 1 ? "" : "s"} on the roll${
+          movedOut.length ? ` · ${movedOut.length} moved out` : ""
+        }. Overseer: ${group.overseer ? displayName(group.overseer) : "not assigned"}.`}
         back={{ href: "/groups", label: "Service groups" }}
         actions={
           can(user.role, "export:run") && (
@@ -64,56 +83,117 @@ export default async function GroupPage({
         }
       />
 
-      <Section
-        title="Roster"
-        actions={
-          <form method="get" className="flex items-center gap-2">
-            <select name="sy" defaultValue={serviceYear} className="field-input py-1 text-xs" aria-label="Service year">
-              {serviceYearOptions().map((y) => (
-                <option key={y} value={y}>{serviceYearLabel(y)}</option>
-              ))}
-            </select>
-            <Button type="submit" variant="secondary" size="sm">Set year</Button>
-          </form>
-        }
-      >
-        {group.members.length === 0 ? (
-          <p className="rounded border border-dashed border-rule-strong bg-surface px-4 py-6 text-sm text-ink-soft">
-            No publishers assigned. Open a publisher's record and set their service group.
-          </p>
-        ) : (
-          <DataTable>
-            <thead>
-              <tr>
-                <Th>Publisher</Th>
-                <Th>Appointment</Th>
-                <Th>Pioneer</Th>
-                <Th>Baptized</Th>
-                <Th align="right">Standing</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {group.members.map((m) => (
-                <tr key={m.id} className="hover:bg-paper">
-                  <Td>
-                    <Link href={`/publishers/${m.id}`} className="font-medium hover:text-pine hover:underline">
-                      {displayName(m)}
-                    </Link>
-                  </Td>
-                  <Td className="text-ink-soft">{APPOINTMENT_LABELS[m.appointment]}</Td>
-                  <Td className="text-ink-soft">{PIONEER_LABELS[m.pioneerStatus]}</Td>
-                  <Td className="text-ink-soft">{m.isBaptized ? formatDate(m.baptismDate) : "—"}</Td>
-                  <Td align="right">
-                    <Badge tone={m.status === "ACTIVE" ? "good" : m.status === "IRREGULAR" ? "warn" : "neutral"}>
-                      {m.status.replace("_", " ").toLowerCase()}
-                    </Badge>
-                  </Td>
+      <div role="tablist" aria-label="Group lists" className="mb-6 flex gap-1 border-b border-rule">
+        {[
+          ["roster", `Roster · ${roster.length}`, `/groups/${id}?sy=${serviceYear}`],
+          ["moved", `Moved out · ${movedOut.length}`, `/groups/${id}?sy=${serviceYear}&tab=moved`],
+        ].map(([key, label, href]) => (
+          <Link
+            key={key}
+            role="tab"
+            href={href}
+            aria-selected={activeTab === key}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm transition-colors ${
+              activeTab === key
+                ? "border-pine font-medium text-pine-dark"
+                : "border-transparent text-ink-soft hover:text-ink"
+            }`}
+          >
+            {label}
+          </Link>
+        ))}
+      </div>
+
+      {activeTab === "roster" ? (
+        <Section
+          title="Roster"
+          description="Publishers on the roll in this group — the same list the Excel roster prints."
+          actions={
+            <form method="get" className="flex items-center gap-2">
+              <select name="sy" defaultValue={serviceYear} className="field-input py-1 text-xs" aria-label="Service year">
+                {serviceYearOptions().map((y) => (
+                  <option key={y} value={y}>{serviceYearLabel(y)}</option>
+                ))}
+              </select>
+              <Button type="submit" variant="secondary" size="sm">Set year</Button>
+            </form>
+          }
+        >
+          {roster.length === 0 ? (
+            <p className="rounded border border-dashed border-rule-strong bg-surface px-4 py-6 text-sm text-ink-soft">
+              No publishers on the roll in this group. Open a publisher&rsquo;s record and set their
+              service group.
+            </p>
+          ) : (
+            <DataTable>
+              <thead>
+                <tr>
+                  <Th>Publisher</Th>
+                  <Th>Appointment</Th>
+                  <Th>Pioneer</Th>
+                  <Th>Baptized</Th>
+                  <Th align="right">Standing</Th>
                 </tr>
-              ))}
-            </tbody>
-          </DataTable>
-        )}
-      </Section>
+              </thead>
+              <tbody>
+                {roster.map((m) => (
+                  <tr key={m.id} className="hover:bg-paper">
+                    <Td>
+                      <Link href={`/publishers/${m.id}`} className="font-medium hover:text-pine hover:underline">
+                        {displayName(m)}
+                      </Link>
+                    </Td>
+                    <Td className="text-ink-soft">{APPOINTMENT_LABELS[m.appointment]}</Td>
+                    <Td className="text-ink-soft">{PIONEER_LABELS[m.pioneerStatus]}</Td>
+                    <Td className="text-ink-soft">{m.isBaptized ? formatDate(m.baptismDate) : "—"}</Td>
+                    <Td align="right">
+                      <Badge tone={STATUS_TONE[m.status] ?? "neutral"}>{STATUS_LABELS[m.status] ?? m.status}</Badge>
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </DataTable>
+          )}
+        </Section>
+      ) : (
+        <Section
+          title="Moved out"
+          description="Still attached to this group but no longer on the roll, so they are not counted, not on the roster and not expected to report. Open a record and set the status back to Active if they return."
+        >
+          {movedOut.length === 0 ? (
+            <p className="rounded border border-dashed border-rule-strong bg-surface px-4 py-6 text-sm text-ink-soft">
+              Nobody has moved out of this group.
+            </p>
+          ) : (
+            <DataTable>
+              <thead>
+                <tr>
+                  <Th>Publisher</Th>
+                  <Th>Appointment</Th>
+                  <Th>Pioneer</Th>
+                  <Th align="right">Record status</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {movedOut.map((m) => (
+                  <tr key={m.id} className="hover:bg-paper">
+                    <Td>
+                      <Link href={`/publishers/${m.id}`} className="font-medium hover:text-pine hover:underline">
+                        {displayName(m)}
+                      </Link>
+                    </Td>
+                    <Td className="text-ink-soft">{APPOINTMENT_LABELS[m.appointment]}</Td>
+                    <Td className="text-ink-soft">{PIONEER_LABELS[m.pioneerStatus]}</Td>
+                    <Td align="right">
+                      <Badge tone={STATUS_TONE[m.status] ?? "neutral"}>{STATUS_LABELS[m.status] ?? m.status}</Badge>
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </DataTable>
+          )}
+        </Section>
+      )}
 
       {group.transfersIn.length > 0 && (
         <Section title="Recently moved into this group">

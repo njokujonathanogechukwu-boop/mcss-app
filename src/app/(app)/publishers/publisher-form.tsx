@@ -103,7 +103,7 @@ export function PublisherForm({
           />
           <SelectField
             label="Record status" name="status" defaultValue={publisher.status ?? "ACTIVE"} error={e.status}
-            hint="Disfellowshipped and disassociated are normally set for you when the standing event is recorded."
+            hint="Anything other than Active or Irregular takes them off the roll and off the group roster; they are listed under the group's Moved out tab instead. Disfellowshipped and disassociated are normally set for you when the standing event is recorded."
             options={[
               { value: "ACTIVE", label: "Active" },
               { value: "IRREGULAR", label: "Irregular" },
