@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { PublisherStatus, StandingRecord } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
@@ -7,9 +8,47 @@ import {
 } from "@/lib/format";
 import { PageHeader, Section, EmptyState } from "@/components/shell";
 import { Badge } from "@/components/ui";
-import { StandingForm, LiftForm, CorrectForm, DeleteRecordButton } from "./standing-forms";
+import {
+  StandingForm, AddRestrictionForm, LiftForm, CorrectForm, DeleteRecordButton,
+} from "./standing-forms";
 
 export const dynamic = "force-dynamic";
+
+type Person = { id: string; firstName: string; lastName: string; status: PublisherStatus };
+type Entry = StandingRecord & { publisher: Person };
+type Parent = Entry & { restrictions: Entry[] };
+
+/** One restriction, whether it hangs off an entry or stands on its own. */
+function RestrictionRow({ r, canWrite, today }: { r: Entry; canWrite: boolean; today: string }) {
+  return (
+    <li className="mt-2 border-l-2 border-rule-strong pl-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone={STANDING_TONE.RESTRICTION}>{STANDING_LABELS.RESTRICTION}</Badge>
+        <span className="text-xs text-ink-soft">placed {formatDate(r.eventDate)}</span>
+        <span className={`text-xs ${r.liftedDate ? "text-pine-dark" : "text-clay"}`}>
+          {r.liftedDate ? `lifted ${formatDate(r.liftedDate)}` : "still running"}
+        </span>
+        {canWrite && (
+          <span className="ml-auto">
+            <DeleteRecordButton id={r.id} />
+          </span>
+        )}
+      </div>
+      {r.notes && <p className="mt-1 text-xs text-ink">{r.notes}</p>}
+      {canWrite && !r.liftedDate && <LiftForm id={r.id} today={today} />}
+      {canWrite && (
+        <CorrectForm
+          id={r.id}
+          publisherId={r.publisherId}
+          kind={r.kind}
+          eventDate={toDateInput(r.eventDate)}
+          announcedDate={toDateInput(r.announcedDate)}
+          notes={r.notes ?? ""}
+        />
+      )}
+    </li>
+  );
+}
 
 export default async function StandingPage() {
   const user = await requirePermission("standing:read");
@@ -18,7 +57,16 @@ export default async function StandingPage() {
 
   const [records, publishers] = await Promise.all([
     prisma.standingRecord.findMany({
-      include: { publisher: { select: { id: true, firstName: true, lastName: true, status: true } } },
+      // Restrictions recorded under an entry are read with that entry, not as
+      // loose events of their own.
+      where: { parentId: null },
+      include: {
+        publisher: { select: { id: true, firstName: true, lastName: true, status: true } },
+        restrictions: {
+          include: { publisher: { select: { id: true, firstName: true, lastName: true, status: true } } },
+          orderBy: [{ eventDate: "desc" }, { createdAt: "desc" }],
+        },
+      },
       orderBy: [{ eventDate: "desc" }, { createdAt: "desc" }],
     }),
     prisma.publisher.findMany({
@@ -27,9 +75,12 @@ export default async function StandingPage() {
     }),
   ]);
 
-  const running = records.filter((r) => r.kind === "RESTRICTION" && !r.liftedDate);
+  const running = records
+    .flatMap((r) => [r, ...r.restrictions])
+    .filter((r) => r.kind === "RESTRICTION" && !r.liftedDate)
+    .sort((a, b) => b.eventDate.getTime() - a.eventDate.getTime());
 
-  const byPublisher = new Map<string, typeof records>();
+  const byPublisher = new Map<string, Parent[]>();
   for (const r of records) {
     const list = byPublisher.get(r.publisherId);
     if (list) list.push(r);
@@ -77,7 +128,7 @@ export default async function StandingPage() {
       {canWrite && (
         <Section
           title="Record what the committee decided"
-          description="One entry per event. The publisher's record status follows automatically."
+          description="One entry per event. The publisher's record status follows automatically. Restrictions can be added under an entry once it is on file."
         >
           <div className="max-w-2xl">
             <StandingForm
@@ -130,13 +181,36 @@ export default async function StandingPage() {
                               {r.liftedDate ? `lifted ${formatDate(r.liftedDate)}` : "still running"}
                             </span>
                           )}
+                          {r.restrictions.length > 0 && (
+                            <span className="text-xs text-ink-faint">
+                              {r.restrictions.length} restriction{r.restrictions.length === 1 ? "" : "s"}
+                              {r.restrictions.some((x) => !x.liftedDate) ? " · running" : " · all lifted"}
+                            </span>
+                          )}
                           {canWrite && (
                             <span className="ml-auto">
-                              <DeleteRecordButton id={r.id} />
+                              <DeleteRecordButton id={r.id} restrictions={r.restrictions.length} />
                             </span>
                           )}
                         </div>
                         {r.notes && <p className="mt-1 text-xs text-ink-soft">{r.notes}</p>}
+
+                        {/* A restriction recorded before entries could carry one. */}
+                        {r.kind === "RESTRICTION" && canWrite && !r.liftedDate && (
+                          <LiftForm id={r.id} today={today} />
+                        )}
+
+                        {r.restrictions.length > 0 && (
+                          <ul className="mt-1">
+                            {r.restrictions.map((x) => (
+                              <RestrictionRow key={x.id} r={x} canWrite={canWrite} today={today} />
+                            ))}
+                          </ul>
+                        )}
+
+                        {canWrite && r.kind !== "RESTRICTION" && (
+                          <AddRestrictionForm parentId={r.id} today={today} />
+                        )}
                         {canWrite && (
                           <CorrectForm
                             id={r.id}

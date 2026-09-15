@@ -241,6 +241,17 @@ export const liftSchema = z.object({
   liftedDate: requiredDate("Enter the date the restrictions were lifted"),
 });
 
+/**
+ * Restrictions placed as part of an entry already on file, so they are read
+ * against the decision that caused them. They inherit the publisher from that
+ * entry and are closed off later by liftSchema.
+ */
+export const restrictionSchema = z.object({
+  parentId: z.string().min(1, "Missing record."),
+  eventDate: requiredDate("Enter the date the restrictions were placed"),
+  notes: optionalString,
+});
+
 export const taskSchema = z.object({
   title: z.string().trim().min(2, "Say what needs doing").max(200),
   detail: optionalString,

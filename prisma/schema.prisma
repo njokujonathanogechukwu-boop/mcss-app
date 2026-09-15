@@ -235,7 +235,9 @@ model Publisher {
 // One row per dated event in a publisher's standing: a reproof, a removal, a
 // reinstatement or a restriction. `announcedDate` is the date the announcement
 // was read to the congregation, if there was one; `liftedDate` applies only to
-// restrictions and stays null while they are still running.
+// restrictions and stays null while they are still running. A restriction may
+// hang off the entry it came from through `parentId`, so the restrictions a
+// committee placed are read against that decision rather than as loose events.
 model StandingRecord {
   id          String       @id @default(cuid())
   publisherId String
@@ -247,6 +249,10 @@ model StandingRecord {
   liftedDate    DateTime? @db.Date
   notes         String?
 
+  parentId     String?
+  parent       StandingRecord?  @relation("StandingRestrictions", fields: [parentId], references: [id], onDelete: Cascade)
+  restrictions StandingRecord[] @relation("StandingRestrictions")
+
   recordedById String?
   recordedBy   User?     @relation("StandingRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
 
@@ -255,6 +261,7 @@ model StandingRecord {
 
   @@index([publisherId, eventDate])
   @@index([kind])
+  @@index([parentId])
 }
 
 model TransferLog {

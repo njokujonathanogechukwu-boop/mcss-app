@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
-import { standingSchema, liftSchema, fieldErrors } from "@/lib/validation";
+import { standingSchema, liftSchema, restrictionSchema, fieldErrors } from "@/lib/validation";
 import { displayName, STANDING_LABELS } from "@/lib/format";
 
 export type StandingState = { error?: string; errors?: Record<string, string>; ok?: string };
@@ -78,6 +78,63 @@ export async function recordStanding(
       ? `${STANDING_LABELS[kind]} recorded for ${displayName(publisher)}; their record status is now ${status === "ACTIVE" ? "Active" : STANDING_LABELS[status]}.`
       : `${STANDING_LABELS[kind]} recorded for ${displayName(publisher)}.`,
   };
+}
+
+/**
+ * Records restrictions placed as part of an entry already on file — a reproof,
+ * a removal or a reinstatement — so they are read against that decision. They
+ * take the publisher from the entry and are lifted on their own later.
+ */
+export async function addRestriction(
+  _prev: StandingState,
+  formData: FormData,
+): Promise<StandingState> {
+  const auth = await guard("standing:write");
+  if (!auth.ok) return { error: auth.error };
+
+  const parsed = restrictionSchema.safeParse({
+    parentId: formData.get("parentId"),
+    eventDate: formData.get("eventDate"),
+    notes: formData.get("notes") ?? "",
+  });
+  if (!parsed.success) return { errors: fieldErrors(parsed.error) };
+
+  const parent = await prisma.standingRecord.findUnique({
+    where: { id: parsed.data.parentId },
+    select: {
+      id: true,
+      kind: true,
+      publisherId: true,
+      publisher: { select: { firstName: true, lastName: true } },
+    },
+  });
+  if (!parent) return { error: "That entry is no longer on file." };
+  if (parent.kind === "RESTRICTION") {
+    return { error: "Record restrictions against the decision they came from, not against another restriction." };
+  }
+  if (parsed.data.eventDate > new Date()) {
+    return { errors: { eventDate: "That date is in the future." } };
+  }
+
+  const record = await prisma.standingRecord.create({
+    data: {
+      publisherId: parent.publisherId,
+      parentId: parent.id,
+      kind: "RESTRICTION",
+      eventDate: parsed.data.eventDate,
+      notes: parsed.data.notes,
+      recordedById: auth.session.userId,
+    },
+  });
+
+  const under = STANDING_LABELS[parent.kind].toLowerCase();
+  await recordAudit(
+    auth.session.userId, "created", "StandingRecord", record.id,
+    `Restrictions placed on ${displayName(parent.publisher)}, under the ${under} entry`,
+  );
+
+  revalidate(parent.publisherId);
+  return { ok: `Restrictions recorded under the ${under} entry for ${displayName(parent.publisher)}.` };
 }
 
 /** Closes off a restriction on the date the elders lifted it. */

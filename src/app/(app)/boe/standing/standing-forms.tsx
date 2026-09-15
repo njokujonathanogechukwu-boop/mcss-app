@@ -6,7 +6,7 @@ import { NamePicker } from "@/components/name-picker";
 import { SubmitButton } from "@/components/ui";
 import { Notice } from "@/components/shell";
 import {
-  recordStanding, liftRestriction, correctStanding, deleteStanding, type StandingState,
+  recordStanding, addRestriction, liftRestriction, correctStanding, deleteStanding, type StandingState,
 } from "./actions";
 
 const KIND_OPTIONS = [
@@ -127,6 +127,46 @@ export function LiftForm({ id, today }: { id: string; today: string }) {
   );
 }
 
+/** Records restrictions against an entry already on file, e.g. a reinstatement. */
+export function AddRestrictionForm({ parentId, today }: { parentId: string; today: string }) {
+  const [state, action] = useActionState<StandingState, FormData>(addRestriction, {});
+  const [when, setWhen] = useState(today);
+  const [notes, setNotes] = useState("");
+  const [saved, setSaved] = useState(0);
+  useEffect(() => {
+    if (state.ok) setSaved((n) => n + 1);
+  }, [state]);
+
+  return (
+    <details className="mt-2">
+      <summary className="cursor-pointer text-xs text-ink-soft hover:text-pine">Add restrictions to this entry</summary>
+      <form key={saved} action={action} className="mt-2 space-y-3 rounded border border-rule bg-paper p-3">
+        <input type="hidden" name="parentId" value={parentId} />
+        {state.error && <Notice tone="error">{state.error}</Notice>}
+        {state.ok && <Notice tone="success">{state.ok}</Notice>}
+        <div>
+          <label htmlFor={`placed-${parentId}`} className="field-label">Date placed</label>
+          <input
+            id={`placed-${parentId}`} name="eventDate" type="date" required className="field-input"
+            value={when} onChange={(e) => setWhen(e.target.value)}
+          />
+          {state.errors?.eventDate && <p className="field-error">{state.errors.eventDate}</p>}
+        </div>
+        <div>
+          <label htmlFor={`withheld-${parentId}`} className="field-label">What was withheld</label>
+          <textarea
+            id={`withheld-${parentId}`} name="notes" rows={2} className="field-input"
+            value={notes} onChange={(e) => setNotes(e.target.value)}
+            placeholder="Say what they may not do, and until when."
+          />
+          {state.errors?.notes && <p className="field-error">{state.errors.notes}</p>}
+        </div>
+        <SubmitButton variant="secondary" size="sm" pendingLabel="Recording…">Record restrictions</SubmitButton>
+      </form>
+    </details>
+  );
+}
+
 /** Corrects the dates or notes on an entry already on file. */
 export function CorrectForm({
   id, publisherId, kind, eventDate, announcedDate, notes,
@@ -182,7 +222,10 @@ export function CorrectForm({
   );
 }
 
-export function DeleteRecordButton({ id }: { id: string }) {
+export function DeleteRecordButton({ id, restrictions = 0 }: { id: string; restrictions?: number }) {
+  const message = restrictions
+    ? `Delete this entry and the ${restrictions} restriction${restrictions === 1 ? "" : "s"} recorded under it? `
+    : "Delete this entry? ";
   return (
     <form action={deleteStanding}>
       <input type="hidden" name="id" value={id} />
@@ -191,7 +234,7 @@ export function DeleteRecordButton({ id }: { id: string }) {
         className="rounded border border-rule-strong px-2 py-1 text-xs text-ink-soft hover:border-clay hover:text-clay"
         onClick={(e) => {
           if (!window.confirm(
-            "Delete this entry? If it changed the publisher's record status, the status goes back to what the remaining entries say.",
+            message + "If it changed the publisher's record status, the status goes back to what the remaining entries say.",
           )) {
             e.preventDefault();
           }
