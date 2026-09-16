@@ -30,3 +30,16 @@ export function auxPeriodLabel(a: {
   const endMonth = (endIdx % 12) + 1;
   return `${start} – ${monthLabel(endYear, endMonth)}`;
 }
+
+/** The span as month-input values ("2026-09"); end is "" while service is open-ended. */
+export function auxSpanInput(a: {
+  startYear: number;
+  startMonth: number;
+  months: number | null;
+}): { start: string; end: string } {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const start = `${a.startYear}-${pad(a.startMonth)}`;
+  if (a.months == null) return { start, end: "" };
+  const endIdx = monthIndexOf(a.startYear, a.startMonth) + a.months - 1;
+  return { start, end: `${Math.floor(endIdx / 12)}-${pad((endIdx % 12) + 1)}` };
+}

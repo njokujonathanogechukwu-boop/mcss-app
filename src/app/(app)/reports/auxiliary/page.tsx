@@ -6,10 +6,10 @@ import {
   reportingMonth, monthLabel, currentServiceYear, serviceYearMonths,
 } from "@/lib/service-year";
 import { displayName, formatDate, PIONEER_LABELS } from "@/lib/format";
-import { auxCovers, auxPeriodLabel } from "@/lib/auxiliary";
+import { auxCovers, auxPeriodLabel, auxSpanInput } from "@/lib/auxiliary";
 import { PageHeader, Section, EmptyState } from "@/components/shell";
 import { Button, SubmitButton } from "@/components/ui";
-import { AuxApprovalForm, AnnounceForm } from "./aux-forms";
+import { AuxApprovalForm, AnnounceForm, EditApprovalForm } from "./aux-forms";
 import { closeApproval } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -100,39 +100,50 @@ export default async function AuxiliaryPage({
           />
         ) : (
           <ul className="divide-y divide-rule rounded border border-rule bg-surface">
-            {forMonth.map((a) => (
-              <li key={a.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-ink">
-                    <Link href={`/publishers/${a.publisherId}`} className="hover:text-pine hover:underline">
-                      {displayName(a.publisher)}
-                    </Link>
-                  </p>
-                  <p className="mt-0.5 text-xs text-ink-soft">
-                    {auxPeriodLabel(a)}
-                    {a.publisher.status !== "ACTIVE" && " · publisher no longer active"}
-                    {a.notes ? ` · ${a.notes}` : ""}
-                  </p>
-                  {a.announcedAt ? (
-                    <p className="mt-0.5 text-xxs text-pine-dark">
-                      Announced {formatDate(a.announcedAt)}
+            {forMonth.map((a) => {
+              const span = auxSpanInput(a);
+              return (
+                <li key={a.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-ink">
+                      <Link href={`/publishers/${a.publisherId}`} className="hover:text-pine hover:underline">
+                        {displayName(a.publisher)}
+                      </Link>
                     </p>
-                  ) : (
-                    <p className="mt-0.5 text-xxs text-clay">Recorded, not yet announced</p>
+                    <p className="mt-0.5 text-xs text-ink-soft">
+                      {auxPeriodLabel(a)}
+                      {a.publisher.status !== "ACTIVE" && " · publisher no longer active"}
+                      {a.notes ? ` · ${a.notes}` : ""}
+                    </p>
+                    {a.announcedAt ? (
+                      <p className="mt-0.5 text-xxs text-pine-dark">
+                        Announced {formatDate(a.announcedAt)}
+                      </p>
+                    ) : (
+                      <p className="mt-0.5 text-xxs text-clay">Recorded, not yet announced</p>
+                    )}
+                    {canWrite && (
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-xxs text-ink-soft hover:text-pine">
+                          Edit this application
+                        </summary>
+                        <EditApprovalForm id={a.id} start={span.start} end={span.end} notes={a.notes ?? ""} />
+                      </details>
+                    )}
+                  </div>
+                  {canWrite && a.months == null && (
+                    <form action={closeApproval} className="flex items-center gap-2">
+                      <input type="hidden" name="id" value={a.id} />
+                      <input type="hidden" name="year" value={year} />
+                      <input type="hidden" name="month" value={month} />
+                      <SubmitButton variant="secondary" size="sm" pendingLabel="Closing…">
+                        End service in {monthLabel(year, month)}
+                      </SubmitButton>
+                    </form>
                   )}
-                </div>
-                {canWrite && a.months == null && (
-                  <form action={closeApproval} className="flex items-center gap-2">
-                    <input type="hidden" name="id" value={a.id} />
-                    <input type="hidden" name="year" value={year} />
-                    <input type="hidden" name="month" value={month} />
-                    <SubmitButton variant="secondary" size="sm" pendingLabel="Closing…">
-                      End service in {monthLabel(year, month)}
-                    </SubmitButton>
-                  </form>
-                )}
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         )}
       </Section>

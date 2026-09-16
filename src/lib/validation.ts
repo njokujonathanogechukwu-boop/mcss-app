@@ -301,6 +301,15 @@ export const auxSchema = z.object({
   notes: optionalString,
 });
 
+const monthInput = (message: string) => z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/, message);
+
+export const auxEditSchema = z.object({
+  id: z.string().min(1),
+  start: monthInput("Choose the month their service starts"),
+  end: z.union([z.literal(""), monthInput("Choose the month their service ends")]),
+  notes: optionalString,
+});
+
 export const userSchema = z.object({
   name: z.string().trim().min(2, "Enter the person's name").max(120),
   email: z.string().trim().email("Enter a valid email").max(160),
