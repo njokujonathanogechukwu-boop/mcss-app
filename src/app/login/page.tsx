@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { LoginForm } from "./login-form";
@@ -28,6 +29,12 @@ export default async function LoginPage({
         <div className="rounded border border-rule bg-surface p-6">
           <LoginForm next={next} />
         </div>
+
+        <p className="mt-4 text-center text-xs">
+          <Link href="/forgot-password" className="text-pine hover:underline">
+            Forgot your password?
+          </Link>
+        </p>
 
         <p className="mt-5 text-xs leading-relaxed text-ink-faint">
           These records are confidential. Sign out when you finish, and do not share your account.

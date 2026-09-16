@@ -1,13 +1,12 @@
 "use server";
 
+import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
 import { userSchema, passwordSchema, fieldErrors } from "@/lib/validation";
-import { sendEmail } from "@/lib/email";
-import { requestOrigin } from "@/lib/self-service";
-import { ROLE_LABELS } from "@/lib/rbac";
+import { sendSignupMail } from "@/lib/account-mail";
 import { inspectTemplate, type TemplateSummary } from "@/lib/pdf/fill";
 import type { FormKind } from "@prisma/client";
 
@@ -26,8 +25,20 @@ export async function createUser(_prev: UserState, formData: FormData): Promise<
   });
   if (!parsed.success) return { errors: fieldErrors(parsed.error) };
 
-  const password = passwordSchema.safeParse(formData.get("password"));
-  if (!password.success) return { errors: { password: password.error.issues[0].message } };
+  const invite = formData.get("invite") === "true";
+  const typed = String(formData.get("password") ?? "");
+  let firstPassword: string | null = null;
+  if (typed) {
+    const password = passwordSchema.safeParse(typed);
+    if (!password.success) return { errors: { password: password.error.issues[0].message } };
+    firstPassword = password.data;
+  } else if (!invite) {
+    return {
+      errors: {
+        password: "Give a first password, or tick the signup email so they choose their own.",
+      },
+    };
+  }
 
   const email = parsed.data.email.toLowerCase();
   if (await prisma.user.findUnique({ where: { email }, select: { id: true } })) {
@@ -38,7 +49,9 @@ export async function createUser(_prev: UserState, formData: FormData): Promise<
     data: {
       ...parsed.data,
       email,
-      passwordHash: await bcrypt.hash(password.data, 12),
+      // With a signup email and no typed password, nobody knows this hash —
+      // the account stays shut until the link in the email sets a real one.
+      passwordHash: await bcrypt.hash(firstPassword ?? randomBytes(32).toString("hex"), 12),
     },
   });
 
@@ -46,51 +59,37 @@ export async function createUser(_prev: UserState, formData: FormData): Promise<
   revalidatePath("/settings");
 
   let mailNote = "";
-  if (formData.get("welcomeEmail") === "true") {
-    const origin = await requestOrigin();
-    const role = ROLE_LABELS[user.role];
-    const firstPassword = formData.get("welcomePassword") === "true" ? password.data : null;
-    const result = await sendEmail(
-      [email],
-      "Your Maitama Congregation account",
-      welcomeBody(user.name, origin, email, role, firstPassword),
-      "ACCOUNT",
-      // The stored copy drops the password: the mail log goes into the backup.
-      firstPassword ? welcomeBody(user.name, origin, email, role, null) : undefined,
-    );
+  if (invite) {
+    const result = await sendSignupMail(user);
     mailNote = result.ok
-      ? ` A welcome email went to ${email}.`
-      : ` The welcome email did not go out: ${result.error}`;
+      ? ` A signup email went to ${email}; the link in it lets them choose their own password and expires in seven days.`
+      : ` The signup email did not go out: ${result.error} Press "Send signup email" on their row to try again.`;
   }
 
   return {
-    ok: `Account created for ${user.name}. Ask them to change the password when they first sign in.${mailNote}`,
+    ok: `Account created for ${user.name}.${firstPassword ? " Ask them to change the password when they first sign in." : ""}${mailNote}`,
   };
 }
 
-/** What a new account holder is told when the platform emails them. */
-function welcomeBody(
-  name: string,
-  origin: string | null,
-  email: string,
-  role: string,
-  firstPassword: string | null,
-): string {
-  return [
-    `Dear ${name},`,
-    "",
-    `An account has been opened for you on the Maitama Congregation Secretary System as ${role}.`,
-    "",
-    `Sign in at: ${origin ? `${origin}/login` : "the system's sign-in page"}`,
-    `Email: ${email}`,
-    ...(firstPassword
-      ? [`First password: ${firstPassword}`, "", "Change it as soon as you sign in, under Accounts → Change my password."]
-      : ["", "The secretary will give you your password separately. Change it once you sign in, under Accounts → Change my password."]),
-    "",
-    "If you were not expecting this, please tell the congregation secretary.",
-    "",
-    "Maitama Congregation Secretary",
-  ].join("\n");
+export type SignupState = { error?: string; ok?: string };
+
+/** (Re)sends the one-time signup link to an account that already exists. */
+export async function sendSignupEmail(_prev: SignupState, formData: FormData): Promise<SignupState> {
+  const auth = await guard("user:manage");
+  if (!auth.ok) return { error: auth.error };
+
+  const id = String(formData.get("id") ?? "");
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) return { error: "That account no longer exists." };
+  if (!user.active) {
+    return { error: `${user.name} is suspended. Restore the account before sending a link.` };
+  }
+
+  const result = await sendSignupMail(user);
+  if (!result.ok) return { error: result.error };
+
+  await recordAudit(auth.session.userId, "sent", "User", user.id, `Sent a signup email to ${user.name} (${user.email})`);
+  return { ok: `Sent to ${user.email}.` };
 }
 
 export async function setUserRole(formData: FormData) {

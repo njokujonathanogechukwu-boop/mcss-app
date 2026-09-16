@@ -5,6 +5,7 @@ import { displayName, formatDateTime } from "@/lib/format";
 import { PageHeader, Section, DataTable, Th, Td } from "@/components/shell";
 import { Badge } from "@/components/ui";
 import { NewUserForm, PasswordForm, FormUpload } from "./forms";
+import { SendSignupButton } from "./send-signup";
 import { setUserRole, renameUser, toggleUser, removeForm } from "./actions";
 import { listTemplates, FORM_LABELS } from "@/lib/forms";
 import { Button } from "@/components/ui";
@@ -98,14 +99,17 @@ export default async function SettingsPage() {
                 </Td>
                 <Td className="text-xs text-ink-soft">{formatDateTime(u.lastLoginAt)}</Td>
                 <Td align="right">
-                  {u.id !== session.userId && (
-                    <form action={toggleUser}>
-                      <input type="hidden" name="id" value={u.id} />
-                      <button className="text-xs text-ink-faint hover:text-clay">
-                        {u.active ? "Suspend" : "Restore"}
-                      </button>
-                    </form>
-                  )}
+                  <div className="flex flex-col items-end gap-1">
+                    <SendSignupButton userId={u.id} />
+                    {u.id !== session.userId && (
+                      <form action={toggleUser}>
+                        <input type="hidden" name="id" value={u.id} />
+                        <button className="text-xs text-ink-faint hover:text-clay">
+                          {u.active ? "Suspend" : "Restore"}
+                        </button>
+                      </form>
+                    )}
+                  </div>
                 </Td>
               </tr>
             ))}

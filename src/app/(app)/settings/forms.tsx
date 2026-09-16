@@ -35,8 +35,7 @@ export function NewUserForm({
   const [role, setRole] = useState("VIEWER");
   const [password, setPassword] = useState("");
   const [active, setActive] = useState(true);
-  const [welcome, setWelcome] = useState(false);
-  const [welcomePassword, setWelcomePassword] = useState(false);
+  const [invite, setInvite] = useState(true);
   const [saved, setSaved] = useState(0);
   useEffect(() => {
     if (state.ok) setSaved((n) => n + 1);
@@ -72,21 +71,28 @@ export function NewUserForm({
 
       <div>
         <TextField
-          label="First password" name="password" type="password" required
-          value={password} onChange={(e) => setPassword(e.target.value)}
+          label="First password" name="password" type="password" required={!invite}
+          disabled={invite} value={invite ? "" : password}
+          onChange={(e) => setPassword(e.target.value)}
           error={state.errors?.password}
         />
-        <ul className="mt-2 space-y-0.5 text-xs">
-          {PASSWORD_RULES.map((r) => {
-            const ok = r.test(password);
-            return (
-              <li key={r.label} className={ok ? "text-pine-dark" : "text-ink-faint"}>
-                {ok ? "✓" : "·"} {r.label}
-              </li>
-            );
-          })}
-        </ul>
-        <p className="field-hint mt-1">They can change it after signing in.</p>
+        {!invite && (
+          <ul className="mt-2 space-y-0.5 text-xs">
+            {PASSWORD_RULES.map((r) => {
+              const ok = r.test(password);
+              return (
+                <li key={r.label} className={ok ? "text-pine-dark" : "text-ink-faint"}>
+                  {ok ? "✓" : "·"} {r.label}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <p className="field-hint mt-1">
+          {invite
+            ? "Left to the signup email: they choose their own password from the link."
+            : "They can change it after signing in."}
+        </p>
       </div>
 
       <CheckField
@@ -96,18 +102,9 @@ export function NewUserForm({
 
       <div className="border-t border-rule pt-2">
         <CheckField
-          label="Email them the sign-in address" name="welcomeEmail" checked={welcome}
-          onChange={(e) => {
-            setWelcome(e.target.checked);
-            if (!e.target.checked) setWelcomePassword(false);
-          }}
-          hint="A short welcome from the congregation's mail account. Needs the mail account (Gmail OAuth2 or Resend) set up on the Email page."
-        />
-        <CheckField
-          label="Include the first password in that email" name="welcomePassword"
-          checked={welcomePassword} disabled={!welcome}
-          onChange={(e) => setWelcomePassword(e.target.checked)}
-          hint="Email is not a safe place for a password — only tick this if you would otherwise send it separately."
+          label="Email them a signup link to choose their own password" name="invite"
+          checked={invite} onChange={(e) => setInvite(e.target.checked)}
+          hint="A one-time link from the congregation's mail account, good for seven days. Needs the mail account (Gmail OAuth2 or Resend) set up on the Email page; without it, untick this and give a first password, then send the link later from their row."
         />
       </div>
 
