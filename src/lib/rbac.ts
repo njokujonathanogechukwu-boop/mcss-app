@@ -29,8 +29,8 @@ export const PERMISSIONS = {
   "announcement:write": ["SECRETARY", "COORDINATOR", "ELDER", "SERVANT"],
   // Self-approval: the secretary (or coordinator) both composes and approves.
   "announcement:approve": ["SECRETARY", "COORDINATOR"],
-  // Outgoing mail uses one congregation Resend account, so only the two accounts
-  // that own the records may put anything out through it.
+  // Outgoing mail uses one congregation mail account (Gmail via OAuth2, or
+  // Resend), so only the two accounts that own the records may put anything out.
   "mail:send": ["SECRETARY", "COORDINATOR"],
   "import:run": ["SECRETARY", "COORDINATOR"],
   "export:run": ["SECRETARY", "COORDINATOR", "ELDER"],

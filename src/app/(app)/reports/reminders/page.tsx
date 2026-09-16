@@ -92,10 +92,15 @@ export default async function RemindersPage({
           <>
             <p className="font-medium">Automatic email is not set up yet.</p>
             <p className="mt-1">
-              Add <span className="font-mono text-xs">RESEND_API_KEY</span> (and{" "}
-              <span className="font-mono text-xs">CRON_SECRET</span> for the monthly schedule) under
+              Add the mail variables (Gmail: <span className="font-mono text-xs">MAIL_USER</span>,{" "}
+              <span className="font-mono text-xs">GMAIL_CLIENT_ID</span>,{" "}
+              <span className="font-mono text-xs">GMAIL_CLIENT_SECRET</span>,{" "}
+              <span className="font-mono text-xs">GMAIL_REFRESH_TOKEN</span>; or Resend:{" "}
+              <span className="font-mono text-xs">RESEND_API_KEY</span>) and{" "}
+              <span className="font-mono text-xs">CRON_SECRET</span> for the monthly schedule under
               Vercel → Settings → Environment variables, then redeploy. The Email page shows what is
-              connected. Until then, copy a reminder or open it in WhatsApp yourself below.
+              connected and walks through the Google sign-in. Until then, copy a reminder or open it
+              in WhatsApp yourself below.
             </p>
           </>
         )}

@@ -23,7 +23,7 @@ export function EmailLinksButton() {
       setState({
         busy: false,
         tone: "error",
-        message: "Email is not set up yet. Add RESEND_API_KEY (Resend) in Vercel first.",
+        message: "Email is not set up yet. Connect the mail account from the Email page first (Gmail OAuth2 or Resend in Vercel).",
       });
       return;
     }

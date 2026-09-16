@@ -1,17 +1,27 @@
 import "server-only";
 
+import nodemailer from "nodemailer";
+import type { Transporter } from "nodemailer";
 import { prisma } from "@/lib/prisma";
 import { readSession } from "@/lib/session";
 
 /**
- * Outbound email goes through Resend's HTTP API. The key comes from the
- * environment, so nothing here holds a credential and the same code is inert on
- * a laptop with nothing set and live in production.
+ * Outbound email goes through Gmail with OAuth2 when the app has the account and
+ * a Google OAuth client plus refresh token, and through Resend's HTTP API when it
+ * only has a Resend key. No credential lives here: everything comes from the
+ * environment, so the same code is inert on a laptop with nothing set and live in
+ * production.
  *
- * Resend is an API, not a mail server: there is no sign-in for Google to block,
- * so a serverless function on a datacenter IP sends the same as anywhere else.
+ * Gmail is signed into with OAuth2, not a password. Google refuses password
+ * (app-password) logins from datacenter IP addresses — Vercel included — with
+ * 534-5.7.9, but it accepts an OAuth2 bearer token from anywhere, which is what
+ * makes sending from a serverless function possible without owning a domain.
  */
 
+const GMAIL_USER = process.env.MAIL_USER?.trim() || null;
+const GMAIL_CLIENT_ID = process.env.GMAIL_CLIENT_ID?.trim() || null;
+const GMAIL_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET?.trim() || null;
+const GMAIL_REFRESH_TOKEN = process.env.GMAIL_REFRESH_TOKEN?.trim() || null;
 const RESEND_KEY = process.env.RESEND_API_KEY?.trim() || null;
 const FROM_NAME = process.env.MAIL_FROM_NAME?.trim() || "Maitama Congregation";
 
@@ -19,15 +29,21 @@ const FROM_NAME = process.env.MAIL_FROM_NAME?.trim() || "Maitama Congregation";
 // Resend account, so it is enough to prove the wiring but not to reach publishers.
 const TEST_SENDER = "onboarding@resend.dev";
 
-export type MailProvider = "resend" | null;
+const GMAIL_READY = Boolean(
+  GMAIL_USER && GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REFRESH_TOKEN,
+);
+
+export type MailProvider = "gmail" | "resend" | null;
 
 export const NOT_CONFIGURED =
-  "Email is not set up yet. Add RESEND_API_KEY (create one at resend.com/api-keys, it starts with " +
-  "re_) under Vercel → Settings → Environment variables, then redeploy — environment variables only " +
-  "reach the app on the next deployment.";
+  "Email is not set up yet. For Gmail add MAIL_USER, GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET and " +
+  "GMAIL_REFRESH_TOKEN, or for Resend add RESEND_API_KEY — under Vercel → Settings → Environment " +
+  "variables, then redeploy. Environment variables only reach the app on the next deployment.";
 
 export function mailProvider(): MailProvider {
-  return RESEND_KEY ? "resend" : null;
+  if (GMAIL_READY) return "gmail";
+  if (RESEND_KEY) return "resend";
+  return null;
 }
 
 /** True once the app is able to send at all. */
@@ -36,24 +52,32 @@ export function emailConfigured(): boolean {
 }
 
 /**
- * The address mail appears to come from. Until a domain is verified this is
- * Resend's test sender, which only reaches the Resend account's own inbox.
+ * The address mail appears to come from. Gmail only lets an account send as
+ * itself, so there the display name is the only part that can be chosen; Resend
+ * uses the verified sender address until a domain is set.
  */
 export function emailFrom(): string {
+  if (mailProvider() === "gmail") return `"${FROM_NAME}" <${GMAIL_USER}>`;
   return process.env.REMINDER_EMAIL_FROM?.trim() || `"${FROM_NAME}" <${TEST_SENDER}>`;
 }
 
 /**
  * What the running app can see of the mail settings, safe to put on screen: the
- * key's presence and the sending address, never the key itself.
+ * account and which credentials arrived, never the secrets themselves.
  */
 export function mailDiagnostics() {
+  const provider = mailProvider();
   const from = emailFrom();
   return {
-    provider: mailProvider(),
+    provider,
+    gmailReady: GMAIL_READY,
+    gmailUser: GMAIL_USER,
+    gmailClientId: Boolean(GMAIL_CLIENT_ID),
+    gmailClientSecret: Boolean(GMAIL_CLIENT_SECRET),
+    gmailRefreshToken: Boolean(GMAIL_REFRESH_TOKEN),
     resendKey: Boolean(RESEND_KEY),
     from,
-    usingTestSender: from.includes(TEST_SENDER),
+    usingTestSender: provider === "resend" && from.includes(TEST_SENDER),
   };
 }
 
@@ -61,30 +85,76 @@ export type SendResult = { ok: boolean; error?: string };
 
 export type MailKind = "REMINDER" | "UPDATE_LINK" | "ANNOUNCEMENT" | "ACCOUNT" | "GENERAL";
 
+const REACH_HINT =
+  "The platform could not reach Gmail's mail server. This is usually a momentary network fault; " +
+  "if it keeps happening the account's outbound connections are being blocked.";
+
 /**
- * Turns a Resend HTTP failure into something the secretary can act on. The raw
- * response is kept at the end because it is what makes the unusual cases
- * diagnosable.
+ * Turns a raw SMTP, OAuth or network failure into something the secretary can act
+ * on. The original text is kept at the end because it is what makes the unusual
+ * cases diagnosable.
+ */
+function describeMailError(err: unknown, fallback: string): string {
+  const e = err as { message?: string; code?: string; responseCode?: number; response?: string };
+  const raw = String(e?.message || e?.response || fallback).slice(0, 200);
+  const code = e?.responseCode ?? 0;
+
+  if (/invalid_grant|token has been expired|revoked|refresh.?token|invalid_client|bad request/i.test(raw)) {
+    return `Google rejected the sign-in token. GMAIL_REFRESH_TOKEN was revoked or has expired — this happens ` +
+      `if the Google password changed, the OAuth app was left in "Testing" (tokens then last 7 days), or it ` +
+      `sat unused for six months. Make a fresh refresh token in the OAuth Playground, put it in Vercel and ` +
+      `redeploy. (${raw})`;
+  }
+  if (code === 400 || /invalid.?scope|invalid.?audience|access.?token/i.test(raw)) {
+    return `Google did not grant the mail scope. The token has to be created with the https://mail.google.com/ ` +
+      `scope. Redo the Playground authorisation with that scope and update GMAIL_REFRESH_TOKEN. (${raw})`;
+  }
+  if (code === 535 || code === 534 || e?.code === "EAUTH" ||
+      /username and password not accepted|invalid credentials|authentication fail|web.?login/i.test(raw)) {
+    return `Gmail refused the OAuth2 sign-in. Check that MAIL_USER, GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET and ` +
+      `GMAIL_REFRESH_TOKEN all come from the same Google Cloud project and the same account, and that the ` +
+      `Gmail API is enabled for that project. (${raw})`;
+  }
+  if (code === 421 || code === 454 || /too many|rate.?limit|quota|try again later/i.test(raw)) {
+    return `Gmail is holding mail back from this account — its daily allowance is used up, or too many ` +
+      `messages went out at once. Wait and send again tomorrow. (${raw})`;
+  }
+  if (["ECONNREFUSED", "ETIMEDOUT", "ECONNRESET", "EAI_AGAIN", "ESOCKET", "EPIPE", "EHOSTUNREACH", "ENOTFOUND"].includes(e?.code ?? "") ||
+      /socket hang up|getaddrinfo|timeout|connection closed|connect ECONN/i.test(raw)) {
+    return `${REACH_HINT} (${raw})`;
+  }
+  if (/self.signed|certificate|unable to verify|\bssl\b|\btls\b/i.test(raw)) {
+    return `The secure connection to Gmail was not trusted, so nothing was sent. (${raw})`;
+  }
+  if (code === 550 || /recipient address rejected|mailbox unavailable|no such user|relay/i.test(raw)) {
+    return `Gmail did not accept that address. Check the spelling of the address on the publisher's ` +
+      `record. (${raw})`;
+  }
+  return raw;
+}
+
+/**
+ * Turns a Resend HTTP failure into something the secretary can act on.
  */
 function describeResendError(status: number, detail: string): string {
   const raw = detail.replace(/\s+/g, " ").slice(0, 200);
 
   if (/only send (testing|test) emails|to your own email/i.test(raw)) {
-    return `Resend's test sender (${TEST_SENDER}) can only email the address on your own Resend ` +
-      `account. To reach publishers, verify a domain at resend.com/domains, set REMINDER_EMAIL_FROM to ` +
-      `an address on it, and redeploy. (${raw})`;
+    return `Resend's test sender (${TEST_SENDER}) can only email the address on your own Resend account. To ` +
+      `reach publishers, verify a domain at resend.com/domains, set REMINDER_EMAIL_FROM to an address on it, ` +
+      `and redeploy. (${raw})`;
   }
   if (status === 401 || status === 403) {
     if (/domain|from address|not verified|verification/i.test(raw)) {
-      return `Resend will only send from an address on a domain verified in your Resend account. Add and ` +
-        `verify a domain at resend.com/domains, set REMINDER_EMAIL_FROM to an address on it, and redeploy. (${raw})`;
+      return `Resend will only send from an address on a domain verified in your Resend account. Add and verify ` +
+        `a domain at resend.com/domains, set REMINDER_EMAIL_FROM to an address on it, and redeploy. (${raw})`;
     }
-    return `Resend rejected the API key. Check RESEND_API_KEY in Vercel — it starts with re_ — and that it ` +
-      `has not been revoked, then redeploy. (${raw})`;
+    return `Resend rejected the API key. Check RESEND_API_KEY in Vercel — it starts with re_ — and that it has ` +
+      `not been revoked, then redeploy. (${raw})`;
   }
   if (status === 429) {
-    return `Resend is holding mail back from this account — too many messages at once, or the daily ` +
-      `allowance is used up. Wait a little and send again. (${raw})`;
+    return `Resend is holding mail back from this account — too many messages at once, or the daily allowance is ` +
+      `used up. Wait a little and send again. (${raw})`;
   }
   if (status === 422) {
     return `Resend did not accept that message — usually a malformed address or a missing verified sender. (${raw})`;
@@ -95,8 +165,39 @@ function describeResendError(status: number, detail: string): string {
 function describeNetworkError(err: unknown): string {
   const e = err as { message?: string };
   const raw = String(e?.message || "network error").slice(0, 200);
-  return `The platform could not reach Resend's API. This is usually a momentary network fault; if it ` +
-    `keeps happening, outbound connections are being blocked. (${raw})`;
+  return `The platform could not reach the mail service. This is usually a momentary network fault; if it keeps ` +
+    `happening, outbound connections are being blocked. (${raw})`;
+}
+
+/**
+ * A serverless function is kept warm and reused, and Gmail drops a connection
+ * that sits idle between requests — so a transport held at module level hands the
+ * next send a socket that is already dead. One transport per burst, closed when
+ * the burst ends, keeps every message on a connection this request opened.
+ * nodemailer refreshes the OAuth2 access token itself from the refresh token.
+ */
+function makeGmailTransport(): Transporter {
+  return nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      type: "OAuth2",
+      user: GMAIL_USER!,
+      clientId: GMAIL_CLIENT_ID!,
+      clientSecret: GMAIL_CLIENT_SECRET!,
+      refreshToken: GMAIL_REFRESH_TOKEN!,
+    },
+    pool: true,
+    maxConnections: 3,
+    maxMessages: 200,
+  });
+}
+
+function closeTransport(transport: Transporter) {
+  try {
+    transport.close();
+  } catch {
+    // ignored: the platform tears the connection down with the function anyway
+  }
 }
 
 /** Who pressed the button, when there is a signed-in account to attribute it to. */
@@ -130,11 +231,25 @@ async function record(entry: LogEntry) {
 }
 
 /**
- * Checks the API key against Resend without sending anything. This is how the
- * secretary finds out whether the key reached production and is accepted.
+ * Signs in to the mail service and reports what happened, without sending
+ * anything. This is how the secretary finds out whether the credentials reached
+ * production and whether they are accepted.
  */
 export async function verifyMailConnection(): Promise<SendResult> {
-  if (!RESEND_KEY) return { ok: false, error: NOT_CONFIGURED };
+  const provider = mailProvider();
+  if (!provider) return { ok: false, error: NOT_CONFIGURED };
+
+  if (provider === "gmail") {
+    const transport = makeGmailTransport();
+    try {
+      await transport.verify();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: describeMailError(err, "Gmail would not let the account sign in.") };
+    } finally {
+      closeTransport(transport);
+    }
+  }
 
   try {
     const res = await fetch("https://api.resend.com/domains", {
@@ -185,19 +300,33 @@ export async function sendEmail(
   kind: MailKind = "GENERAL",
   loggedText?: string,
 ): Promise<SendResult> {
-  if (!RESEND_KEY) return { ok: false, error: NOT_CONFIGURED };
+  const provider = mailProvider();
+  if (!provider) return { ok: false, error: NOT_CONFIGURED };
 
   const recipients = to.map((r) => r.trim()).filter(Boolean);
   if (recipients.length === 0) return { ok: false, error: "No recipient address." };
 
-  const result = await sendViaResend(recipients, subject, text);
+  let result: SendResult;
+  if (provider === "gmail") {
+    const transport = makeGmailTransport();
+    try {
+      await transport.sendMail({ from: emailFrom(), to: recipients, subject, text });
+      result = { ok: true };
+    } catch (err) {
+      result = { ok: false, error: describeMailError(err, "Gmail refused the message.") };
+    } finally {
+      closeTransport(transport);
+    }
+  } else {
+    result = await sendViaResend(recipients, subject, text);
+  }
 
   await record({
     to: recipients.join(", "),
     subject,
     body: loggedText ?? text,
     kind,
-    provider: "resend",
+    provider,
     ok: result.ok,
     error: result.error ?? null,
     sentById: await currentSenderId(),
@@ -218,7 +347,7 @@ export type BatchFailure = { who: string; error: string };
 export type BatchResult = { sent: number; failed: BatchFailure[] };
 
 /**
- * Sends one message to each recipient in turn, a few at a time, so a
+ * Sends one message to each recipient in turn over a single connection, so a
  * congregation-wide mail fits inside a function's time budget. Every recipient
  * still gets their own email: nobody is copied on a long To: line.
  */
@@ -228,7 +357,8 @@ export async function sendBatch(
   text: string,
   kind: MailKind = "GENERAL",
 ): Promise<BatchResult> {
-  if (!RESEND_KEY) {
+  const provider = mailProvider();
+  if (!provider) {
     return {
       sent: 0,
       failed: recipients.map((r) => ({ who: r.name || r.email, error: NOT_CONFIGURED })),
@@ -249,23 +379,48 @@ export async function sendBatch(
       subject,
       body: text,
       kind,
-      provider: "resend",
+      provider,
       ok: result.ok,
       error: result.error ?? null,
       sentById,
     });
   };
 
-  const worker = async () => {
-    for (;;) {
-      const r = queue.shift();
-      if (!r) return;
-      const subject = r.subject ?? shared.subject;
-      const text = r.text ?? shared.text;
-      await note(r, subject, text, await sendViaResend([r.email], subject, text));
+  if (provider === "gmail") {
+    const transport = makeGmailTransport();
+    const worker = async () => {
+      for (;;) {
+        const r = queue.shift();
+        if (!r) return;
+        const subject = r.subject ?? shared.subject;
+        const text = r.text ?? shared.text;
+        let result: SendResult;
+        try {
+          await transport.sendMail({ from: emailFrom(), to: [r.email], subject, text });
+          result = { ok: true };
+        } catch (err) {
+          result = { ok: false, error: describeMailError(err, "Gmail refused the message.") };
+        }
+        await note(r, subject, text, result);
+      }
+    };
+    try {
+      await Promise.all([worker(), worker(), worker()]);
+    } finally {
+      closeTransport(transport);
     }
-  };
-  await Promise.all([worker(), worker(), worker()]);
+  } else {
+    const worker = async () => {
+      for (;;) {
+        const r = queue.shift();
+        if (!r) return;
+        const subject = r.subject ?? shared.subject;
+        const text = r.text ?? shared.text;
+        await note(r, subject, text, await sendViaResend([r.email], subject, text));
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+  }
 
   return { sent, failed: failures };
 }

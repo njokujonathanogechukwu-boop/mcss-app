@@ -23,10 +23,11 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 const SETUP_STEPS = [
-  "Create a free account at resend.com and make an API key at resend.com/api-keys. It starts with re_.",
-  "Verify a sending domain at resend.com/domains and add the DNS records it shows. Without a verified domain Resend's test sender only delivers to your own Resend inbox, never to publishers.",
-  "In Vercel → your project → Settings → Environment variables, add RESEND_API_KEY for Production, and REMINDER_EMAIL_FROM set to an address on your verified domain, for example \"Maitama Congregation <reminders@yourdomain.org>\".",
-  "Redeploy. A variable added in Vercel does not reach the running app until the next deployment.",
+  "In Google Cloud (console.cloud.google.com) create a project and enable the Gmail API for it.",
+  "Under OAuth consent screen choose External, fill in the app name and your email, and set Publishing status to In production — left in Testing, the token stops working after 7 days.",
+  "Under Credentials create an OAuth client ID of type Web application and add https://developers.google.com/oauthplayground as an authorised redirect URI. Note the client ID and secret.",
+  "At developers.google.com/oauthplayground tick 'Use your own OAuth credentials', enter that ID and secret, authorise the scope https://mail.google.com/ signed in as the congregation account, then exchange the code for a refresh token.",
+  "In Vercel → your project → Settings → Environment variables add MAIL_USER, GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET and GMAIL_REFRESH_TOKEN for Production, then redeploy.",
   "Press Test the connection below and read what it says.",
 ];
 
@@ -68,7 +69,18 @@ export default async function MailPage({
 
       <Section>
         <Panel className="p-4">
-          {provider === "resend" ? (
+          {provider === "gmail" ? (
+            <>
+              <p className="text-sm text-ink">
+                Sending through Gmail as <span className="font-medium">{emailFrom()}</span>
+              </p>
+              <p className="mt-1 text-xs text-ink-faint">
+                Signed in with OAuth2, so Google accepts it from the server without a password or a
+                domain. Gmail allows about 500 recipients a day from this account, so a
+                congregation-wide mailing is fine but several in one day are not.
+              </p>
+            </>
+          ) : provider === "resend" ? (
             <>
               <p className="text-sm text-ink">
                 Sending through Resend as <span className="font-medium">{emailFrom()}</span>
@@ -81,9 +93,7 @@ export default async function MailPage({
                 </p>
               ) : (
                 <p className="mt-1 text-xs text-ink-faint">
-                  Resend&rsquo;s free tier sends up to 100 emails a day and 3,000 a month, which covers
-                  a congregation-wide mailing with room for the reminders and update links that go out
-                  the same day.
+                  Resend&rsquo;s free tier sends up to 100 emails a day and 3,000 a month.
                 </p>
               )}
             </>
@@ -92,7 +102,8 @@ export default async function MailPage({
               <p className="text-sm font-medium text-clay">No mail account is connected yet</p>
               <p className="mt-1 text-xs text-ink-soft">
                 Until this is done, nothing on the platform can send an email — reminders and personal
-                update links stay copy-and-WhatsApp only. Set it up once:
+                update links stay copy-and-WhatsApp only. The congregation Gmail account signs in with
+                OAuth2: no password and no domain to buy. Set it up once:
               </p>
               <ol className="mt-2.5 list-decimal space-y-1 pl-5 text-xs text-ink-soft">
                 {SETUP_STEPS.map((s) => (
@@ -100,8 +111,9 @@ export default async function MailPage({
                 ))}
               </ol>
               <p className="mt-2 text-xs text-ink-faint">
-                Paste the API key into Vercel only — never into a chat, an email or a file in this
-                project.
+                Paste the client secret and refresh token into Vercel only — never into a chat, an
+                email or a file in this project. (Rather use a sending service? Set RESEND_API_KEY
+                instead and the Resend route takes over.)
               </p>
             </>
           )}
@@ -110,23 +122,29 @@ export default async function MailPage({
 
       <Section
         title="Is it working?"
-        description="Checks the Resend key and sends one test message to an address you choose. Nothing goes to any publisher."
+        description="Signs in to the mail service and sends one test message to an address you choose. Nothing goes to any publisher."
       >
         <div className="space-y-4">
           <p className="rounded border border-rule bg-paper px-3 py-2 text-xs text-ink-soft">
             What this deployment can see:{" "}
-            <span className={d.resendKey ? "text-ink" : "text-clay"}>
-              RESEND_API_KEY {d.resendKey ? "set" : "not set"}
-            </span>
+            <span className={d.gmailUser ? "text-ink" : "text-clay"}>MAIL_USER {d.gmailUser ?? "not set"}</span>
             {" · "}
-            <span className={d.resendKey ? "text-ink" : "text-ink-faint"}>sending as {d.from}</span>
+            <span className={d.gmailClientId ? "text-ink" : "text-clay"}>GMAIL_CLIENT_ID {d.gmailClientId ? "set" : "not set"}</span>
+            {" · "}
+            <span className={d.gmailClientSecret ? "text-ink" : "text-clay"}>GMAIL_CLIENT_SECRET {d.gmailClientSecret ? "set" : "not set"}</span>
+            {" · "}
+            <span className={d.gmailRefreshToken ? "text-ink" : "text-clay"}>GMAIL_REFRESH_TOKEN {d.gmailRefreshToken ? "set" : "not set"}</span>
+            {" · "}
+            <span className={d.resendKey ? "text-ink" : "text-ink-faint"}>RESEND_API_KEY {d.resendKey ? "set" : "not set"}</span>
           </p>
 
           {!d.provider && (
             <p className="text-xs text-clay">
-              Nothing can send until RESEND_API_KEY is set here, and set for the Production
-              environment. After adding it, redeploy — an environment variable only reaches the app on
-              the next deployment, so the current one carries on with the old settings.
+              Nothing can send until a complete setup reaches the Production environment: for Gmail,
+              all of MAIL_USER, GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET and GMAIL_REFRESH_TOKEN; or for
+              Resend, just RESEND_API_KEY. After adding them, redeploy — an environment variable only
+              reaches the app on the next deployment, so the current one carries on with the old
+              settings.
             </p>
           )}
           {d.provider === "resend" && d.usingTestSender && (

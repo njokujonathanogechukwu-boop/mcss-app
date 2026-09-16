@@ -26,11 +26,30 @@ const AUDIENCE_LABEL: Record<string, string> = {
 /** What the running app can see of the mail settings, in one readable line. */
 function describeSettings(): string {
   const d = mailDiagnostics();
+  if (d.provider === "gmail") {
+    return (
+      `What the platform can see: sending through Gmail as ${d.from}; MAIL_USER, GMAIL_CLIENT_ID, ` +
+      `GMAIL_CLIENT_SECRET and GMAIL_REFRESH_TOKEN are all set.`
+    );
+  }
+  if (d.provider === "resend") {
+    return (
+      `What the platform can see: sending through Resend as ${d.from}` +
+      (d.usingTestSender
+        ? " (Resend's test sender — it only reaches your own Resend inbox until a domain is verified)."
+        : ".")
+    );
+  }
+  const present = [
+    d.gmailUser ? "MAIL_USER" : null,
+    d.gmailClientId ? "GMAIL_CLIENT_ID" : null,
+    d.gmailClientSecret ? "GMAIL_CLIENT_SECRET" : null,
+    d.gmailRefreshToken ? "GMAIL_REFRESH_TOKEN" : null,
+  ].filter(Boolean);
   return (
-    `What the platform can see: RESEND_API_KEY ${d.resendKey ? "set" : "not set"}, sending as ${d.from}` +
-    (d.usingTestSender
-      ? " (Resend's test sender — it only reaches your own Resend inbox until a domain is verified)."
-      : ".")
+    `What the platform can see: no complete mail setup. Gmail needs MAIL_USER + GMAIL_CLIENT_ID + ` +
+    `GMAIL_CLIENT_SECRET + GMAIL_REFRESH_TOKEN (present: ${present.join(", ") || "none"}); Resend needs ` +
+    `RESEND_API_KEY (${d.resendKey ? "set" : "not set"}).`
   );
 }
 
@@ -114,6 +133,8 @@ export async function testMailConnection(_prev: MailState, formData: FormData): 
     return { error: `${check.error}\n\n${describeSettings()}` };
   }
 
+  const provider = mailDiagnostics().provider;
+
   const result = await sendEmail(
     [to],
     "Test email from Maitama Congregation",
@@ -124,10 +145,19 @@ export async function testMailConnection(_prev: MailState, formData: FormData): 
   );
   revalidatePath("/mail");
 
+  if (provider === "gmail") {
+    if (!result.ok) {
+      return { error: `Signing in to Gmail worked, but the test message did not go out: ${result.error}` };
+    }
+    return {
+      ok: `Signed in to Gmail and sent a test message to ${to}. If it has not arrived within a minute, ` +
+        `look in the junk folder.`,
+    };
+  }
+
   if (!result.ok) {
     return { error: `Resend accepted the key, but the test message did not go out: ${result.error}` };
   }
-
   const testSender = mailDiagnostics().usingTestSender;
   return {
     ok: `Resend is connected and a test message went to ${to}. If it has not arrived within a minute, ` +
