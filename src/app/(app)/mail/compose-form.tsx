@@ -149,9 +149,9 @@ export function ComposeForm({
 
       {audience === "all" && (
         <p className="rounded border border-wheat/30 bg-wheat-light px-3 py-2 text-xs text-[#7A5E1E]">
-          {reach}. A sending account is allowed about 500 recipients a day, so one
-          congregation-wide mail still leaves room for the reminders and update links that go out
-          the same day.
+          {reach}. Resend&rsquo;s free tier sends up to 100 emails a day, so an audience that large
+          reaches the cap in one mailing — send it early in the day, or upgrade the Resend plan,
+          before the reminders and update links also need to go out.
         </p>
       )}
 

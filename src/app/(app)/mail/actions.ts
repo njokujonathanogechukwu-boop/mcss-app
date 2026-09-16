@@ -26,23 +26,11 @@ const AUDIENCE_LABEL: Record<string, string> = {
 /** What the running app can see of the mail settings, in one readable line. */
 function describeSettings(): string {
   const d = mailDiagnostics();
-  const password = d.passwordChars === 0
-    ? "not set"
-    : d.isExamplePassword
-      ? "still the example from .env.example"
-      : `${d.passwordChars} characters${d.passwordChars === 16 ? "" : " — an app password is 16 letters"}`;
   return (
-    `What the platform can see: MAIL_USER ${d.user ?? "not set"}, MAIL_APP_PASSWORD ${password}, ` +
-    `RESEND_API_KEY ${d.resendKey ? "set" : "not set"}.`
-  );
-}
-
-function examplePasswordError(user: string | null): string {
-  return (
-    "MAIL_APP_PASSWORD is still the sample password printed in .env.example (abcd efgh ijkl mnop). " +
-    "It is not a real password, so Gmail will always refuse it. Make an app password for " +
-    `${user ?? "the congregation's Gmail account"} at Google → Security → App passwords, put that ` +
-    "in Vercel instead, and redeploy."
+    `What the platform can see: RESEND_API_KEY ${d.resendKey ? "set" : "not set"}, sending as ${d.from}` +
+    (d.usingTestSender
+      ? " (Resend's test sender — it only reaches your own Resend inbox until a domain is verified)."
+      : ".")
   );
 }
 
@@ -56,9 +44,6 @@ export async function sendMail(_prev: MailState, formData: FormData): Promise<Ma
   if (!auth.ok) return { error: auth.error };
 
   if (!emailConfigured()) return { error: NOT_CONFIGURED };
-
-  const settings = mailDiagnostics();
-  if (settings.isExamplePassword) return { error: examplePasswordError(settings.user) };
 
   const parsed = mailSchema.safeParse({
     audience: formData.get("audience"),
@@ -124,15 +109,11 @@ export async function testMailConnection(_prev: MailState, formData: FormData): 
   const to = typed || auth.session.email;
   if (!isEmailAddress(to)) return { errors: { to: `"${typed}" is not an email address.` } };
 
-  const settings = mailDiagnostics();
-  if (settings.isExamplePassword) return { error: examplePasswordError(settings.user) };
-
   const check = await verifyMailConnection();
   if (!check.ok) {
     return { error: `${check.error}\n\n${describeSettings()}` };
   }
 
-  const provider = settings.provider;
   const result = await sendEmail(
     [to],
     "Test email from Maitama Congregation",
@@ -144,10 +125,16 @@ export async function testMailConnection(_prev: MailState, formData: FormData): 
   revalidatePath("/mail");
 
   if (!result.ok) {
-    return { error: `Signing in to ${provider} worked, but the test message did not go out: ${result.error}` };
+    return { error: `Resend accepted the key, but the test message did not go out: ${result.error}` };
   }
+
+  const testSender = mailDiagnostics().usingTestSender;
   return {
-    ok: `Signed in to ${provider} and sent a test message to ${to}. If it has not arrived within a ` +
-      `minute, look in the junk folder.`,
+    ok: `Resend is connected and a test message went to ${to}. If it has not arrived within a minute, ` +
+      `look in the junk folder.` +
+      (testSender
+        ? ` Note: mail is still going out from Resend's test sender, which only reaches your own Resend ` +
+          `inbox — verify a domain at resend.com/domains and set REMINDER_EMAIL_FROM to reach publishers.`
+        : ""),
   };
 }

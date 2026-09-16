@@ -101,7 +101,7 @@ export function NewUserForm({
             setWelcome(e.target.checked);
             if (!e.target.checked) setWelcomePassword(false);
           }}
-          hint="A short welcome from the congregation's mail account. Needs MAIL_USER and MAIL_APP_PASSWORD to be set up."
+          hint="A short welcome from the congregation's mail account. Needs RESEND_API_KEY to be set up."
         />
         <CheckField
           label="Include the first password in that email" name="welcomePassword"

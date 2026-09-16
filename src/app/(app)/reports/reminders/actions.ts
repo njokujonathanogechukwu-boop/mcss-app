@@ -22,7 +22,7 @@ export async function sendRemindersNow(
   if (!emailConfigured()) {
     return {
       error:
-        "Email is not set up yet. Add MAIL_USER and MAIL_APP_PASSWORD (and CRON_SECRET for the monthly schedule) under Vercel → Settings → Environment variables, then redeploy.",
+        "Email is not set up yet. Add RESEND_API_KEY (and CRON_SECRET for the monthly schedule) under Vercel → Settings → Environment variables, then redeploy.",
     };
   }
 

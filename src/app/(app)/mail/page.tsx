@@ -23,10 +23,9 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 const SETUP_STEPS = [
-  "Create a Gmail account for the congregation, for example maitamasecretary@gmail.com.",
-  "Turn on 2-Step Verification for that account (Google → Security → 2-Step Verification). Without it Google will not issue an app password and will refuse every sign-in.",
-  "Create an app password (Google → Security → App passwords). It is 16 letters; spaces in it are removed for you.",
-  "In Vercel → your project → Settings → Environment variables, add MAIL_USER (the address) and MAIL_APP_PASSWORD (the app password) for Production.",
+  "Create a free account at resend.com and make an API key at resend.com/api-keys. It starts with re_.",
+  "Verify a sending domain at resend.com/domains and add the DNS records it shows. Without a verified domain Resend's test sender only delivers to your own Resend inbox, never to publishers.",
+  "In Vercel → your project → Settings → Environment variables, add RESEND_API_KEY for Production, and REMINDER_EMAIL_FROM set to an address on your verified domain, for example \"Maitama Congregation <reminders@yourdomain.org>\".",
   "Redeploy. A variable added in Vercel does not reach the running app until the next deployment.",
   "Press Test the connection below and read what it says.",
 ];
@@ -69,26 +68,24 @@ export default async function MailPage({
 
       <Section>
         <Panel className="p-4">
-          {provider === "gmail" ? (
-            <>
-              <p className="text-sm text-ink">
-                Sending through Gmail as <span className="font-medium">{emailFrom()}</span>
-              </p>
-              <p className="mt-1 text-xs text-ink-faint">
-                Gmail allows about 500 recipients a day from this account. Reminders and personal
-                update links count towards the same allowance, so a congregation-wide mail is best
-                sent on a day when nothing else goes out.
-              </p>
-            </>
-          ) : provider === "resend" ? (
+          {provider === "resend" ? (
             <>
               <p className="text-sm text-ink">
                 Sending through Resend as <span className="font-medium">{emailFrom()}</span>
               </p>
-              <p className="mt-1 text-xs text-ink-faint">
-                No Gmail account is set up yet, so mail falls back to Resend — and its test sender
-                only reaches the Resend account&rsquo;s own inbox until a domain is verified.
-              </p>
+              {d.usingTestSender ? (
+                <p className="mt-1 text-xs text-clay">
+                  This is still Resend&rsquo;s test sender, which only reaches your own Resend inbox.
+                  Verify a domain at resend.com/domains and set REMINDER_EMAIL_FROM to an address on
+                  it, then redeploy, before mailing any publisher.
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-ink-faint">
+                  Resend&rsquo;s free tier sends up to 100 emails a day and 3,000 a month, which covers
+                  a congregation-wide mailing with room for the reminders and update links that go out
+                  the same day.
+                </p>
+              )}
             </>
           ) : (
             <>
@@ -103,8 +100,8 @@ export default async function MailPage({
                 ))}
               </ol>
               <p className="mt-2 text-xs text-ink-faint">
-                Paste the app password into Vercel only — never into a chat, an email or a file in
-                this project.
+                Paste the API key into Vercel only — never into a chat, an email or a file in this
+                project.
               </p>
             </>
           )}
@@ -113,45 +110,30 @@ export default async function MailPage({
 
       <Section
         title="Is it working?"
-        description="Signs in to the mail account and sends one test message to an address you choose. Nothing goes to any publisher."
+        description="Checks the Resend key and sends one test message to an address you choose. Nothing goes to any publisher."
       >
         <div className="space-y-4">
           <p className="rounded border border-rule bg-paper px-3 py-2 text-xs text-ink-soft">
             What this deployment can see:{" "}
-            <span className={d.user ? "text-ink" : "text-clay"}>
-              MAIL_USER {d.user ?? "not set"}
-            </span>
-            {" · "}
-            <span className={d.passwordChars ? "text-ink" : "text-clay"}>
-              MAIL_APP_PASSWORD {d.passwordChars ? `${d.passwordChars} characters` : "not set"}
-            </span>
-            {" · "}
-            <span className={d.resendKey ? "text-ink" : "text-ink-faint"}>
+            <span className={d.resendKey ? "text-ink" : "text-clay"}>
               RESEND_API_KEY {d.resendKey ? "set" : "not set"}
             </span>
+            {" · "}
+            <span className={d.resendKey ? "text-ink" : "text-ink-faint"}>sending as {d.from}</span>
           </p>
 
           {!d.provider && (
             <p className="text-xs text-clay">
-              Nothing can send until both MAIL_USER and MAIL_APP_PASSWORD are set here, and set for
-              the Production environment. After adding them, redeploy — an environment variable only
-              reaches the app on the next deployment, so the current one carries on with the old
-              settings.
+              Nothing can send until RESEND_API_KEY is set here, and set for the Production
+              environment. After adding it, redeploy — an environment variable only reaches the app on
+              the next deployment, so the current one carries on with the old settings.
             </p>
           )}
-          {d.isExamplePassword && (
+          {d.provider === "resend" && d.usingTestSender && (
             <p className="text-xs text-clay">
-              MAIL_APP_PASSWORD is the sample password printed in <code>.env.example</code>, not a
-              real one, so Gmail refuses it every time. Sign in to {d.user ?? "the congregation's Gmail account"}{" "}
-              at myaccount.google.com, go to Security → App passwords, make one, put it in
-              MAIL_APP_PASSWORD in Vercel, and redeploy.
-            </p>
-          )}
-          {d.passwordChars > 0 && !d.isExamplePassword && d.passwordChars !== 16 && (
-            <p className="text-xs text-clay">
-              A Gmail app password is 16 letters. What reached this deployment is {d.passwordChars}{" "}
-              characters, so it is probably not the whole password. Spaces are removed for you, so
-              paste it exactly as Google shows it.
+              Mail is going out from Resend&rsquo;s test sender ({d.from}), which only delivers to your
+              own Resend inbox. To reach publishers, verify a domain at resend.com/domains, set
+              REMINDER_EMAIL_FROM to an address on it, and redeploy.
             </p>
           )}
 
