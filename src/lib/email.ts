@@ -73,6 +73,13 @@ const SIGN_IN_HINT =
   "Google → Security → App passwords, and that account must have 2-Step Verification turned on — " +
   "an ordinary Gmail password is always rejected. Replace it in Vercel and redeploy.";
 
+const WEB_LOGIN_HINT =
+  "Gmail knows the password but wants one sign-in from a browser before it trusts mail from a server. " +
+  "On a phone or computer, sign in to the Gmail account in an ordinary browser and clear any security " +
+  "prompt it shows. Then, still signed in, open https://accounts.google.com/b/0/DisplayUnlockCaptcha " +
+  "and press Continue. If it still refuses afterwards, delete the app password, make a fresh 16-letter " +
+  "one and paste that into Vercel.";
+
 const REACH_HINT =
   "The platform could not reach Gmail's mail server. This is usually a momentary network fault; " +
   "if it keeps happening the account's outbound connections are being blocked.";
@@ -87,6 +94,9 @@ function describeMailError(err: unknown, fallback: string): string {
   const raw = String(e?.message || e?.response || fallback).slice(0, 200);
   const code = e?.responseCode ?? 0;
 
+  if (code === 534 || /web.?login.?required|\b5\.7\.9\b/i.test(raw)) {
+    return `${WEB_LOGIN_HINT} (${raw})`;
+  }
   if (code === 535 || e?.code === "EAUTH" ||
       /username and password not accepted|invalid credentials|authentication fail/i.test(raw)) {
     return `${SIGN_IN_HINT} (${raw})`;
