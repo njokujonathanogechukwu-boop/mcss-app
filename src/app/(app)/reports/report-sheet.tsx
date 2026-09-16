@@ -11,6 +11,9 @@ export type SheetRow = {
   name: string;
   group: string;
   pioneerStatus: string;
+  /** Counts as a pioneer for the month on screen: an auxiliary only for the
+   * months their approved application covers. */
+  pioneerForMonth: boolean;
   existing: {
     outcome: ReportOutcome;
     bibleStudies: number;
@@ -87,7 +90,7 @@ export function ReportSheet({
 }
 
 function Row({ row }: { row: SheetRow }) {
-  const isPioneer = row.pioneerStatus !== "NONE";
+  const isPioneer = row.pioneerForMonth;
   const [outcome, setOutcome] = useState<ReportOutcome | "">(row.existing?.outcome ?? "");
   const [aux, setAux] = useState(row.existing?.pioneerStatusUsed === "AUXILIARY");
   const shared = outcome === "SHARED";

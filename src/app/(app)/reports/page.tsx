@@ -7,6 +7,7 @@ import {
   serviceYearLabel, serviceYearOptions, serviceYearOf,
 } from "@/lib/service-year";
 import { displayName, formatDate } from "@/lib/format";
+import { auxCovers } from "@/lib/auxiliary";
 import { PageHeader, Section, EmptyState } from "@/components/shell";
 import { Button } from "@/components/ui";
 import { ReportSheet, type SheetRow } from "./report-sheet";
@@ -29,7 +30,7 @@ export default async function ReportsPage({
   const month = Number(mStr) || fallback.month;
   const serviceYear = serviceYearOf(year, month);
 
-  const [publishers, groups] = await Promise.all([
+  const [publishers, groups, approvals] = await Promise.all([
     prisma.publisher.findMany({
       where: {
         status: { in: ["ACTIVE", "IRREGULAR"] },
@@ -42,7 +43,17 @@ export default async function ReportsPage({
       orderBy: [{ group: { number: "asc" } }, { lastName: "asc" }, { firstName: "asc" }],
     }),
     prisma.serviceGroup.findMany({ where: { active: true }, orderBy: { number: "asc" } }),
+    prisma.auxiliaryPioneer.findMany({
+      select: { publisherId: true, startYear: true, startMonth: true, months: true },
+    }),
   ]);
+
+  const applied = new Set<string>();
+  const covered = new Set<string>();
+  for (const a of approvals) {
+    applied.add(a.publisherId);
+    if (auxCovers(a, year, month)) covered.add(a.publisherId);
+  }
 
   // A publisher recorded as moving in or starting after this month was not on
   // the roll yet, so no report is expected of them for it.
@@ -56,6 +67,12 @@ export default async function ReportsPage({
         name: displayName(p),
         group: p.group ? `Group ${p.group.number}` : "No group",
         pioneerStatus: p.pioneerStatus,
+        pioneerForMonth:
+          p.pioneerStatus === "NONE"
+            ? false
+            : p.pioneerStatus === "AUXILIARY"
+              ? !applied.has(p.id) || covered.has(p.id)
+              : true,
         existing: existing
           ? {
               outcome: existing.outcome,

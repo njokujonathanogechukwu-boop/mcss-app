@@ -5,10 +5,30 @@ import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
 import { auxSchema, auxEditSchema, fieldErrors } from "@/lib/validation";
 import { auxCovers, auxPeriodLabel, monthIndexOf } from "@/lib/auxiliary";
-import { monthLabel } from "@/lib/service-year";
+import { monthLabel, reportingMonth } from "@/lib/service-year";
 import { displayName } from "@/lib/format";
 
 export type FormState = { error?: string; errors?: Record<string, string>; ok?: string };
+
+/** Keeps the pioneer status in step with the span: Auxiliary while it covers
+ * the month being reported, an ordinary publisher once it has passed. */
+async function settlePioneerStatus(
+  publisherId: string,
+  span: { startYear: number; startMonth: number; months: number | null },
+) {
+  const current = reportingMonth();
+  const covered = auxCovers(span, current.year, current.month);
+  const publisher = await prisma.publisher.findUnique({
+    where: { id: publisherId },
+    select: { pioneerStatus: true },
+  });
+  if (!publisher) return;
+  if (covered && publisher.pioneerStatus === "NONE") {
+    await prisma.publisher.update({ where: { id: publisherId }, data: { pioneerStatus: "AUXILIARY" } });
+  } else if (!covered && publisher.pioneerStatus === "AUXILIARY") {
+    await prisma.publisher.update({ where: { id: publisherId }, data: { pioneerStatus: "NONE" } });
+  }
+}
 
 /**
  * Records an approved auxiliary pioneer application and sets the publisher's
@@ -131,8 +151,15 @@ export async function closeApproval(formData: FormData) {
   if (months < 1) return;
 
   await prisma.auxiliaryPioneer.update({ where: { id }, data: { months } });
+  await settlePioneerStatus(approval.publisherId, {
+    startYear: approval.startYear,
+    startMonth: approval.startMonth,
+    months,
+  });
   await recordAudit(auth.session.userId, "updated", "AuxiliaryPioneer", id, `Closed an indefinite approval at ${monthLabel(year, month)}`);
   revalidatePath("/reports/auxiliary");
+  revalidatePath("/reports");
+  revalidatePath(`/publishers/${approval.publisherId}`);
 }
 
 /**
@@ -172,6 +199,7 @@ export async function editApproval(_prev: FormState, formData: FormData): Promis
     where: { id },
     data: { startYear, startMonth, months, notes },
   });
+  await settlePioneerStatus(approval.publisherId, { startYear, startMonth, months });
 
   const span = auxPeriodLabel({ startYear, startMonth, months });
   await recordAudit(
