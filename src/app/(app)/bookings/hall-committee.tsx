@@ -6,10 +6,14 @@ import { TextField } from "@/components/fields";
 import { Button, SubmitButton } from "@/components/ui";
 import { Panel } from "@/components/shell";
 
-type Contacts = {
-  chairman: { name: string; email: string };
-  assistant: { name: string; email: string };
-};
+type Contact = { name: string; email: string; email2: string };
+type Contacts = { chairman: Contact; assistant: Contact; member: Contact };
+
+const PEOPLE = [
+  { role: "chairman", title: "Chairman of the operating committee", short: "Chairman’s" },
+  { role: "assistant", title: "Assistant to the chairman", short: "Assistant’s" },
+  { role: "member", title: "Another member of the committee", short: "Member’s" },
+] as const;
 
 /**
  * Who the automatic hall emails go to, and a way to send one straight away to
@@ -27,38 +31,35 @@ export function HallCommittee({
 
   return (
     <Panel className="p-4">
-      <form action={saveAction} className="grid gap-3 sm:grid-cols-2">
-        <TextField
-          label="Chairman of the operating committee"
-          name="chairmanName"
-          defaultValue={contacts.chairman.name}
-          error={saved.errors?.chairmanName}
-          placeholder="Brother’s full name"
-        />
-        <TextField
-          label="Chairman’s email"
-          name="chairmanEmail"
-          type="email"
-          defaultValue={contacts.chairman.email}
-          error={saved.errors?.chairmanEmail}
-          hint="Left blank, no hall email goes to him."
-        />
-        <TextField
-          label="Assistant to the chairman"
-          name="assistantName"
-          defaultValue={contacts.assistant.name}
-          error={saved.errors?.assistantName}
-          placeholder="Brother’s full name"
-        />
-        <TextField
-          label="Assistant’s email"
-          name="assistantEmail"
-          type="email"
-          defaultValue={contacts.assistant.email}
-          error={saved.errors?.assistantEmail}
-          hint="Left blank, no hall email goes to him."
-        />
-        <div className="sm:col-span-2">
+      <form action={saveAction} className="grid gap-4">
+        {PEOPLE.map(({ role, title, short }) => (
+          <div key={role} className="grid gap-3 sm:grid-cols-3">
+            <TextField
+              label={title}
+              name={`${role}Name`}
+              defaultValue={contacts[role].name}
+              error={saved.errors?.[`${role}Name`]}
+              placeholder="Brother’s full name"
+            />
+            <TextField
+              label={`${short} email`}
+              name={`${role}Email`}
+              type="email"
+              defaultValue={contacts[role].email}
+              error={saved.errors?.[`${role}Email`]}
+              hint="Left blank, no hall email goes to him."
+            />
+            <TextField
+              label={`${short} second email`}
+              name={`${role}Email2`}
+              type="email"
+              defaultValue={contacts[role].email2}
+              error={saved.errors?.[`${role}Email2`]}
+              hint="Optional — another address he reads."
+            />
+          </div>
+        ))}
+        <div>
           <SubmitButton variant="secondary" pendingLabel="Saving…">Save the committee</SubmitButton>
           {saved.ok && <p className="mt-1.5 text-xs text-pine-dark">{saved.ok}</p>}
           {saved.error && <p className="mt-1.5 text-xs text-clay">{saved.error}</p>}
@@ -69,7 +70,8 @@ export function HallCommittee({
         <p className="text-xs text-ink-soft">
           Every day the system looks ahead: an approved booking is emailed to these brothers seven
           days before it happens, and on the 1st of each month they get the whole month&rsquo;s
-          schedule. A booking is only emailed once.
+          schedule. Where two addresses are given, both are used; the same address filled in twice is
+          only mailed once. A booking is only emailed once.
         </p>
         {!mailConfigured && (
           <p className="mt-1.5 text-xs text-clay">

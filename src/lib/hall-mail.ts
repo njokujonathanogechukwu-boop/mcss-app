@@ -8,29 +8,43 @@ import { CONGREGATION_TIMEZONE, MONTH_NAMES } from "@/lib/service-year";
 /**
  * The Kingdom Hall operating committee is kept informed by email: once a week
  * ahead of every approved booking, and once a month with the whole month's
- * schedule. Both go to the chairman and his assistant, whose names and
- * addresses the secretary keeps on the bookings page. With no addresses or no
- * mail account configured nothing is sent and nothing is stamped, so the daily
- * cron can run forever without doing harm.
+ * schedule. Both go to the chairman, his assistant and one other member, each
+ * of whom may have two addresses — the secretary keeps the names and addresses
+ * on the bookings page. With no addresses or no mail account configured nothing
+ * is sent and nothing is stamped, so the daily cron can run forever without
+ * doing harm.
  */
 
-export type HallContact = { name: string; email: string };
-export type HallContacts = { chairman: HallContact; assistant: HallContact };
-export type HallRecipient = HallContact & { role: "chairman" | "assistant" };
+export type HallContact = { name: string; email: string; email2: string };
+export type HallRole = "chairman" | "assistant" | "member";
+export type HallContacts = Record<HallRole, HallContact>;
+/** One person on the committee and every address of his that will be mailed. */
+export type HallRecipient = { name: string; role: HallRole; emails: string[] };
+
+const ROLES: HallRole[] = ["chairman", "assistant", "member"];
 
 const KEYS = {
   chairmanName: "hallChairmanName",
   chairmanEmail: "hallChairmanEmail",
+  chairmanEmail2: "hallChairmanEmail2",
   assistantName: "hallAssistantName",
   assistantEmail: "hallAssistantEmail",
+  assistantEmail2: "hallAssistantEmail2",
+  memberName: "hallMemberName",
+  memberEmail: "hallMemberEmail",
+  memberEmail2: "hallMemberEmail2",
   /** "2026-10" once the summary for October 2026 has gone out. */
   summarySentFor: "hallSummarySentFor",
 } as const;
 
-export const EMPTY_CONTACTS: HallContacts = {
-  chairman: { name: "", email: "" },
-  assistant: { name: "", email: "" },
-};
+/** A blank committee — a fresh object every time, never shared between callers. */
+export function emptyContacts(): HallContacts {
+  return {
+    chairman: { name: "", email: "", email2: "" },
+    assistant: { name: "", email: "", email2: "" },
+    member: { name: "", email: "", email2: "" },
+  };
+}
 
 /** On how many days into a month the summary is still sent if the 1st was missed. */
 const SUMMARY_GRACE_DAYS = 3;
@@ -71,32 +85,39 @@ function longDay(dayKey: string): string {
   });
 }
 
+const ROLE_KEYS: Record<HallRole, { name: string; email: string; email2: string }> = {
+  chairman: { name: KEYS.chairmanName, email: KEYS.chairmanEmail, email2: KEYS.chairmanEmail2 },
+  assistant: { name: KEYS.assistantName, email: KEYS.assistantEmail, email2: KEYS.assistantEmail2 },
+  member: { name: KEYS.memberName, email: KEYS.memberEmail, email2: KEYS.memberEmail2 },
+};
+
 export async function readHallContacts(): Promise<HallContacts> {
   const rows = await prisma.congregationSetting.findMany({
-    where: {
-      key: { in: [KEYS.chairmanName, KEYS.chairmanEmail, KEYS.assistantName, KEYS.assistantEmail] },
-    },
+    where: { key: { in: ROLES.flatMap((role) => Object.values(ROLE_KEYS[role])) } },
   });
   const value = new Map(rows.map((r) => [r.key, r.value]));
-  return {
-    chairman: {
-      name: value.get(KEYS.chairmanName) ?? "",
-      email: value.get(KEYS.chairmanEmail) ?? "",
-    },
-    assistant: {
-      name: value.get(KEYS.assistantName) ?? "",
-      email: value.get(KEYS.assistantEmail) ?? "",
-    },
-  };
+  const out = emptyContacts();
+  for (const role of ROLES) {
+    const keys = ROLE_KEYS[role];
+    out[role] = {
+      name: value.get(keys.name) ?? "",
+      email: value.get(keys.email) ?? "",
+      email2: value.get(keys.email2) ?? "",
+    };
+  }
+  return out;
 }
 
 export async function saveHallContacts(contacts: HallContacts): Promise<void> {
-  const rows: [string, string][] = [
-    [KEYS.chairmanName, contacts.chairman.name.trim()],
-    [KEYS.chairmanEmail, contacts.chairman.email.trim()],
-    [KEYS.assistantName, contacts.assistant.name.trim()],
-    [KEYS.assistantEmail, contacts.assistant.email.trim()],
-  ];
+  const rows: [string, string][] = ROLES.flatMap((role) => {
+    const keys = ROLE_KEYS[role];
+    const contact = contacts[role];
+    return [
+      [keys.name, contact.name.trim()],
+      [keys.email, contact.email.trim()],
+      [keys.email2, contact.email2.trim()],
+    ] as [string, string][];
+  });
   await prisma.$transaction(
     rows.map(([key, value]) =>
       prisma.congregationSetting.upsert({ where: { key }, update: { value }, create: { key, value } }),
@@ -105,23 +126,33 @@ export async function saveHallContacts(contacts: HallContacts): Promise<void> {
 }
 
 /**
- * Who the hall emails go to. An address used twice — a chairman who is also
- * recorded as his own assistant — is only mailed once.
+ * Who the hall emails go to: one entry per person, holding every address of his
+ * that is filled in. An address recorded twice — under two brothers, or as both
+ * of one brother's — is only mailed once, and a person left without an address
+ * drops out altogether.
  */
 export function hallRecipients(contacts: HallContacts): HallRecipient[] {
   const out: HallRecipient[] = [];
   const seen = new Set<string>();
-  const add = (contact: HallContact, role: HallRecipient["role"]) => {
-    const email = contact.email.trim();
-    if (!email) return;
-    const key = email.toLowerCase();
-    if (seen.has(key)) return;
-    seen.add(key);
-    out.push({ name: contact.name.trim(), email, role });
-  };
-  add(contacts.chairman, "chairman");
-  add(contacts.assistant, "assistant");
+  for (const role of ROLES) {
+    const contact = contacts[role];
+    const emails: string[] = [];
+    for (const raw of [contact.email, contact.email2]) {
+      const email = raw.trim();
+      if (!email) continue;
+      const key = email.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      emails.push(email);
+    }
+    if (emails.length > 0) out.push({ name: contact.name.trim(), role, emails });
+  }
   return out;
+}
+
+/** The flat To list for one email to the whole committee. */
+export function recipientAddresses(recipients: HallRecipient[]): string[] {
+  return recipients.flatMap((r) => r.emails);
 }
 
 export type HallBookingLine = {
@@ -188,9 +219,9 @@ export async function bookingsInMonth(year: number, month: number): Promise<Hall
 
 function greeting(recipients: HallRecipient[]): string {
   const names = recipients.map((r) => r.name).filter(Boolean);
-  return names.length === 0
-    ? "Good day,"
-    : `Good day ${names.join(" and ")},`;
+  if (names.length === 0) return "Good day,";
+  if (names.length === 1) return `Good day ${names[0]},`;
+  return `Good day ${names.slice(0, -1).join(", ")} and ${names[names.length - 1]},`;
 }
 
 function bookingLines(b: HallBookingLine): string[] {
@@ -286,7 +317,7 @@ async function sendWeekReminder(
   if (bookings.length === 0) return { ...step, skipped: "nothing booked that day" };
 
   const result = await sendEmail(
-    recipients.map((r) => r.email),
+    recipientAddresses(recipients),
     weekReminderSubject(dayKey),
     weekReminderText(recipients, dayKey, bookings),
     "BOOKING",
@@ -316,7 +347,7 @@ async function sendMonthSummary(
   if (!force && bookings.length === 0) return { ...step, skipped: "nothing booked that month" };
 
   const result = await sendEmail(
-    recipients.map((r) => r.email),
+    recipientAddresses(recipients),
     monthSummarySubject(year, month),
     monthSummaryText(recipients, year, month, bookings),
     "BOOKING",

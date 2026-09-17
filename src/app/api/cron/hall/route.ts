@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { sendHallMail } from "@/lib/hall-mail";
+import { recipientAddresses, sendHallMail } from "@/lib/hall-mail";
 import { emailConfigured } from "@/lib/email";
 import { recordAudit } from "@/lib/auth";
 
@@ -45,7 +45,7 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.json({
-    recipients: result.recipients.map((r) => r.email),
+    recipients: recipientAddresses(result.recipients),
     steps: result.steps,
   });
 }

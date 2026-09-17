@@ -6,7 +6,13 @@ import { guard, recordAudit } from "@/lib/auth";
 import { bookingSchema, hallCommitteeSchema, fieldErrors } from "@/lib/validation";
 import { findClashes } from "@/lib/bookings";
 import { formatTimeRange } from "@/lib/format";
-import { saveHallContacts, sendHallMail } from "@/lib/hall-mail";
+import {
+  hallRecipients,
+  recipientAddresses,
+  saveHallContacts,
+  sendHallMail,
+  type HallContacts,
+} from "@/lib/hall-mail";
 
 export type BookingState = {
   error?: string;
@@ -138,28 +144,33 @@ export async function saveHallCommittee(
   const auth = await guard("booking:decide");
   if (!auth.ok) return { error: auth.error };
 
-  const parsed = hallCommitteeSchema.safeParse({
-    chairmanName: formData.get("chairmanName") ?? "",
-    chairmanEmail: formData.get("chairmanEmail") ?? "",
-    assistantName: formData.get("assistantName") ?? "",
-    assistantEmail: formData.get("assistantEmail") ?? "",
-  });
+  const fields = [
+    "chairmanName", "chairmanEmail", "chairmanEmail2",
+    "assistantName", "assistantEmail", "assistantEmail2",
+    "memberName", "memberEmail", "memberEmail2",
+  ] as const;
+  const parsed = hallCommitteeSchema.safeParse(
+    Object.fromEntries(fields.map((f) => [f, formData.get(f) ?? ""])),
+  );
   if (!parsed.success) return { errors: fieldErrors(parsed.error) };
 
-  const { chairmanName, chairmanEmail, assistantName, assistantEmail } = parsed.data;
-  await saveHallContacts({
-    chairman: { name: chairmanName, email: chairmanEmail ?? "" },
-    assistant: { name: assistantName, email: assistantEmail ?? "" },
-  });
+  const d = parsed.data;
+  const contacts: HallContacts = {
+    chairman: { name: d.chairmanName, email: d.chairmanEmail ?? "", email2: d.chairmanEmail2 ?? "" },
+    assistant: { name: d.assistantName, email: d.assistantEmail ?? "", email2: d.assistantEmail2 ?? "" },
+    member: { name: d.memberName, email: d.memberEmail ?? "", email2: d.memberEmail2 ?? "" },
+  };
+  await saveHallContacts(contacts);
 
-  const addresses = [chairmanEmail, assistantEmail].filter(Boolean).join(", ");
+  const listed = recipientAddresses(hallRecipients(contacts)).join(", ");
+
   await recordAudit(
     auth.session.userId, "updated", "CongregationSetting", "hallCommittee",
-    addresses ? `Hall committee emails set to ${addresses}` : "Hall committee emails cleared",
+    listed ? `Hall committee emails set to ${listed}` : "Hall committee emails cleared",
   );
 
   revalidatePath("/bookings");
-  return { ok: addresses ? `Saved. Hall emails will go to ${addresses}.` : "Saved. No address is set, so no hall email will go out." };
+  return { ok: listed ? `Saved. Hall emails will go to ${listed}.` : "Saved. No address is set, so no hall email will go out." };
 }
 
 export type HallMailState = BookingState;
@@ -187,7 +198,7 @@ export async function sendHallMailNow(
     return { error: "No mail account is connected yet, so nothing was sent. Set one up on the Email page." };
   }
   if (result.recipients.length === 0) {
-    return { error: "No committee address is set. Fill in the chairman's or assistant's email above first." };
+    return { error: "No committee address is set. Fill in at least one email above first." };
   }
 
   const step = result.steps[0];
@@ -207,6 +218,6 @@ export async function sendHallMailNow(
   if (step.error) return { error: step.error };
   if (!step.sent) return { error: `Nothing went out — ${step.skipped ?? "no mail to send"}.` };
   return {
-    ok: `Emailed ${result.recipients.map((r) => r.email).join(" and ")}. ${described}`,
+    ok: `Emailed ${recipientAddresses(result.recipients).join(", ")}. ${described}`,
   };
 }

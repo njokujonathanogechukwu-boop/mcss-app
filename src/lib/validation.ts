@@ -331,14 +331,19 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Enter your password"),
 });
 
-// The Kingdom Hall operating committee. Names are free text because the
-// chairman and his assistant are not necessarily on this system's own roll, and
-// an address may be left blank when that person is not to be emailed.
+// The Kingdom Hall operating committee. Names are free text because these
+// brothers are not necessarily on this system's own roll, and every address may
+// be left blank — a person with none is simply not emailed.
 export const hallCommitteeSchema = z.object({
   chairmanName: z.string().trim().max(120).default(""),
   chairmanEmail: optionalEmail,
+  chairmanEmail2: optionalEmail,
   assistantName: z.string().trim().max(120).default(""),
   assistantEmail: optionalEmail,
+  assistantEmail2: optionalEmail,
+  memberName: z.string().trim().max(120).default(""),
+  memberEmail: optionalEmail,
+  memberEmail2: optionalEmail,
 });
 
 export function fieldErrors(error: z.ZodError): Record<string, string> {
