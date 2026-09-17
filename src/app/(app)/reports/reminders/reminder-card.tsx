@@ -12,22 +12,25 @@ export function ReminderCard({
   title,
   meta,
   message,
+  link,
   hasEmail,
   waHref,
 }: {
   title: string;
   meta: string;
   message: string;
+  /** The group's own page, where the overseer can send the missing reports. */
+  link: string | null;
   hasEmail: boolean;
   waHref: string | null;
 }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"" | "text" | "link">("");
 
-  const copy = async () => {
+  const copy = async (what: "text" | "link", value: string) => {
     try {
-      await navigator.clipboard.writeText(message);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
+      await navigator.clipboard.writeText(value);
+      setCopied(what);
+      setTimeout(() => setCopied(""), 2500);
     } catch {
       // Clipboard access can be refused; the text is on screen to copy by hand.
     }
@@ -48,10 +51,10 @@ export function ReminderCard({
         <div className="flex shrink-0 gap-2">
           <button
             type="button"
-            onClick={copy}
+            onClick={() => copy("text", message)}
             className="rounded bg-pine px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-pine-dark"
           >
-            {copied ? "Copied" : "Copy reminder"}
+            {copied === "text" ? "Copied" : "Copy reminder"}
           </button>
           {waHref && (
             <a
@@ -68,6 +71,28 @@ export function ReminderCard({
       <pre className="mt-3 whitespace-pre-wrap rounded bg-paper/70 p-3 font-sans text-xs leading-relaxed text-ink-soft">
         {message}
       </pre>
+      {link && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-rule pt-3">
+          <a
+            href={link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded border border-rule-strong px-2.5 py-1 text-xs text-ink-soft hover:border-pine hover:text-pine"
+          >
+            Open the group&rsquo;s page
+          </a>
+          <button
+            type="button"
+            onClick={() => copy("link", link)}
+            className="rounded border border-rule-strong px-2.5 py-1 text-xs text-ink-soft hover:border-pine hover:text-pine"
+          >
+            {copied === "link" ? "Link copied" : "Copy link"}
+          </button>
+          <span className="text-xxs text-ink-faint">
+            The overseer can send the missing reports himself from here — no account needed.
+          </span>
+        </div>
+      )}
     </div>
   );
 }

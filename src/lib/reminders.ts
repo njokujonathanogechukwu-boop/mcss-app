@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { displayName } from "@/lib/format";
 import { monthLabel } from "@/lib/service-year";
 import { emailConfigured, sendEmail } from "@/lib/email";
+import { ensureGroupTokens } from "@/lib/group-reports";
+import { requestOrigin } from "@/lib/self-service";
 
 export type ReminderPerson = {
   firstName: string;
@@ -14,6 +16,7 @@ export type ReminderPerson = {
 
 export type ReminderGroup = {
   key: string;
+  id: string | null;
   number: number | null;
   name: string | null;
   title: string;
@@ -26,6 +29,8 @@ export type ReminderGroup = {
   message: string;
   /** Recipient addresses for this group: the overseer, else the assistant. */
   emails: string[];
+  /** The group's own page, where the overseer can send the missing reports. */
+  link: string | null;
 };
 
 export type ReminderDigest = {
@@ -86,6 +91,7 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
   const monthEnd = new Date(Date.UTC(year, month, 0, 23, 59, 59));
 
   type Bucket = {
+    id: string | null;
     number: number | null;
     name: string | null;
     overseer: ReminderPerson | null;
@@ -101,6 +107,7 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
     let bucket = buckets.get(key);
     if (!bucket) {
       bucket = {
+        id: p.groupId,
         number: p.group?.number ?? null,
         name: p.group?.name ?? null,
         overseer: p.group?.overseer ?? null,
@@ -117,46 +124,70 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
     }
   }
 
-  const groups: ReminderGroup[] = [...buckets.values()]
+  const outstanding = [...buckets.values()]
     .filter((b) => b.missing.length > 0)
-    .sort((a, b) => ((a.number ?? 9999) - (b.number ?? 9999)) || (a.name?.localeCompare(b.name ?? "") ?? 0))
-    .map((g) => {
-      const title = g.number ? `Group ${g.number}${g.name ? ` — ${g.name}` : ""}` : "No group";
-      const where = g.number ? `Group ${g.number}${g.name ? ` — ${g.name}` : ""}` : "publishers with no group";
-      const who = addressed(g.overseer);
-      const message = [
-        who ? `Good day ${who},` : "Good day,",
-        "",
-        `These ${where} have not sent their field service report for ${label}:`,
-        "",
-        ...g.missing.map((m) => `• ${m.name}${m.noted ? " (no report received)" : ""}`),
-        "",
-        "Kindly remind them to send it to the secretary. The congregation's report goes to the",
-        "branch office by the 20th of the month, and a report that comes after that is added to",
-        "the following month's report.",
-        "",
-        "Thank you for your help.",
-      ].join("\n");
+    .sort((a, b) => ((a.number ?? 9999) - (b.number ?? 9999)) || (a.name?.localeCompare(b.name ?? "") ?? 0));
 
-      const emails: string[] = [];
-      if (g.overseer?.email) emails.push(g.overseer.email);
-      else if (g.assistant?.email) emails.push(g.assistant.email);
+  // One pass for every group, so the reminders page and the scheduled email do
+  // not each pay for a round trip per group.
+  const [origin, tokens] = await Promise.all([
+    requestOrigin(),
+    ensureGroupTokens(outstanding.map((b) => b.id).filter((id): id is string => Boolean(id))),
+  ]);
 
-      return {
-        key: `${g.number ?? "none"}-${g.name ?? ""}`,
-        number: g.number,
-        name: g.name,
-        title,
-        where,
-        who,
-        overseer: g.overseer,
-        assistant: g.assistant,
-        members: g.members,
-        missing: g.missing,
-        message,
-        emails,
-      };
-    });
+  const groups: ReminderGroup[] = outstanding.map((g) => {
+    const title = g.number ? `Group ${g.number}${g.name ? ` — ${g.name}` : ""}` : "No group";
+    const where = g.number ? `Group ${g.number}${g.name ? ` — ${g.name}` : ""}` : "publishers with no group";
+    const who = addressed(g.overseer);
+    const token = g.id ? tokens.get(g.id) : undefined;
+    const link = origin && token ? `${origin}/group/${token}?period=${year}-${month}` : null;
+
+    const message = [
+      who ? `Good day ${who},` : "Good day,",
+      "",
+      `These ${where} have not sent their field service report for ${label}:`,
+      "",
+      ...g.missing.map((m) => `• ${m.name}${m.noted ? " (no report received)" : ""}`),
+      "",
+      link
+        ? "Kindly remind them to send it to the secretary — or send it for them here:"
+        : "Kindly remind them to send it to the secretary.",
+      ...(link ? ["", link] : []),
+      "",
+      "The congregation's report goes to the branch office by the 20th of the month, and a report",
+      "that comes after that is added to the following month's report.",
+      ...(link
+        ? [
+            "",
+            "This link is for your group only. Please do not forward it, because anyone holding it",
+            "can send reports for your publishers.",
+          ]
+        : []),
+      "",
+      "Thank you for your help.",
+    ].join("\n");
+
+    const emails: string[] = [];
+    if (g.overseer?.email) emails.push(g.overseer.email);
+    else if (g.assistant?.email) emails.push(g.assistant.email);
+
+    return {
+      key: `${g.number ?? "none"}-${g.name ?? ""}`,
+      id: g.id,
+      number: g.number,
+      name: g.name,
+      title,
+      where,
+      who,
+      overseer: g.overseer,
+      assistant: g.assistant,
+      members: g.members,
+      missing: g.missing,
+      message,
+      emails,
+      link,
+    };
+  });
 
   return {
     year,

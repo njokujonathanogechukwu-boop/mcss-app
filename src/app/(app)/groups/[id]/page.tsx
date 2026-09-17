@@ -5,12 +5,14 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { currentServiceYear, serviceYearLabel, serviceYearOptions } from "@/lib/service-year";
+import { groupReportLink } from "@/lib/group-reports";
 import {
   displayName, formatDate, APPOINTMENT_LABELS, PIONEER_LABELS, STATUS_LABELS, STATUS_TONE,
 } from "@/lib/format";
 import { PageHeader, Section, DataTable, Th, Td } from "@/components/shell";
 import { Badge, Button } from "@/components/ui";
 import { GroupForm } from "../group-form";
+import { GroupReportLink } from "../group-report-link";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +62,10 @@ export default async function GroupPage({
       !onRoll(m.status) &&
       (seesRemovals || (m.status !== "DISFELLOWSHIPPED" && m.status !== "DISASSOCIATED")),
   );
+
+  // The link is worth as much as the group's records to whoever holds it, so
+  // it is only shown to someone who may change the group itself.
+  const reportLink = can(user.role, "group:write") ? await groupReportLink(group.id) : null;
 
   return (
     <>
@@ -207,6 +213,17 @@ export default async function GroupPage({
               </li>
             ))}
           </ul>
+        </Section>
+      )}
+
+      {reportLink && (
+        <Section
+          title="Reports for this group"
+          description="The field service overseer's own page, where he sends the reports his publishers have not sent in."
+        >
+          <div className="max-w-2xl">
+            <GroupReportLink link={reportLink} />
+          </div>
         </Section>
       )}
 

@@ -38,6 +38,7 @@ export default async function RemindersPage({
       .filter(Boolean)
       .join(" · "),
     message: g.message,
+    link: g.link,
     hasEmail: g.emails.length > 0,
     waHref: showContact ? waHref(g.overseer?.phone, g.message) : null,
   }));
@@ -137,6 +138,7 @@ export default async function RemindersPage({
                 title={c.title}
                 meta={c.meta}
                 message={c.message}
+                link={c.link}
                 hasEmail={c.hasEmail}
                 waHref={c.waHref}
               />

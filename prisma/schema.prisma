@@ -167,6 +167,11 @@ model ServiceGroup {
   assistantId String?
   assistant   Publisher? @relation("GroupAssistant", fields: [assistantId], references: [id], onDelete: SetNull)
 
+  // Unguessable token behind the group's own "send your group's reports" link,
+  // used by the field service overseer. Null until the secretary first opens or
+  // emails the link.
+  reportToken String? @unique
+
   members      Publisher[]   @relation("GroupMembers")
   transfersOut TransferLog[] @relation("TransferFrom")
   transfersIn  TransferLog[] @relation("TransferTo")
