@@ -10,20 +10,13 @@ import { requestOrigin } from "@/lib/self-service";
 
 /**
  * Each field service group has its own link — the same idea as a publisher's
- * personal update link — behind which the overseer sends the reports for the
- * publishers in his group who have not reported. The link is the only thing
- * standing between the group's records and whoever holds the URL, so it is 192
- * bits of randomness, and it can only ever record a month that has nothing on
- * file yet: a report the secretary has already entered is never touched.
+ * personal update link. Behind it the overseer reads back over his group's
+ * months and sends the reports for the month being collected. The link is the
+ * only thing standing between the group's records and whoever holds the URL, so
+ * it is 192 bits of randomness, and it can only ever write that one month, and
+ * only for a publisher who has nothing on file yet: a report the secretary has
+ * already entered is never touched, and an earlier month can only be read.
  */
-
-export type GroupReportRow = {
-  id: string;
-  name: string;
-  isPioneer: boolean;
-  /** True when the secretary noted "no report" rather than nothing at all. */
-  noted: boolean;
-};
 
 export type GroupReportResult =
   | { ok: true; message: string }
@@ -86,17 +79,52 @@ export async function groupReportLink(groupId: string): Promise<string | null> {
   return `${origin}/group/${token}?period=${year}-${month}`;
 }
 
+/** What is already on file for one publisher's month. */
+export type GroupReportRecord = {
+  outcome: ReportOutcome;
+  studies: number;
+  hours: number | null;
+  pioneerUsed: string;
+  remarks: string | null;
+  /** True when it came through a group link rather than from the secretary. */
+  fromLink: boolean;
+};
+
+export type GroupMonthRow = {
+  id: string;
+  name: string;
+  isPioneer: boolean;
+  record: GroupReportRecord | null;
+  /** True when the only thing on file is a noted "no report". */
+  noted: boolean;
+};
+
 /**
- * The publishers in one group still owed for a month: nothing recorded, or the
- * secretary noted that no report came. A publisher recorded as moving in or
- * starting after that month was not on the roll yet, so nothing is expected of
- * them for it.
+ * The months the group's page offers: the one being collected now and the year
+ * behind it, so an overseer can read back over the whole service year.
  */
-export async function outstandingForGroup(
+export function reviewMonths(span = 13) {
+  const { year, month } = reportingMonth();
+  const out: { year: number; month: number; label: string }[] = [];
+  for (let i = 0; i < span; i++) {
+    const d = new Date(Date.UTC(year, month - 1 - i, 1));
+    const y = d.getUTCFullYear();
+    const m = d.getUTCMonth() + 1;
+    out.push({ year: y, month: m, label: monthLabel(y, m) });
+  }
+  return out;
+}
+
+/**
+ * Every publisher on the group's roll for one month, with whatever is already
+ * recorded for them. A publisher recorded as moving in or starting after that
+ * month was not on the roll yet, so nothing is expected of them for it.
+ */
+export async function groupMonthRows(
   groupId: string,
   year: number,
   month: number,
-): Promise<GroupReportRow[]> {
+): Promise<GroupMonthRow[]> {
   const monthEnd = new Date(Date.UTC(year, month, 0, 23, 59, 59));
   const publishers = await prisma.publisher.findMany({
     where: { groupId, status: { in: ["ACTIVE", "IRREGULAR"] } },
@@ -106,20 +134,42 @@ export async function outstandingForGroup(
       lastName: true,
       pioneerStatus: true,
       sinceDate: true,
-      reports: { where: { year, month }, select: { outcome: true } },
+      reports: {
+        where: { year, month },
+        select: {
+          outcome: true,
+          bibleStudies: true,
+          hours: true,
+          pioneerStatusUsed: true,
+          remarks: true,
+          source: true,
+        },
+      },
     },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
   });
 
   return publishers
     .filter((p) => !p.sinceDate || p.sinceDate <= monthEnd)
-    .filter((p) => !p.reports[0] || p.reports[0].outcome === "NO_REPORT")
-    .map((p) => ({
-      id: p.id,
-      name: displayName(p),
-      isPioneer: p.pioneerStatus !== "NONE",
-      noted: p.reports[0]?.outcome === "NO_REPORT",
-    }));
+    .map((p) => {
+      const r = p.reports[0];
+      return {
+        id: p.id,
+        name: displayName(p),
+        isPioneer: p.pioneerStatus !== "NONE",
+        noted: r?.outcome === "NO_REPORT",
+        record: r
+          ? {
+              outcome: r.outcome,
+              studies: r.bibleStudies,
+              hours: r.hours,
+              pioneerUsed: r.pioneerStatusUsed,
+              remarks: r.remarks,
+              fromLink: r.source === "FORM",
+            }
+          : null,
+      };
+    });
 }
 
 export type GroupReportInput = {
@@ -154,6 +204,19 @@ export async function saveGroupReport(
   });
   if (!publisher) {
     return { ok: false, error: "That publisher is not in your group." };
+  }
+
+  // An earlier month is on the group's page to be read, not rewritten — once
+  // the secretary has taken a month forward, only he can change it.
+  const current = reportingMonth();
+  if (year * 12 + month < current.year * 12 + current.month) {
+    return {
+      ok: false,
+      error: `${monthLabel(year, month)} is past. This link can only send ${monthLabel(
+        current.year,
+        current.month,
+      )} — please ask the secretary about an earlier month.`,
+    };
   }
 
   if (await isClosed(year, month)) {

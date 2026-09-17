@@ -219,7 +219,7 @@ export default async function GroupPage({
       {reportLink && (
         <Section
           title="Reports for this group"
-          description="The field service overseer's own page, where he sends the reports his publishers have not sent in."
+          description="The field service overseer's own page, where he reads back over his group's months and sends the reports still missing for the month being collected."
         >
           <div className="max-w-2xl">
             <GroupReportLink link={reportLink} />

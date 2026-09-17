@@ -3,22 +3,52 @@
 import { useActionState, useEffect, useState } from "react";
 import { Check, Minus, Ban, CircleDashed } from "lucide-react";
 import { SubmitButton } from "@/components/ui";
-import { REPORT_OUTCOME_LABELS, type ReportOutcome } from "@/lib/format";
+import {
+  PIONEER_LABELS,
+  REPORT_OUTCOME_LABELS,
+  type ReportOutcome,
+} from "@/lib/format";
+import type { GroupMonthRow, GroupReportRecord } from "@/lib/group-reports";
 import { submitGroupReport, type GroupReportState } from "./actions";
-
-export type GroupRow = {
-  id: string;
-  name: string;
-  isPioneer: boolean;
-  /** The secretary noted that no report came, rather than nothing at all. */
-  noted: boolean;
-};
 
 const HINTS: Record<ReportOutcome, string> = {
   SHARED: "Took a share in the ministry this month",
   DID_NOT_PREACH: "Sent a report, but had no share this month",
   NO_REPORT: "You could not reach them this month",
 };
+
+/** One recorded month in words, for a row that can no longer be changed here. */
+function describe(record: GroupReportRecord): string {
+  const parts = [REPORT_OUTCOME_LABELS[record.outcome]];
+  if (record.outcome === "SHARED") {
+    parts.push(`${record.studies} Bible stud${record.studies === 1 ? "y" : "ies"}`);
+    if (record.hours !== null) parts.push(`${record.hours} hours`);
+    if (record.pioneerUsed === "AUXILIARY") parts.push("auxiliary pioneering");
+    else if (record.pioneerUsed !== "NONE") parts.push(PIONEER_LABELS[record.pioneerUsed].toLowerCase());
+  }
+  if (record.remarks) parts.push(`“${record.remarks}”`);
+  return parts.join(" · ");
+}
+
+function Recorded({ row }: { row: GroupMonthRow }) {
+  if (!row.record) {
+    return (
+      <p className="border-t border-rule bg-paper px-4 py-3 text-xs text-ink-soft">
+        Nothing was recorded for this publisher this month.
+      </p>
+    );
+  }
+  return (
+    <div className="border-t border-rule bg-paper px-4 py-3">
+      <p className="text-xs text-ink-soft">{describe(row.record)}</p>
+      <p className="mt-1 text-xxs text-ink-faint">
+        {row.record.fromLink
+          ? "Sent through this group's link."
+          : "Entered by the secretary — it cannot be changed here."}
+      </p>
+    </div>
+  );
+}
 
 function OutcomeOption({
   value,
@@ -75,24 +105,24 @@ function PublisherReport({
   month,
   onSent,
 }: {
-  row: GroupRow;
+  row: GroupMonthRow;
   token: string;
   year: number;
   month: number;
-  onSent: () => void;
+  onSent: (outcome: ReportOutcome) => void;
 }) {
   const [state, formAction] = useActionState<GroupReportState, FormData>(
     submitGroupReport.bind(null, token),
     {},
   );
-  const [outcome, setOutcome] = useState<ReportOutcome | "">("");
-  const [aux, setAux] = useState(false);
+  const [outcome, setOutcome] = useState<ReportOutcome | "">(row.record?.outcome ?? "");
+  const [aux, setAux] = useState(row.record?.pioneerUsed === "AUXILIARY");
   const shared = outcome === "SHARED";
 
   // A save that landed swaps this form for the parent's "recorded" panel; only a
   // refusal leaves the form on screen with its reason.
   useEffect(() => {
-    if (state.message) onSent();
+    if (state.message && outcome) onSent(outcome);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
@@ -163,6 +193,7 @@ function PublisherReport({
                 inputMode="numeric"
                 min={0}
                 max={99}
+                defaultValue={row.record?.studies ?? ""}
                 className="field-input text-center text-lg"
                 placeholder="0"
               />
@@ -176,6 +207,7 @@ function PublisherReport({
                   inputMode="numeric"
                   min={0}
                   max={744}
+                  defaultValue={row.record?.hours ?? ""}
                   className="field-input text-center text-lg"
                   placeholder="0"
                 />
@@ -190,6 +222,7 @@ function PublisherReport({
         <input
           name="remarks"
           maxLength={120}
+          defaultValue={row.record?.remarks ?? ""}
           className="field-input"
           placeholder={
             outcome === "NO_REPORT" ? "Illness, away, no contact…"
@@ -210,34 +243,54 @@ export function GroupReportList({
   year,
   month,
   monthLabel,
+  editing,
 }: {
-  rows: GroupRow[];
+  rows: GroupMonthRow[];
   token: string;
   year: number;
   month: number;
   monthLabel: string;
+  /** True only for the month being collected now and not yet sent to the branch. */
+  editing: boolean;
 }) {
   const [open, setOpen] = useState<string | null>(null);
-  const [sentIds, setSentIds] = useState<string[]>([]);
+  const [sentOutcomes, setSentOutcomes] = useState<Record<string, ReportOutcome>>({});
   const [revision, setRevision] = useState(0);
 
-  const sent = new Set(sentIds);
-  const left = rows.length - sent.size;
+  // The ones still owed come first, so the month reads as a to-do list.
+  const owed = (row: GroupMonthRow) =>
+    editing && !(row.id in sentOutcomes) && (!row.record || row.noted);
+  const ordered = [...rows.filter((r) => owed(r)), ...rows.filter((r) => !owed(r))];
+
+  const left = rows.filter((r) => owed(r)).length;
+  const recorded = rows.length - left;
 
   return (
     <div className="space-y-4">
       <p className="rounded border border-rule bg-surface px-4 py-3 text-sm text-ink-soft">
         <span className="font-medium text-ink">{monthLabel}</span>
         {" · "}
-        {left === 0
-          ? "everyone below is now recorded. Thank you."
-          : `${left} of ${rows.length} still to send.`}
+        {editing
+          ? left === 0
+            ? "everything is recorded. Thank you."
+            : `${left} of ${rows.length} still to send.`
+          : `${recorded} of ${rows.length} recorded. This month is for reading only.`}
       </p>
 
       <ul className="space-y-2">
-        {rows.map((row) => {
+        {ordered.map((row) => {
           const isOpen = open === row.id;
-          const done = sent.has(row.id);
+          const canSend = owed(row);
+          const done = row.id in sentOutcomes;
+          const outcome = done ? sentOutcomes[row.id] : row.record?.outcome;
+          const marker =
+            outcome === "SHARED"
+              ? { box: "bg-pine text-white", icon: <Check size={16} /> }
+              : outcome === "DID_NOT_PREACH"
+                ? { box: "bg-paper text-ink", icon: <Minus size={16} /> }
+                : outcome === "NO_REPORT"
+                  ? { box: "bg-clay-light text-clay", icon: <Ban size={16} /> }
+                  : { box: "bg-paper text-ink-faint", icon: <CircleDashed size={16} /> };
           return (
             <li key={row.id} className="overflow-hidden rounded-lg border border-rule bg-surface">
               <button
@@ -249,23 +302,22 @@ export function GroupReportList({
                 aria-expanded={isOpen}
                 className="flex w-full items-center gap-3 px-4 py-3 text-left"
               >
-                <span
-                  aria-hidden
-                  className={`grid h-8 w-8 shrink-0 place-items-center rounded-full ${
-                    done ? "bg-pine text-white" : "bg-paper text-ink-faint"
-                  }`}
-                >
-                  {done ? <Check size={16} /> : <CircleDashed size={16} />}
+                <span aria-hidden className={`grid h-8 w-8 shrink-0 place-items-center rounded-full ${marker.box}`}>
+                  {marker.icon}
                 </span>
                 <span className="flex-1">
                   <span className="block text-sm font-medium text-ink">{row.name}</span>
                   <span className="block text-xs text-ink-soft">
                     {row.isPioneer ? "Pioneer" : "Publisher"}
-                    {row.noted ? " · the secretary noted no report" : ""}
+                    {row.record && !done
+                      ? row.noted
+                        ? " · the secretary noted no report"
+                        : ` · ${REPORT_OUTCOME_LABELS[row.record.outcome]}`
+                      : ""}
                   </span>
                 </span>
                 <span className="text-xs text-ink-faint">
-                  {done ? "Sent" : isOpen ? "Close" : "Send"}
+                  {done ? "Sent" : isOpen ? "Close" : canSend ? "Send" : row.record ? "View" : ""}
                 </span>
               </button>
               {isOpen && done && (
@@ -273,25 +325,34 @@ export function GroupReportList({
                   Recorded — thank you. Close this and carry on with the next publisher.
                 </p>
               )}
-              {isOpen && !done && (
+              {isOpen && !done && canSend && (
                 <PublisherReport
                   key={`${row.id}-${revision}`}
                   row={row}
                   token={token}
                   year={year}
                   month={month}
-                  onSent={() => setSentIds((ids) => (ids.includes(row.id) ? ids : [...ids, row.id]))}
+                  onSent={(sent) => setSentOutcomes((m) => ({ ...m, [row.id]: sent }))}
                 />
               )}
+              {isOpen && !done && !canSend && <Recorded row={row} />}
             </li>
           );
         })}
       </ul>
 
-      <p className="text-xs text-ink-soft">
-        Send one at a time — each is recorded as soon as you press the button, so nothing is lost if
-        you close the page. A report the secretary has already entered cannot be changed here.
-      </p>
+      {editing ? (
+        <p className="text-xs text-ink-soft">
+          Send one at a time — each is recorded as soon as you press the button, so nothing is lost
+          if you close the page. A report the secretary has already entered is shown for you to
+          check but cannot be changed here.
+        </p>
+      ) : (
+        <p className="text-xs text-ink-soft">
+          These reports have already gone to the secretary. If one of them is wrong, please tell
+          him — only the month being collected now can be sent from this page.
+        </p>
+      )}
     </div>
   );
 }
