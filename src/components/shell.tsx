@@ -136,13 +136,19 @@ export function Td({
   children,
   align = "left",
   className = "",
+  colSpan,
+  title,
 }: {
   children?: ReactNode;
   align?: "left" | "right" | "center";
   className?: string;
+  colSpan?: number;
+  title?: string;
 }) {
   return (
     <td
+      colSpan={colSpan}
+      title={title}
       className={`border-b border-rule px-3 py-2.5 align-middle
         ${align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left"} ${className}`}
     >

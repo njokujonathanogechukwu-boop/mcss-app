@@ -122,6 +122,9 @@ export default async function ReportsPage({
             <Link href={`/reports/s10?sy=${serviceYear}`}>
               <Button variant="secondary" size="sm">Congregation analysis (S-10)</Button>
             </Link>
+            <Link href={`/reports/pioneers?sy=${serviceYear}`}>
+              <Button variant="secondary" size="sm">Pioneer review</Button>
+            </Link>
           </>
         }
       />
