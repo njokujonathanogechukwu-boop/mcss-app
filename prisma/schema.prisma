@@ -435,6 +435,10 @@ model HallBooking {
   decidedBy    User?         @relation("BookingDecider", fields: [decidedById], references: [id], onDelete: SetNull)
   decidedAt    DateTime?
 
+  // Set once the operating committee has been emailed about this booking a
+  // week ahead, so the daily cron never reminds about it twice.
+  weekReminderSentAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -515,7 +519,7 @@ model Announcement {
 
 // A copy of every email the platform sends, so the secretary can see what went
 // out, to whom, and whether it was delivered to the mail server. `kind` is one
-// of REMINDER, UPDATE_LINK, ANNOUNCEMENT, ACCOUNT or GENERAL.
+// of REMINDER, UPDATE_LINK, ANNOUNCEMENT, ACCOUNT, BOOKING or GENERAL.
 model OutboundMail {
   id      String  @id @default(cuid())
   to      String
@@ -616,4 +620,15 @@ model FormTemplate {
   fieldCount   Int      @default(0)
   uploadedById String?
   uploadedAt   DateTime @default(now())
+}
+
+// ------------------------------------------------- congregation settings
+
+// Small pieces of congregation configuration the secretary edits in the app,
+// such as who on the Kingdom Hall operating committee receives booking
+// emails. A key/value row so adding one more setting needs no migration.
+model CongregationSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }

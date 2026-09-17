@@ -19,6 +19,7 @@ const KIND_LABEL: Record<string, string> = {
   UPDATE_LINK: "Update link",
   ANNOUNCEMENT: "Announcement",
   ACCOUNT: "New account",
+  BOOKING: "Hall booking",
   GENERAL: "Written here",
 };
 

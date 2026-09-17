@@ -2,11 +2,14 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { formatTimeRange, formatDate, displayName, BOOKING_LABELS, DECISION_LABELS } from "@/lib/format";
+import { readHallContacts } from "@/lib/hall-mail";
+import { emailConfigured } from "@/lib/email";
 import Link from "next/link";
 import { PageHeader, Section, EmptyState, Panel } from "@/components/shell";
 import { Badge } from "@/components/ui";
 import { BookingForm } from "./booking-form";
 import { DecisionForm } from "./decision-form";
+import { HallCommittee } from "./hall-committee";
 
 export const dynamic = "force-dynamic";
 
@@ -52,12 +55,24 @@ export default async function BookingsPage() {
       })
     : null;
 
+  // Only those who decide on bookings choose who the hall emails go to.
+  const hallContacts = canDecide ? await readHallContacts() : null;
+
   return (
     <>
       <PageHeader
         title="Kingdom Hall calendar"
         description="Requests are checked against approved bookings for the same part of the hall. Two events can share a time only if they use different rooms."
       />
+
+      {hallContacts && (
+        <Section
+          title="Hall emails to the operating committee"
+          description="The chairman and his assistant are emailed a week before each approved booking, and get the month's schedule on the 1st."
+        >
+          <HallCommittee contacts={hallContacts} mailConfigured={emailConfigured()} />
+        </Section>
+      )}
 
       {resources.length === 0 && (
         <EmptyState

@@ -83,7 +83,7 @@ export function mailDiagnostics() {
 
 export type SendResult = { ok: boolean; error?: string };
 
-export type MailKind = "REMINDER" | "UPDATE_LINK" | "ANNOUNCEMENT" | "ACCOUNT" | "GENERAL";
+export type MailKind = "REMINDER" | "UPDATE_LINK" | "ANNOUNCEMENT" | "ACCOUNT" | "BOOKING" | "GENERAL";
 
 const REACH_HINT =
   "The platform could not reach Gmail's mail server. This is usually a momentary network fault; " +
