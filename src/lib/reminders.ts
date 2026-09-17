@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { displayName } from "@/lib/format";
 import { monthLabel } from "@/lib/service-year";
 import { emailConfigured, sendEmail } from "@/lib/email";
+import { isClosed } from "@/lib/report-periods";
 import { ensureGroupTokens } from "@/lib/group-reports";
 import { requestOrigin } from "@/lib/self-service";
 
@@ -29,7 +30,11 @@ export type ReminderGroup = {
   message: string;
   /** Recipient addresses for this group: the overseer, else the assistant. */
   emails: string[];
-  /** The group's own page, where the overseer can send the missing reports. */
+  /**
+   * The group's own page, where the overseer can send the missing reports. Null
+   * once the month has gone to the branch — the page could not accept anything
+   * then, so the reminder asks for the reports directly instead.
+   */
   link: string | null;
 };
 
@@ -37,6 +42,8 @@ export type ReminderDigest = {
   year: number;
   month: number;
   label: string;
+  /** True once the congregation's report for this month has been submitted. */
+  closed: boolean;
   groups: ReminderGroup[];
   totalMissing: number;
 };
@@ -65,26 +72,29 @@ export function waHref(phone: string | null | undefined, message: string): strin
 export async function gatherReminders(year: number, month: number): Promise<ReminderDigest> {
   const label = monthLabel(year, month);
 
-  const publishers = await prisma.publisher.findMany({
-    where: { status: { in: ["ACTIVE", "IRREGULAR"] } },
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      groupId: true,
-      sinceDate: true,
-      group: {
-        select: {
-          number: true,
-          name: true,
-          overseer: { select: { firstName: true, lastName: true, gender: true, phone: true, email: true } },
-          assistant: { select: { firstName: true, lastName: true, gender: true, phone: true, email: true } },
+  const [closed, publishers] = await Promise.all([
+    isClosed(year, month),
+    prisma.publisher.findMany({
+      where: { status: { in: ["ACTIVE", "IRREGULAR"] } },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        groupId: true,
+        sinceDate: true,
+        group: {
+          select: {
+            number: true,
+            name: true,
+            overseer: { select: { firstName: true, lastName: true, gender: true, phone: true, email: true } },
+            assistant: { select: { firstName: true, lastName: true, gender: true, phone: true, email: true } },
+          },
         },
+        reports: { where: { year, month }, select: { outcome: true } },
       },
-      reports: { where: { year, month }, select: { outcome: true } },
-    },
-    orderBy: [{ group: { number: "asc" } }, { lastName: "asc" }, { firstName: "asc" }],
-  });
+      orderBy: [{ group: { number: "asc" } }, { lastName: "asc" }, { firstName: "asc" }],
+    }),
+  ]);
 
   // A publisher recorded as moving in or starting after the month asked about
   // was not on the roll yet, so nothing was expected of them for it.
@@ -129,10 +139,14 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
     .sort((a, b) => ((a.number ?? 9999) - (b.number ?? 9999)) || (a.name?.localeCompare(b.name ?? "") ?? 0));
 
   // One pass for every group, so the reminders page and the scheduled email do
-  // not each pay for a round trip per group.
+  // not each pay for a round trip per group. A month already at the branch gets
+  // no links at all: the group's page could not accept a report for it, so
+  // handing one out would only mislead.
   const [origin, tokens] = await Promise.all([
     requestOrigin(),
-    ensureGroupTokens(outstanding.map((b) => b.id).filter((id): id is string => Boolean(id))),
+    closed
+      ? Promise.resolve(new Map<string, string>())
+      : ensureGroupTokens(outstanding.map((b) => b.id).filter((id): id is string => Boolean(id))),
   ]);
 
   const groups: ReminderGroup[] = outstanding.map((g) => {
@@ -149,20 +163,28 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
       "",
       ...g.missing.map((m) => `• ${m.name}${m.noted ? " (no report received)" : ""}`),
       "",
-      link
-        ? "Kindly remind them to send it to the secretary — or send it for them here:"
-        : "Kindly remind them to send it to the secretary.",
-      ...(link ? ["", link] : []),
-      "",
-      "The congregation's report goes to the branch office by the 20th of the month, and a report",
-      "that comes after that is added to the following month's report.",
-      ...(link
+      ...(closed
         ? [
-            "",
-            "This link is for your group only. Please do not forward it, because anyone holding it",
-            "can send reports for your publishers.",
+            `The congregation's report for ${label} has already been submitted to the branch office,`,
+            "so anything that comes now is added to the next month's figure. Kindly remind them to",
+            "send it to the secretary.",
           ]
-        : []),
+        : [
+            link
+              ? "Kindly remind them to send it to the secretary — or send it for them here:"
+              : "Kindly remind them to send it to the secretary.",
+            ...(link ? ["", link] : []),
+            "",
+            "The congregation's report goes to the branch office by the 20th of the month, and a report",
+            "that comes after that is added to the following month's report.",
+            ...(link
+              ? [
+                  "",
+                  "This link is for your group only. Please do not forward it, because anyone holding it",
+                  "can send reports for your publishers.",
+                ]
+              : []),
+          ]),
       "",
       "Thank you for your help.",
     ].join("\n");
@@ -193,6 +215,7 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
     year,
     month,
     label,
+    closed,
     groups,
     totalMissing: groups.reduce((t, g) => t + g.missing.length, 0),
   };

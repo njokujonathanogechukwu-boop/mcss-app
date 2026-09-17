@@ -25,7 +25,7 @@ export default async function RemindersPage({
   const month = Number(mStr) || fallback.month;
   const showContact = can(user.role, "publisher:readContact");
 
-  const { label, groups, totalMissing } = await gatherReminders(year, month);
+  const { label, groups, totalMissing, closed } = await gatherReminders(year, month);
 
   const cards = groups.map((g) => ({
     key: g.key,
@@ -106,6 +106,17 @@ export default async function RemindersPage({
           </>
         )}
       </div>
+
+      {closed && (
+        <p className="mb-6 rounded border border-rule bg-surface px-4 py-3 text-sm text-ink-soft">
+          <span className="font-medium text-ink">
+            {label} has already been submitted to the branch office.
+          </span>{" "}
+          These reminders carry no group link, because that page cannot record a month already sent.
+          Anything that comes now is added to the next month&rsquo;s figure, so they ask the overseer
+          to pass the reports straight to you.
+        </p>
+      )}
 
       <form method="get" className="mb-6 grid gap-3 rounded border border-rule bg-surface p-4 sm:grid-cols-3">
         <div>
