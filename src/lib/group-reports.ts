@@ -79,6 +79,20 @@ export async function groupReportLink(groupId: string): Promise<string | null> {
   return `${origin}/group/${token}?period=${year}-${month}`;
 }
 
+/**
+ * Replaces a group's link. The old one stops working the moment this lands, so
+ * a link that has been forwarded, lost or seen by the wrong person can be
+ * killed without touching anything the overseer has already sent.
+ */
+export async function rotateGroupToken(groupId: string): Promise<string | null> {
+  const token = randomBytes(24).toString("base64url");
+  await prisma.serviceGroup.update({ where: { id: groupId }, data: { reportToken: token } });
+  const origin = await requestOrigin();
+  if (!origin) return null;
+  const { year, month } = reportingMonth();
+  return `${origin}/group/${token}?period=${year}-${month}`;
+}
+
 /** What is already on file for one publisher's month. */
 export type GroupReportRecord = {
   outcome: ReportOutcome;

@@ -222,7 +222,7 @@ export default async function GroupPage({
           description="The field service overseer's own page, where he reads back over his group's months and sends the reports still missing for the month being collected."
         >
           <div className="max-w-2xl">
-            <GroupReportLink link={reportLink} />
+            <GroupReportLink groupId={group.id} link={reportLink} />
           </div>
         </Section>
       )}

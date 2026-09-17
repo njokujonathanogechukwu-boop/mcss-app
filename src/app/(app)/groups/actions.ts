@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
 import { groupSchema, fieldErrors } from "@/lib/validation";
+import { rotateGroupToken } from "@/lib/group-reports";
 
 export type GroupState = { error?: string; errors?: Record<string, string>; ok?: string };
 
@@ -48,4 +49,32 @@ export async function saveGroup(
 
   revalidatePath("/groups");
   return { ok: id ? "Group updated." : "Group created." };
+}
+
+export type RotateLinkState = { error?: string; ok?: string; link?: string };
+
+/**
+ * Replaces a group's report link, so the one already given out stops working.
+ * Nothing the overseer has sent is touched — only the address changes.
+ */
+export async function rotateGroupReportLink(groupId: string): Promise<RotateLinkState> {
+  const auth = await guard("group:write");
+  if (!auth.ok) return { error: auth.error };
+
+  const group = await prisma.serviceGroup.findUnique({
+    where: { id: groupId },
+    select: { id: true, number: true, name: true },
+  });
+  if (!group) return { error: "That group is not on file." };
+
+  const link = await rotateGroupToken(group.id);
+
+  await recordAudit(
+    auth.session.userId, "rotated", "ServiceGroup", group.id,
+    `Replaced Group ${group.number}'s report link — the old one stopped working.`,
+  );
+
+  revalidatePath(`/groups/${group.id}`);
+  revalidatePath("/reports/reminders");
+  return { ok: "Replaced. The old link no longer works.", link: link ?? undefined };
 }
