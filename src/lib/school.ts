@@ -374,3 +374,19 @@ export function parsePersonRef(value: string | null | undefined): PersonRef | nu
 export function slotField(slot: MidweekSlot): string {
   return slot;
 }
+
+/**
+ * The form field name the history preview uses to carry an overseer's pick for
+ * one printed name the rolls did not match. Both the preview (which renders the
+ * picker) and the import (which reads it back) compute the same path, so a pick
+ * lands on exactly the name it was made for. `field` is "chairman", "opening",
+ * "closing", or "part" with a position and slot.
+ */
+export function historyOverridePath(
+  weekIndex: number,
+  field: "chairman" | "opening" | "closing" | "part",
+  position?: number,
+  slot?: string,
+): string {
+  return field === "part" ? `ov:${weekIndex}:p${position}:${slot}` : `ov:${weekIndex}:${field}`;
+}

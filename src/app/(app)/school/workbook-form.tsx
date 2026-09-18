@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { SelectField, TextField } from "@/components/fields";
 import { Notice } from "@/components/shell";
@@ -29,17 +29,47 @@ export function WorkbookImportForm({
 }) {
   const [state, action] = useActionState<WorkbookState, FormData>(importWorkbook, {});
   const [attempt, setAttempt] = useState(0);
+  const [readError, setReadError] = useState<string | null>(null);
   const router = useRouter();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const textRef = useRef<HTMLInputElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const bypass = useRef(false);
   const { preview, settings } = state;
 
   useEffect(() => {
     if (state.periodId) router.push(`/school/periods/${state.periodId}`);
   }, [state.periodId, router]);
 
+  // The EPUB itself is far too large to post, so its readable text — the OPF and
+  // the chapter XHTML — is pulled out here in the browser and only that is sent.
+  async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+    if (bypass.current) {
+      bypass.current = false;
+      return;
+    }
+    const file = fileRef.current?.files?.[0];
+    if (!file) return;
+    event.preventDefault();
+    setReadError(null);
+    try {
+      const entries = await extractEntries(file);
+      if (!textRef.current || !nameRef.current) return;
+      textRef.current.value = JSON.stringify(entries);
+      nameRef.current.value = file.name;
+    } catch {
+      setReadError("That EPUB could not be opened here. Download it again from jw.org and choose it once more.");
+      return;
+    }
+    bypass.current = true;
+    event.currentTarget.requestSubmit();
+  }
+
   return (
     <form
       key={attempt}
       action={action}
+      onSubmit={onSubmit}
       className="space-y-4 rounded border border-dashed border-rule-strong bg-paper p-4"
     >
       <div>
@@ -53,10 +83,15 @@ export function WorkbookImportForm({
 
       {state.error && <Notice tone="error">{state.error}</Notice>}
       {state.errors?.workbook && <Notice tone="error">{state.errors.workbook}</Notice>}
+      {readError && <Notice tone="error">{readError}</Notice>}
+
+      <input type="hidden" name="workbookText" ref={textRef} defaultValue="" />
+      <input type="hidden" name="workbookName" ref={nameRef} defaultValue="" />
 
       {/* Stays mounted once a file is chosen, so the confirmed pass posts the
           very upload that was previewed rather than asking for it again. */}
       <input
+        ref={fileRef}
         type="file"
         name="workbook"
         accept=".epub,application/epub+zip"
@@ -123,6 +158,19 @@ export function WorkbookImportForm({
       )}
     </form>
   );
+}
+
+/** The OPF and the chapter XHTML of an EPUB, read here so only text is posted. */
+async function extractEntries(file: File): Promise<Record<string, string>> {
+  const JSZip = (await import("jszip")).default;
+  const zip = await JSZip.loadAsync(file);
+  const entries: Record<string, string> = {};
+  for (const path of Object.keys(zip.files)) {
+    if (!/(\.opf|\.xhtml)$/i.test(path)) continue;
+    const entry = zip.file(path);
+    if (entry) entries[path] = await entry.async("string");
+  }
+  return entries;
 }
 
 function PreviewTable({ weeks }: { weeks: Preview["weeks"] }) {

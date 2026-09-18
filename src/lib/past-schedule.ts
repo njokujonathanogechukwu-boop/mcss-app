@@ -3,6 +3,7 @@ import JSZip from "jszip";
 import { generateText } from "ai";
 import type { MidweekSection, MidweekSlot } from "@prisma/client";
 import { readPdfPages, lines } from "@/lib/pdf/text";
+import { aiConfigured } from "@/lib/ai";
 
 /**
  * Reads schedules the congregation printed before the app existed — a photo of
@@ -165,6 +166,23 @@ async function pdfText(bytes: Uint8Array): Promise<string> {
   return text;
 }
 
+/**
+ * Runs the transcription model. Any failure from the gateway — no key, model
+ * unavailable, network — is turned into a PastScheduleError that names the real
+ * cause, so the overseer sees why the read failed instead of a blank "could not
+ * be read", and the reason is not swallowed by the caller's generic catch.
+ */
+async function transcribe(run: () => Promise<{ text: string }>): Promise<string> {
+  try {
+    const { text } = await run();
+    return text;
+  } catch (error) {
+    if (error instanceof PastScheduleError) throw error;
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new PastScheduleError(`The schedule reader could not reach the AI service: ${reason}`);
+  }
+}
+
 export async function readPastSchedule(bytes: Uint8Array, mimeType: string, fileName: string): Promise<PastSchedule> {
   const isImage = mimeType.startsWith("image/") || /\.(jpe?g|png|webp)$/i.test(fileName);
   const isDocx = /\.docx$/i.test(fileName) || mimeType.includes("wordprocessingml");
@@ -176,32 +194,41 @@ export async function readPastSchedule(bytes: Uint8Array, mimeType: string, file
   if (/\.(doc|rtf|txt)$/i.test(fileName)) {
     throw new PastScheduleError("That is an older Word format. Save it as DOCX, or upload a photo of the schedule.");
   }
+  if (!aiConfigured()) {
+    throw new PastScheduleError(
+      "The AI service is not connected, so schedules cannot be read yet. Ask the secretary to connect the AI Gateway on Vercel.",
+    );
+  }
 
   if (isImage) {
-    const { text } = await generateText({
-      model: MODEL,
-      instructions: INSTRUCTIONS,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "image", image: bytes, mediaType: mimeType || "image/jpeg" },
-            { type: "text", text: "Transcribe every week on this schedule." },
-          ],
-        },
-      ],
-      temperature: 0,
-    });
+    const text = await transcribe(() =>
+      generateText({
+        model: MODEL,
+        instructions: INSTRUCTIONS,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "image", image: bytes, mediaType: mimeType || "image/jpeg" },
+              { type: "text", text: "Transcribe every week on this schedule." },
+            ],
+          },
+        ],
+        temperature: 0,
+      }),
+    );
     return parseJson(text);
   }
 
   const source = isDocx ? await docxText(bytes) : await pdfText(bytes);
-  const { text } = await generateText({
-    model: MODEL,
-    instructions: INSTRUCTIONS,
-    prompt: `Transcribe every week on this schedule.\n\n${source}`,
-    temperature: 0,
-  });
+  const text = await transcribe(() =>
+    generateText({
+      model: MODEL,
+      instructions: INSTRUCTIONS,
+      prompt: `Transcribe every week on this schedule.\n\n${source}`,
+      temperature: 0,
+    }),
+  );
   return parseJson(text);
 }
 

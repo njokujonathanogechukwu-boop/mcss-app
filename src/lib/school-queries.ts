@@ -479,6 +479,21 @@ export async function personIndex(): Promise<Map<string, PersonMatch>> {
 }
 
 /**
+ * Everyone the history picker may choose from — the same set the matcher knows,
+ * as label/value options sorted by name. A past schedule can name a brother who
+ * has since transferred out, so this is deliberately wider than the pools the
+ * week editor offers.
+ */
+export async function personOptions(): Promise<NameOption[]> {
+  const index = await personIndex();
+  const seen = new Map<string, string>();
+  for (const match of index.values()) if (!seen.has(match.key)) seen.set(match.key, match.name);
+  return [...seen]
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/**
  * Ties a printed name to a person: the exact name in either order first, then
  * the one person on file whose full name carries every word printed, which is
  * how a middle name left off the schedule still lands on the right brother.

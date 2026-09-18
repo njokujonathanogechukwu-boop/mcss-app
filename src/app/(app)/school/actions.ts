@@ -6,9 +6,9 @@ import type { MidweekSlot, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
 import { displayName, formatDate, safeFileName } from "@/lib/format";
-import { PART_KINDS, WEEK_SKELETON, meetingDateIn, meetingDates, parsePersonRef, periodLabel, slotField } from "@/lib/school";
-import { WorkbookError, readWorkbook, toPreview, type WorkbookPreview } from "@/lib/workbook";
-import { PastScheduleError, readPastSchedule, slotsForRole, type PastWeek } from "@/lib/past-schedule";
+import { PART_KINDS, WEEK_SKELETON, historyOverridePath, meetingDateIn, meetingDates, parsePersonRef, periodLabel, slotField } from "@/lib/school";
+import { WorkbookError, readWorkbook, readWorkbookEntries, toPreview, type WorkbookEntries, type WorkbookPreview } from "@/lib/workbook";
+import { PastScheduleError, readPastSchedule, slotsForRole, type PastSchedule, type PastWeek } from "@/lib/past-schedule";
 import {
   APPROVED_READERS_KEY, approvedReaderIds, matchName, personIndex, restrictedPublisherIds, type PersonMatch,
 } from "@/lib/school-queries";
@@ -711,10 +711,45 @@ export type WorkbookState = SchoolState & {
   periodId?: string;
 };
 
-const MAX_WORKBOOK_BYTES = 30 * 1024 * 1024;
+/** The extracted workbook text as posted; a whole EPUB is too large to post. */
+const MAX_WORKBOOK_TEXT = 4 * 1024 * 1024;
+/** A raw EPUB small enough to still cross the body limit, read server-side. */
+const MAX_WORKBOOK_BYTES = 4 * 1024 * 1024;
 
 /** The uploaded workbook, read off the form. Shared by both passes of the import. */
 async function uploadedWorkbook(formData: FormData) {
+  const name = String(formData.get("workbookName") ?? "");
+  const posted = String(formData.get("workbookText") ?? "");
+
+  if (posted) {
+    if (!/\.epub$/i.test(name)) {
+      return {
+        error: {
+          workbook:
+            "Upload the EPUB of the workbook — on jw.org, pick EPUB from the download options. The PDF and the JWPUB cannot be read as text, so they can only be filed under the archive.",
+        } as const,
+      };
+    }
+    if (posted.length > MAX_WORKBOOK_TEXT) {
+      return { error: { workbook: "That workbook holds more text than the app can take. Try a newer edition." } as const };
+    }
+    let entries: WorkbookEntries;
+    try {
+      entries = JSON.parse(posted) as WorkbookEntries;
+    } catch {
+      return { error: { workbook: "The workbook text could not be read. Choose the EPUB again." } as const };
+    }
+    try {
+      return { fileName: name, workbook: readWorkbookEntries(entries) };
+    } catch (error) {
+      return {
+        error: {
+          workbook: error instanceof WorkbookError ? error.message : "That workbook could not be read.",
+        } as const,
+      };
+    }
+  }
+
   const file = formData.get("workbook");
   if (!(file instanceof File) || file.size === 0) {
     return { error: { workbook: "Choose the workbook file first." } as const };
@@ -728,12 +763,12 @@ async function uploadedWorkbook(formData: FormData) {
     };
   }
   if (file.size > MAX_WORKBOOK_BYTES) {
-    return { error: { workbook: "That workbook is over 30 MB." } as const };
+    return { error: { workbook: "That workbook is too large to post. Refresh the page and choose it again." } as const };
   }
 
   const bytes = new Uint8Array((await file.arrayBuffer()) as ArrayBuffer);
   try {
-    return { file, bytes, workbook: await readWorkbook(bytes) };
+    return { fileName: file.name, workbook: await readWorkbook(bytes) };
   } catch (error) {
     return {
       error: {
@@ -764,7 +799,7 @@ export async function importWorkbook(_prev: WorkbookState, formData: FormData): 
 
   const read = await uploadedWorkbook(formData);
   if ("error" in read) return { errors: read.error };
-  const { file, bytes, workbook } = read;
+  const { fileName, workbook } = read;
 
   if (formData.get("confirm") !== "1") {
     return {
@@ -824,16 +859,6 @@ export async function importWorkbook(_prev: WorkbookState, formData: FormData): 
     startHour,
     startMinute,
     weeks: { create: weeks },
-    documents: {
-      create: {
-        label: `${name} workbook`,
-        fileName: safeFileName(file.name),
-        mimeType: file.type || "application/epub+zip",
-        size: file.size,
-        bytes,
-        uploadedById: auth.session.userId,
-      },
-    },
   };
 
   const totalParts = workbook.weeks.reduce((count, week) => count + week.parts.length, 0);
@@ -854,7 +879,7 @@ export async function importWorkbook(_prev: WorkbookState, formData: FormData): 
 
   await recordAudit(
     auth.session.userId, existing ? "updated" : "created", "MidweekPeriod", periodId,
-    `Built the ${name} midweek schedule from the workbook: ${weeks.length} weeks, ${totalParts} parts`,
+    `Built the ${name} midweek schedule from the workbook ${fileName}: ${weeks.length} weeks, ${totalParts} parts`,
   );
 
   revalidateSchool();
@@ -892,10 +917,13 @@ export type HistoryState = {
   errors?: Record<string, string>;
   ok?: string;
   preview?: HistoryPreviewWeek[];
+  /** The read schedule, carried to the confirm pass so it files exactly what was previewed. */
+  parsed?: string;
   periodId?: string;
 };
 
-const MAX_PAST_BYTES = 15 * 1024 * 1024;
+/** A server action can carry about 4 MB on Vercel, overhead included. */
+const MAX_PAST_BYTES = 3.5 * 1024 * 1024;
 
 function previewPerson(index: Map<string, PersonMatch>, raw: string | null): HistoryPerson | null {
   if (!raw) return null;
@@ -935,6 +963,28 @@ function personColumns(key: string): { publisherId: string | null; studentId: st
   };
 }
 
+/** The publisher id a person reference holds, or null when it is a student. */
+function publisherIdOf(key: string | null): string | null {
+  return key?.startsWith("p:") ? key.slice(2) : null;
+}
+
+/**
+ * The person a printed name resolves to on the confirm pass: the overseer's pick
+ * for that exact name if they made one in the preview, else the roll match. The
+ * literal CHAIRMAN is handled by the caller, not here.
+ */
+function resolveHistoryKey(
+  raw: string | null,
+  path: string,
+  index: Map<string, PersonMatch>,
+  overrides: Map<string, string>,
+): string | null {
+  if (!raw || raw === "CHAIRMAN") return null;
+  const picked = overrides.get(path);
+  if (picked && parsePersonRef(picked)) return picked;
+  return matchName(index, raw)?.key ?? null;
+}
+
 /**
  * Files schedules the congregation printed before the app. The first pass reads
  * the file and matches every printed name against the rolls for the overseer to
@@ -950,28 +1000,45 @@ export async function importPastSchedule(_prev: HistoryState, formData: FormData
     return { errors: { schedule: "Choose the photo, Word file or PDF of the schedule first." } };
   }
   if (file.size > MAX_PAST_BYTES) {
-    return { errors: { schedule: "That file is over 15 MB. Photograph the schedule again at a smaller size." } };
+    return { errors: { schedule: "That file is over 3.5 MB, the most that can be posted. Photograph the schedule again at a smaller size, or upload the Word file instead." } };
   }
 
   const bytes = new Uint8Array((await file.arrayBuffer()) as ArrayBuffer);
-  let schedule;
-  try {
-    schedule = await readPastSchedule(bytes, file.type, file.name);
-  } catch (error) {
-    return {
-      errors: {
-        schedule: error instanceof PastScheduleError ? error.message : "That file could not be read.",
-      },
-    };
+  const confirm = formData.get("confirm") === "1";
+
+  let schedule: PastSchedule;
+  const carried = confirm ? String(formData.get("parsed") ?? "") : "";
+  if (carried) {
+    try {
+      schedule = JSON.parse(carried) as PastSchedule;
+    } catch {
+      return { error: "The preview could not be carried over. Read the schedule again." };
+    }
+  } else {
+    try {
+      schedule = await readPastSchedule(bytes, file.type, file.name);
+    } catch (error) {
+      return {
+        errors: {
+          schedule: error instanceof PastScheduleError ? error.message : "That file could not be read.",
+        },
+      };
+    }
   }
 
   const index = await personIndex();
 
-  if (formData.get("confirm") !== "1") {
+  if (!confirm) {
     return {
       preview: schedule.weeks.map((week) => previewWeek(week, index)),
+      parsed: JSON.stringify(schedule),
       ok: "Read it. Check every week and name below, then file it.",
     };
+  }
+
+  const overrides = new Map<string, string>();
+  for (const [key, value] of formData.entries()) {
+    if (key.startsWith("ov:") && typeof value === "string" && value) overrides.set(key, value);
   }
 
   const dated = schedule.weeks.filter((week) => week.date);
@@ -1013,31 +1080,31 @@ export async function importPastSchedule(_prev: HistoryState, formData: FormData
   let unmatched = 0;
   let skipped = 0;
 
-  for (const week of schedule.weeks) {
+  for (const [weekIndex, week] of schedule.weeks.entries()) {
     if (!week.date || have.has(new Date(`${week.date}T00:00:00Z`).getTime())) {
       skipped += 1;
       continue;
     }
     const weekOf = new Date(`${week.date}T00:00:00Z`);
 
-    const chairman = week.chairman ? matchName(index, week.chairman) : null;
-    if (week.chairman && !chairman) unmatched += 1;
-    const opening =
-      week.openingPrayer === "CHAIRMAN" ? chairman : week.openingPrayer ? matchName(index, week.openingPrayer) : null;
-    if (week.openingPrayer && week.openingPrayer !== "CHAIRMAN" && !opening) unmatched += 1;
-    const closing = week.closingPrayer ? matchName(index, week.closingPrayer) : null;
-    if (week.closingPrayer && !closing) unmatched += 1;
-
-    const chairmanId = chairman?.key.startsWith("p:") ? chairman.key.slice(2) : null;
+    const chairmanKey = resolveHistoryKey(week.chairman, historyOverridePath(weekIndex, "chairman"), index, overrides);
+    if (week.chairman && !chairmanKey) unmatched += 1;
+    const openingIsChairman = week.openingPrayer === "CHAIRMAN";
+    const openingKey = openingIsChairman
+      ? chairmanKey
+      : resolveHistoryKey(week.openingPrayer, historyOverridePath(weekIndex, "opening"), index, overrides);
+    if (week.openingPrayer && !openingIsChairman && !openingKey) unmatched += 1;
+    const closingKey = resolveHistoryKey(week.closingPrayer, historyOverridePath(weekIndex, "closing"), index, overrides);
+    if (week.closingPrayer && !closingKey) unmatched += 1;
 
     await prisma.midweekWeek.create({
       data: {
         periodId: period.id,
         weekOf,
         bibleReading: week.bibleReading,
-        chairmanId,
-        openingPrayerId: opening?.key.startsWith("p:") ? opening.key.slice(2) : null,
-        closingPrayerId: closing?.key.startsWith("p:") ? closing.key.slice(2) : null,
+        chairmanId: publisherIdOf(chairmanKey),
+        openingPrayerId: publisherIdOf(openingKey),
+        closingPrayerId: publisherIdOf(closingKey),
         openingSong: week.openingSong,
         livingSong: week.livingSong,
         closingSong: week.closingSong,
@@ -1057,13 +1124,15 @@ export async function importPastSchedule(_prev: HistoryState, formData: FormData
                   .map((slot, i) => {
                     const raw = part.people[i];
                     if (!raw) return null;
-                    const match = matchName(index, raw);
-                    if (!match) {
+                    const key = resolveHistoryKey(
+                      raw, historyOverridePath(weekIndex, "part", part.position, slot), index, overrides,
+                    );
+                    if (!key) {
                       unmatched += 1;
                       return null;
                     }
                     namesWritten += 1;
-                    return { slot, ...personColumns(match.key) };
+                    return { slot, ...personColumns(key) };
                   })
                   .filter(
                     (row): row is { slot: MidweekSlot; publisherId: string | null; studentId: string | null } =>

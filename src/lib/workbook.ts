@@ -256,9 +256,11 @@ function periodOf(title: string): { startYear: number; startMonth: number } | nu
   return { startYear: Number(year), startMonth: months[0].month! };
 }
 
-export async function readWorkbook(bytes: Uint8Array): Promise<Workbook> {
-  const JSZip = (await import("jszip")).default;
+export type WorkbookEntries = Record<string, string>;
 
+/** The OPF and the chapter XHTML, pulled out of the zip: all the reader needs. */
+export async function workbookEntries(bytes: Uint8Array): Promise<WorkbookEntries> {
+  const JSZip = (await import("jszip")).default;
   let zip;
   try {
     zip = await JSZip.loadAsync(bytes);
@@ -267,15 +269,23 @@ export async function readWorkbook(bytes: Uint8Array): Promise<Workbook> {
       "That file is not a workbook the app can read. Download the EPUB of the workbook from jw.org — the PDF and the JWPUB cannot be read as text.",
     );
   }
+  const entries: WorkbookEntries = {};
+  for (const path of Object.keys(zip.files)) {
+    if (!/(\.opf|\.xhtml)$/i.test(path)) continue;
+    const file = zip.file(path);
+    if (file) entries[path] = await file.async("string");
+  }
+  return entries;
+}
 
-  const paths = Object.keys(zip.files);
+export function readWorkbookEntries(entries: WorkbookEntries): Workbook {
+  const paths = Object.keys(entries);
   const opfPath = paths.find((p) => /(^|\/)OEBPS\/content\.opf$/i.test(p)) ?? paths.find((p) => /\.opf$/i.test(p));
-  const opfFile = opfPath ? zip.file(opfPath) : null;
-  if (!opfFile) {
+  const opf = opfPath ? entries[opfPath] : undefined;
+  if (!opf) {
     throw new WorkbookError("That file has no chapters in it. Is it the EPUB of the meeting workbook?");
   }
 
-  const opf = await opfFile.async("string");
   const base = opfPath!.slice(0, opfPath!.lastIndexOf("/") + 1);
   const title = text(opf.match(/<dc:title[^>]*>([\s\S]*?)<\/dc:title>/)?.[1] ?? "") || "Meeting Workbook";
 
@@ -306,9 +316,8 @@ export async function readWorkbook(bytes: Uint8Array): Promise<Workbook> {
   const first = Date.UTC(period.startYear, period.startMonth - 1, 1);
   const weeks: WorkbookWeek[] = [];
   for (const [index, path] of chapterPaths.entries()) {
-    const file = zip.file(path);
-    if (!file) continue;
-    const chapter = await file.async("string");
+    const chapter = entries[path];
+    if (!chapter) continue;
     const label = text(chapter.match(/<title[^>]*>([\s\S]*?)<\/title>/)?.[1] ?? "");
     // The workbook opens with a chapter of covers and introductions, which is
     // not a week and is told apart by its title not being a date range.
@@ -319,4 +328,8 @@ export async function readWorkbook(bytes: Uint8Array): Promise<Workbook> {
   if (!weeks.length) throw new WorkbookError("That workbook has no weeks in it.");
 
   return { title, startYear: period.startYear, startMonth: period.startMonth, weeks };
+}
+
+export async function readWorkbook(bytes: Uint8Array): Promise<Workbook> {
+  return readWorkbookEntries(await workbookEntries(bytes));
 }

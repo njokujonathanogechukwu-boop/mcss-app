@@ -2,9 +2,10 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { NamePicker, type NameOption } from "@/components/name-picker";
 import { Notice } from "@/components/shell";
 import { Button, SubmitButton } from "@/components/ui";
-import { SECTION_LABELS, SLOT_LABELS } from "@/lib/school";
+import { SECTION_LABELS, SLOT_LABELS, historyOverridePath } from "@/lib/school";
 import { importPastSchedule, type HistoryPerson, type HistoryState, type HistoryPreviewWeek } from "../actions";
 
 /**
@@ -13,7 +14,7 @@ import { importPastSchedule, type HistoryPerson, type HistoryState, type History
  * overseer to check — a misread name would otherwise sit in the history and
  * skew the rotation — and nothing is written until it is confirmed.
  */
-export function PastScheduleForm() {
+export function PastScheduleForm({ people }: { people: NameOption[] }) {
   const [state, action] = useActionState<HistoryState, FormData>(importPastSchedule, {});
   const [attempt, setAttempt] = useState(0);
   const router = useRouter();
@@ -53,8 +54,9 @@ export function PastScheduleForm() {
       {preview ? (
         <>
           <input type="hidden" name="confirm" value="1" />
+          <input type="hidden" name="parsed" value={state.parsed ?? ""} />
           {state.ok && <Notice tone="info">{state.ok}</Notice>}
-          <PreviewWeeks weeks={preview} />
+          <PreviewWeeks weeks={preview} people={people} />
           <div className="flex flex-wrap items-center gap-3">
             <SubmitButton size="sm" pendingLabel="Filing…">File these weeks</SubmitButton>
             <Button type="button" size="sm" variant="ghost" onClick={() => setAttempt((n) => n + 1)}>
@@ -69,11 +71,11 @@ export function PastScheduleForm() {
   );
 }
 
-function PreviewWeeks({ weeks }: { weeks: HistoryPreviewWeek[] }) {
+function PreviewWeeks({ weeks, people }: { weeks: HistoryPreviewWeek[]; people: NameOption[] }) {
   return (
     <div className="space-y-2">
-      {weeks.map((week, index) => (
-        <details key={`${week.date ?? "undated"}-${index}`} open className="rounded border border-rule bg-surface">
+      {weeks.map((week, weekIndex) => (
+        <details key={`${week.date ?? "undated"}-${weekIndex}`} open className="rounded border border-rule bg-surface">
           <summary className="flex cursor-pointer flex-wrap items-baseline gap-x-3 gap-y-1 px-3 py-2">
             <span className="font-serif text-sm text-ink">{week.date ?? "No date read"}</span>
             {week.bibleReading && <span className="text-xs text-ink-soft">{week.bibleReading}</span>}
@@ -81,11 +83,11 @@ function PreviewWeeks({ weeks }: { weeks: HistoryPreviewWeek[] }) {
           </summary>
           <div className="border-t border-rule px-3 py-2 text-sm">
             <p className="text-xs text-ink-soft">
-              <Person label="Chairman" person={week.chairman} />
+              <Person label="Chairman" person={week.chairman} people={people} path={historyOverridePath(weekIndex, "chairman")} />
               {" · "}
-              <Person label="Opening prayer" person={week.openingPrayer} />
+              <Person label="Opening prayer" person={week.openingPrayer} people={people} path={historyOverridePath(weekIndex, "opening")} />
               {" · "}
-              <Person label="Closing prayer" person={week.closingPrayer} />
+              <Person label="Closing prayer" person={week.closingPrayer} people={people} path={historyOverridePath(weekIndex, "closing")} />
             </p>
             <ol className="mt-2 space-y-1">
               {week.parts.map((part) => (
@@ -99,7 +101,11 @@ function PreviewWeeks({ weeks }: { weeks: HistoryPreviewWeek[] }) {
                   {part.names.map(({ slot, person }) => (
                     <span key={slot} className="w-full pl-7 text-xs">
                       <span className="text-ink-faint">{SLOT_LABELS[slot]}: </span>
-                      <Person person={person} />
+                      <Person
+                        person={person}
+                        people={people}
+                        path={historyOverridePath(weekIndex, "part", part.position, slot)}
+                      />
                     </span>
                   ))}
                 </li>
@@ -112,14 +118,30 @@ function PreviewWeeks({ weeks }: { weeks: HistoryPreviewWeek[] }) {
   );
 }
 
-function Person({ label, person }: { label?: string; person: HistoryPerson | null }) {
+function Person({
+  label, person, people, path,
+}: {
+  label?: string;
+  person: HistoryPerson | null;
+  people: NameOption[];
+  path: string;
+}) {
   if (!person) return <>{label ? `${label}: —` : "—"}</>;
   if (person.raw === "CHAIRMAN") return <>{label ? `${label}: ` : ""}the chairman</>;
   if (person.name) return <>{label ? `${label}: ` : ""}<span className="text-ink">{person.name}</span></>;
   return (
     <>
       {label ? `${label}: ` : ""}
-      <span className="text-clay">{person.raw} — not on the rolls, left off</span>
+      <span className="text-clay">{person.raw}</span>
+      {" — not on the rolls: "}
+      <NamePicker
+        id={`pick-${path}`}
+        name={path}
+        options={people}
+        placeholder="Pick who this was…"
+        ariaLabel={`Pick who ${person.raw} is`}
+        className="inline-block w-56 align-baseline"
+      />
     </>
   );
 }
