@@ -4,12 +4,15 @@ import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { displayName, toDateInput } from "@/lib/format";
 import {
-  MINUTES_PER_S38, SECTION_LABELS, buildSchedule, clockLabel,
-  formatWeekOf, meetingLength, partKind, slotField,
+  MINUTES_PER_S38, PART_KINDS, SECTION_LABELS, SLOT_LABELS, buildSchedule, clockLabel,
+  formatWeekOf, meetingLength, partKind, poolFor, slotField,
 } from "@/lib/school";
 import {
-  assignedValue, loadPools, loadWeek, schoolDocuments, toSchedulePart, toScheduleWeek,
+  assignedValue, loadPools, loadWeek, rotationRoll, schoolDocuments, toSchedulePart, toScheduleWeek,
 } from "@/lib/school-queries";
+import {
+  assignmentFacts, pairingsFrom, statsFrom, suggestFrom, weekConsecutive, weekRepeatedPairings,
+} from "@/lib/rotation";
 import { DataTable, Notice, PageHeader, Panel, Section, Td, Th } from "@/components/shell";
 import { Badge, Button } from "@/components/ui";
 import { SchoolTabs } from "../../tabs";
@@ -27,9 +30,11 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
   const week = await loadWeek(id);
   if (!week) notFound();
 
-  const [pools, documents] = await Promise.all([
+  const [pools, documents, facts, roll] = await Promise.all([
     loadPools(),
     schoolDocuments({ weekId: week.id }),
+    assignmentFacts(),
+    rotationRoll(),
   ]);
 
   const scheduleParts = week.parts.map(toSchedulePart);
@@ -54,6 +59,23 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
   );
   const length = meetingLength(scheduleParts);
   const running = length !== MINUTES_PER_S38;
+
+  const stats = statsFrom(facts, roll);
+  const consecutive = weekConsecutive(facts, week.weekOf);
+  const repeated = weekRepeatedPairings(pairingsFrom(facts), week.weekOf);
+  const taken = new Set(parts.flatMap((part) => Object.values(part.values)));
+  const suggestions = canWrite
+    ? parts
+        .flatMap((part) =>
+          [...PART_KINDS[part.kind].slots]
+            .filter((slot) => !part.values[slotField(slot)])
+            .map((slot) => ({
+              label: `Part ${part.position} · ${SLOT_LABELS[slot]}`,
+              options: suggestFrom(facts, stats, week.weekOf, poolFor(pools, part.kind, slot), taken),
+            })),
+        )
+        .filter((suggestion) => suggestion.options.length > 0)
+    : [];
 
   const preview = (
     <Section
@@ -193,6 +215,44 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
               ))}
               <AddPartForm weekId={week.id} positions={parts.map((p) => p.position)} />
             </div>
+          </Section>
+
+          <Section
+            title="The rotation"
+            description="What the history says about this week: who would be handling two meetings in a row, which pair has been together before, and who has waited longest for each part still without a name."
+          >
+            {(consecutive.length > 0 || repeated.length > 0) && (
+              <Notice tone="warn">
+                {[
+                  ...consecutive.map((c) => `${c.name} also has a part the week of ${formatWeekOf(c.other)}.`),
+                  ...repeated.map(
+                    (r) => `${r.student} and ${r.assistant} were put together before, the week of ${formatWeekOf(r.earlier)}.`,
+                  ),
+                ].join(" ")}
+              </Notice>
+            )}
+            {suggestions.length === 0 ? (
+              <p className="text-sm text-ink-soft">
+                Every part has a name, and nobody in this meeting had a part the week before or after.
+              </p>
+            ) : (
+              <ul className="space-y-2 text-sm">
+                {suggestions.map((suggestion) => (
+                  <li key={suggestion.label} className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="font-medium text-ink">{suggestion.label}</span>
+                    <span className="text-ink-faint">longest waiting:</span>
+                    <span className="text-ink-soft">
+                      {suggestion.options.map((option) => option.label).join(", ")}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="mt-3 text-xs text-ink-faint">
+              Suggestions never offer a person who had a part the week before, and publishers under restrictions
+              are not on the list at all. The full rotation is on the{" "}
+              <Link href="/school/rotation" className="hover:text-pine hover:underline">rotation page</Link>.
+            </p>
           </Section>
 
           {preview}

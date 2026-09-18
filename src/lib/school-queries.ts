@@ -6,6 +6,7 @@ import {
   SLOT_LABELS, personRef, slotField,
   type SchoolPools, type SchedulePart, type ScheduleWeek,
 } from "@/lib/school";
+import type { RollEntry } from "@/lib/rotation";
 import type { NameOption } from "@/components/name-picker";
 
 /**
@@ -332,10 +333,23 @@ export async function approvedReaders() {
 }
 
 /**
+ * Publishers under restrictions that have not been lifted are not eligible for
+ * a part. Only the ids travel: the standing behind them is elders-only and is
+ * never shown on a school page.
+ */
+export async function restrictedPublisherIds(): Promise<Set<string>> {
+  const rows = await prisma.standingRecord.findMany({
+    where: { kind: "RESTRICTION", liftedDate: null },
+    select: { publisherId: true },
+  });
+  return new Set(rows.map((row) => row.publisherId));
+}
+
+/**
  * Fills the picker pools from the two rolls and the approved-reader list.
  */
 export async function loadPools(): Promise<SchoolPools> {
-  const [publishers, students, readers] = await Promise.all([
+  const [publishers, students, readers, restricted] = await Promise.all([
     prisma.publisher.findMany({
       where: { status: { in: ROLL } },
       select: { id: true, firstName: true, lastName: true, gender: true, appointment: true },
@@ -347,9 +361,11 @@ export async function loadPools(): Promise<SchoolPools> {
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
     approvedReaderIds(),
+    restrictedPublisherIds(),
   ]);
 
-  const brothers = publishers.filter((p) => p.gender === "MALE");
+  const eligible = publishers.filter((p) => !restricted.has(p.id));
+  const brothers = eligible.filter((p) => p.gender === "MALE");
   const elders = brothers.filter((p) => p.appointment === "ELDER");
   const maleStudents = students.filter((s) => s.gender === "MALE");
 
@@ -367,13 +383,51 @@ export async function loadPools(): Promise<SchoolPools> {
     prayer: brothers.map(publisher),
     speaker: brothers.map(publisher),
     reading: [...brothers.map(publisher), ...maleStudents.map(student)].sort(byLabel),
-    ministry: [...publishers.map(publisher), ...students.map(student)].sort(byLabel),
+    ministry: [...eligible.map(publisher), ...students.map(student)].sort(byLabel),
     conductor: elders.map(publisher),
-    reader: publishers.filter((p) => readers.has(p.id)).map(publisher),
+    reader: eligible.filter((p) => readers.has(p.id)).map(publisher),
   };
 }
 
 const byLabel = (a: NameOption, b: NameOption) => a.label.localeCompare(b.label);
+
+/**
+ * Everyone currently eligible for a part, as the rotation counts them: the
+ * publishers on the roll who are not under restrictions, and the students of
+ * the school still on its roll.
+ */
+export async function rotationRoll(): Promise<RollEntry[]> {
+  const [publishers, students, restricted] = await Promise.all([
+    prisma.publisher.findMany({
+      where: { status: { in: ROLL } },
+      select: { id: true, firstName: true, lastName: true, appointment: true },
+      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    }),
+    prisma.schoolStudent.findMany({
+      where: { active: true },
+      select: { id: true, firstName: true, lastName: true },
+      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    }),
+    restrictedPublisherIds(),
+  ]);
+
+  return [
+    ...publishers
+      .filter((p) => !restricted.has(p.id))
+      .map((p) => ({
+        key: personRef("publisher", p.id),
+        name: displayName(p),
+        isStudent: false,
+        appointment: p.appointment,
+      })),
+    ...students.map((s) => ({
+      key: personRef("student", s.id),
+      name: `${displayName(s)} (student)`,
+      isStudent: true,
+      appointment: null,
+    })),
+  ];
+}
 
 /** How often each brother has actually read, and when he last did. */
 export async function readerUsage(): Promise<Map<string, Usage>> {
@@ -392,6 +446,56 @@ export async function readerUsage(): Promise<Map<string, Usage>> {
     usage.set(row.publisherId, seen);
   }
   return usage;
+}
+
+/** A printed name, reduced to its letters: case, punctuation and spacing gone. */
+export function normaliseName(value: string): string {
+  return value.toUpperCase().replace(/[^A-Z]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+export type PersonMatch = { key: string; name: string };
+
+/**
+ * Everyone ever on the rolls, keyed by their normalised name in both orders, so
+ * a name printed on an old schedule can be tied back to the person it was.
+ * People who have since transferred out or left the school are still matched:
+ * the schedule they handled keeps their name.
+ */
+export async function personIndex(): Promise<Map<string, PersonMatch>> {
+  const [publishers, students] = await Promise.all([
+    prisma.publisher.findMany({ select: { id: true, firstName: true, lastName: true } }),
+    prisma.schoolStudent.findMany({ select: { id: true, firstName: true, lastName: true } }),
+  ]);
+
+  const index = new Map<string, PersonMatch>();
+  const add = (key: string, name: string, first: string, last: string) => {
+    for (const form of [normaliseName(`${first} ${last}`), normaliseName(`${last} ${first}`)]) {
+      if (form && !index.has(form)) index.set(form, { key, name });
+    }
+  };
+  for (const p of publishers) add(personRef("publisher", p.id), displayName(p), p.firstName, p.lastName);
+  for (const s of students) add(personRef("student", s.id), displayName(s), s.firstName, s.lastName);
+  return index;
+}
+
+/**
+ * Ties a printed name to a person: the exact name in either order first, then
+ * the one person on file whose full name carries every word printed, which is
+ * how a middle name left off the schedule still lands on the right brother.
+ */
+export function matchName(index: Map<string, PersonMatch>, printed: string): PersonMatch | null {
+  const norm = normaliseName(printed);
+  if (!norm) return null;
+  const exact = index.get(norm);
+  if (exact) return exact;
+
+  const tokens = norm.split(" ");
+  const candidates = new Map<string, PersonMatch>();
+  for (const [form, match] of index) {
+    const words = form.split(" ");
+    if (tokens.every((token) => words.includes(token))) candidates.set(match.key, match);
+  }
+  return candidates.size === 1 ? [...candidates.values()][0] : null;
 }
 
 /** Who an assignment points at, whichever of the two rolls they are on. */

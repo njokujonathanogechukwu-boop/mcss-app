@@ -90,13 +90,14 @@ export function Notice({
   tone = "info",
   children,
 }: {
-  tone?: "info" | "error" | "success";
+  tone?: "info" | "error" | "success" | "warn";
   children: ReactNode;
 }) {
   const styles = {
     info: "border-rule bg-paper text-ink-soft",
     error: "border-clay/30 bg-clay-light text-clay",
     success: "border-pine/25 bg-pine-light text-pine-dark",
+    warn: "border-wheat bg-wheat-light text-ink",
   }[tone];
   return (
     <div className={`mb-5 rounded border px-3.5 py-2.5 text-sm ${styles}`} role="status">

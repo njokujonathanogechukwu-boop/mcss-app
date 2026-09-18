@@ -8,7 +8,10 @@ import { guard, recordAudit } from "@/lib/auth";
 import { displayName, formatDate, safeFileName } from "@/lib/format";
 import { PART_KINDS, WEEK_SKELETON, meetingDateIn, meetingDates, parsePersonRef, periodLabel, slotField } from "@/lib/school";
 import { WorkbookError, readWorkbook, toPreview, type WorkbookPreview } from "@/lib/workbook";
-import { APPROVED_READERS_KEY, approvedReaderIds } from "@/lib/school-queries";
+import { PastScheduleError, readPastSchedule, slotsForRole, type PastWeek } from "@/lib/past-schedule";
+import {
+  APPROVED_READERS_KEY, approvedReaderIds, matchName, personIndex, restrictedPublisherIds, type PersonMatch,
+} from "@/lib/school-queries";
 import {
   addWeekSchema, fieldErrors, partSchema, periodSchema, periodSettingsSchema,
   schoolStudentSchema, weekHeaderSchema, workbookSettingsSchema,
@@ -230,6 +233,14 @@ export async function saveWeekHeader(_prev: SchoolState, formData: FormData): Pr
     return { errors: { weekOf: "Another week of this schedule already falls on that date." } };
   }
 
+  const restricted = await restrictedPublisherIds();
+  for (const field of ["chairmanId", "openingPrayerId", "closingPrayerId"] as const) {
+    const value = parsed.data[field];
+    if (value && restricted.has(value)) {
+      return { errors: { [field]: "This brother is not available for a part right now." } };
+    }
+  }
+
   await prisma.midweekWeek.update({ where: { id }, data: parsed.data });
   await recordAudit(
     auth.session.userId, "updated", "MidweekWeek", id,
@@ -292,6 +303,13 @@ export async function savePart(_prev: SchoolState, formData: FormData): Promise<
       publisherId: person.kind === "publisher" ? person.id : null,
       studentId: person.kind === "student" ? person.id : null,
     });
+  }
+
+  const restricted = await restrictedPublisherIds();
+  for (const assignment of assignments) {
+    if (assignment.publisherId && restricted.has(assignment.publisherId)) {
+      return { errors: { [slotField(assignment.slot)]: "This brother is not available for a part right now." } };
+    }
   }
 
   const { title, section, minutes, detail } = parsed.data;
@@ -844,4 +862,246 @@ export async function importWorkbook(_prev: WorkbookState, formData: FormData): 
     periodId,
     ok: `${name} is ready: ${weeks.length} weeks and ${totalParts} parts, with the songs and the Bible readings filled in. Now put a name against each part.`,
   };
+}
+
+// ------------------------------------------------------- past schedules
+
+export type HistoryPerson = { raw: string; key: string | null; name: string | null };
+
+export type HistoryPreviewPart = {
+  position: number;
+  section: string;
+  title: string;
+  minutes: number | null;
+  detail: string | null;
+  names: { slot: MidweekSlot; person: HistoryPerson | null }[];
+};
+
+export type HistoryPreviewWeek = {
+  date: string | null;
+  bibleReading: string | null;
+  songs: string;
+  chairman: HistoryPerson | null;
+  openingPrayer: HistoryPerson | null;
+  closingPrayer: HistoryPerson | null;
+  parts: HistoryPreviewPart[];
+};
+
+export type HistoryState = {
+  error?: string;
+  errors?: Record<string, string>;
+  ok?: string;
+  preview?: HistoryPreviewWeek[];
+  periodId?: string;
+};
+
+const MAX_PAST_BYTES = 15 * 1024 * 1024;
+
+function previewPerson(index: Map<string, PersonMatch>, raw: string | null): HistoryPerson | null {
+  if (!raw) return null;
+  const match = matchName(index, raw);
+  return { raw, key: match?.key ?? null, name: match?.name ?? null };
+}
+
+function previewWeek(week: PastWeek, index: Map<string, PersonMatch>): HistoryPreviewWeek {
+  return {
+    date: week.date,
+    bibleReading: week.bibleReading,
+    songs: `${week.openingSong ?? "—"}/${week.livingSong ?? "—"}/${week.closingSong ?? "—"}`,
+    chairman: previewPerson(index, week.chairman),
+    openingPrayer: previewPerson(index, week.openingPrayer),
+    closingPrayer: previewPerson(index, week.closingPrayer),
+    parts: week.parts.map((part) => {
+      const slots = slotsForRole(part.role, part.section);
+      return {
+        position: part.position,
+        section: part.section,
+        title: part.title,
+        minutes: part.minutes,
+        detail: part.detail,
+        names: slots.map((slot, i) => ({ slot, person: previewPerson(index, part.people[i] ?? null) })),
+      };
+    }),
+  };
+}
+
+/** A matched person reference as the two columns the assignment table keeps. */
+function personColumns(key: string): { publisherId: string | null; studentId: string | null } {
+  const person = parsePersonRef(key);
+  if (!person) return { publisherId: null, studentId: null };
+  return {
+    publisherId: person.kind === "publisher" ? person.id : null,
+    studentId: person.kind === "student" ? person.id : null,
+  };
+}
+
+/**
+ * Files schedules the congregation printed before the app. The first pass reads
+ * the file and matches every printed name against the rolls for the overseer to
+ * check; the confirmed pass writes the same read. Names that match nobody are
+ * left off the part rather than guessed, and show in the preview first.
+ */
+export async function importPastSchedule(_prev: HistoryState, formData: FormData): Promise<HistoryState> {
+  const auth = await guard("school:write");
+  if (!auth.ok) return { error: auth.error };
+
+  const file = formData.get("schedule");
+  if (!(file instanceof File) || file.size === 0) {
+    return { errors: { schedule: "Choose the photo, Word file or PDF of the schedule first." } };
+  }
+  if (file.size > MAX_PAST_BYTES) {
+    return { errors: { schedule: "That file is over 15 MB. Photograph the schedule again at a smaller size." } };
+  }
+
+  const bytes = new Uint8Array((await file.arrayBuffer()) as ArrayBuffer);
+  let schedule;
+  try {
+    schedule = await readPastSchedule(bytes, file.type, file.name);
+  } catch (error) {
+    return {
+      errors: {
+        schedule: error instanceof PastScheduleError ? error.message : "That file could not be read.",
+      },
+    };
+  }
+
+  const index = await personIndex();
+
+  if (formData.get("confirm") !== "1") {
+    return {
+      preview: schedule.weeks.map((week) => previewWeek(week, index)),
+      ok: "Read it. Check every week and name below, then file it.",
+    };
+  }
+
+  const dated = schedule.weeks.filter((week) => week.date);
+  if (dated.length === 0) {
+    return { error: "No meeting date was read on that file, so the weeks cannot be placed on the schedule." };
+  }
+
+  const first = new Date(`${dated[0].date}T00:00:00Z`);
+  const startYear = first.getUTCFullYear();
+  const startMonth = first.getUTCMonth() + 1;
+
+  let period = await prisma.midweekPeriod.findUnique({
+    where: { startYear_startMonth: { startYear, startMonth } },
+    select: { id: true, label: true },
+  });
+  if (!period) {
+    period = await prisma.midweekPeriod.create({
+      data: {
+        label: periodLabel(startYear, startMonth),
+        startYear,
+        startMonth,
+        meetingWeekday: first.getUTCDay(),
+        startHour: 18,
+        startMinute: 0,
+        createdById: auth.session.userId,
+      },
+      select: { id: true, label: true },
+    });
+  }
+
+  const onFile = await prisma.midweekWeek.findMany({
+    where: { periodId: period.id },
+    select: { weekOf: true },
+  });
+  const have = new Set(onFile.map((week) => week.weekOf.getTime()));
+
+  let weeksWritten = 0;
+  let namesWritten = 0;
+  let unmatched = 0;
+  let skipped = 0;
+
+  for (const week of schedule.weeks) {
+    if (!week.date || have.has(new Date(`${week.date}T00:00:00Z`).getTime())) {
+      skipped += 1;
+      continue;
+    }
+    const weekOf = new Date(`${week.date}T00:00:00Z`);
+
+    const chairman = week.chairman ? matchName(index, week.chairman) : null;
+    if (week.chairman && !chairman) unmatched += 1;
+    const opening =
+      week.openingPrayer === "CHAIRMAN" ? chairman : week.openingPrayer ? matchName(index, week.openingPrayer) : null;
+    if (week.openingPrayer && week.openingPrayer !== "CHAIRMAN" && !opening) unmatched += 1;
+    const closing = week.closingPrayer ? matchName(index, week.closingPrayer) : null;
+    if (week.closingPrayer && !closing) unmatched += 1;
+
+    const chairmanId = chairman?.key.startsWith("p:") ? chairman.key.slice(2) : null;
+
+    await prisma.midweekWeek.create({
+      data: {
+        periodId: period.id,
+        weekOf,
+        bibleReading: week.bibleReading,
+        chairmanId,
+        openingPrayerId: opening?.key.startsWith("p:") ? opening.key.slice(2) : null,
+        closingPrayerId: closing?.key.startsWith("p:") ? closing.key.slice(2) : null,
+        openingSong: week.openingSong,
+        livingSong: week.livingSong,
+        closingSong: week.closingSong,
+        note: `Imported from a past schedule (${file.name})`,
+        parts: {
+          create: week.parts.map((part) => {
+            const slots = slotsForRole(part.role, part.section);
+            return {
+              position: part.position,
+              section: part.section,
+              title: part.title,
+              minutes: part.minutes,
+              detail: part.detail,
+              slots,
+              assignments: {
+                create: slots
+                  .map((slot, i) => {
+                    const raw = part.people[i];
+                    if (!raw) return null;
+                    const match = matchName(index, raw);
+                    if (!match) {
+                      unmatched += 1;
+                      return null;
+                    }
+                    namesWritten += 1;
+                    return { slot, ...personColumns(match.key) };
+                  })
+                  .filter(
+                    (row): row is { slot: MidweekSlot; publisherId: string | null; studentId: string | null } =>
+                      row !== null,
+                  ),
+              },
+            };
+          }),
+        },
+      },
+    });
+    weeksWritten += 1;
+  }
+
+  await prisma.midweekDocument.create({
+    data: {
+      periodId: period.id,
+      label: `Past schedule · ${file.name}`,
+      fileName: safeFileName(file.name),
+      mimeType: file.type || "application/octet-stream",
+      size: file.size,
+      bytes,
+      uploadedById: auth.session.userId,
+    },
+  });
+
+  await recordAudit(
+    auth.session.userId, "created", "MidweekPeriod", period.id,
+    `Filed ${weeksWritten} past week${weeksWritten === 1 ? "" : "s"} from ${file.name} with ${namesWritten} matched name${namesWritten === 1 ? "" : "s"}`,
+  );
+
+  revalidateSchool();
+  const notes = [
+    `${weeksWritten} week${weeksWritten === 1 ? "" : "s"} filed with ${namesWritten} name${namesWritten === 1 ? "" : "s"} matched`,
+    unmatched
+      ? `${unmatched} printed name${unmatched === 1 ? "" : "s"} matched nobody and ${unmatched === 1 ? "was" : "were"} left off`
+      : "",
+    skipped ? `${skipped} skipped as already on file or undated` : "",
+  ].filter(Boolean).join(", ");
+  return { periodId: period.id, ok: `${notes}. The history now counts in the rotation.` };
 }
