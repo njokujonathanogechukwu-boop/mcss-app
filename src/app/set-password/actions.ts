@@ -7,6 +7,7 @@ import { recordAudit } from "@/lib/auth";
 import { createSession } from "@/lib/session";
 import { passwordSchema } from "@/lib/validation";
 import { accountTokenUserId, verifyAccountToken } from "@/lib/account-tokens";
+import { homeFor } from "@/lib/rbac";
 
 export type SetPasswordState = { error?: string; errors?: Record<string, string> };
 
@@ -55,5 +56,5 @@ export async function setPasswordWithToken(
     name: user.name,
     role: user.role,
   });
-  redirect("/dashboard");
+  redirect(homeFor(user.role));
 }

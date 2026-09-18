@@ -23,6 +23,12 @@ export const PERMISSIONS = {
   // part of the meeting summary that goes round the body of elders.
   "standing:read": ["SECRETARY", "COORDINATOR", "ELDER"],
   "standing:write": ["SECRETARY", "COORDINATOR", "ELDER"],
+  // The Life and Ministry Meeting School. The overseer the body of elders chose
+  // gets these two and nothing else: he plans the midweek meeting and sees the
+  // publisher list to plan it from, but not the reports, the contact details or
+  // the elders' items. Elders read the schedule because they approve chairmen.
+  "school:read": ["SECRETARY", "COORDINATOR", "ELDER", "SCHOOL_OVERSEER"],
+  "school:write": ["SECRETARY", "COORDINATOR", "SCHOOL_OVERSEER"],
   "task:read": ["SECRETARY", "COORDINATOR", "ELDER", "SERVANT", "VIEWER"],
   "task:write": ["SECRETARY", "COORDINATOR", "ELDER", "SERVANT"],
   "announcement:read": ["SECRETARY", "COORDINATOR", "ELDER", "SERVANT", "VIEWER"],
@@ -51,6 +57,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   ELDER: "Elder",
   SERVANT: "Ministerial servant",
   VIEWER: "Read only",
+  SCHOOL_OVERSEER: "Life and Ministry overseer",
 };
 
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
@@ -59,4 +66,14 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   ELDER: "Reads all records, edits reports, attendance, bookings and elders' items.",
   SERVANT: "Edits reports, attendance and bookings. No access to elders' items.",
   VIEWER: "Reads rosters, attendance and the hall calendar. No contact details.",
+  SCHOOL_OVERSEER:
+    "Plans the midweek meeting and keeps the school's students. Sees the publisher list only — no reports, contact details or elders' items.",
 };
+
+/**
+ * Where an account lands after signing in. The school overseer cannot open the
+ * dashboard at all, so sending him there would only bounce him back.
+ */
+export function homeFor(role: Role | undefined): string {
+  return role === "SCHOOL_OVERSEER" ? "/school" : "/dashboard";
+}

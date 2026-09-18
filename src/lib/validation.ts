@@ -313,7 +313,7 @@ export const auxEditSchema = z.object({
 export const userSchema = z.object({
   name: z.string().trim().min(2, "Enter the person's name").max(120),
   email: z.string().trim().email("Enter a valid email").max(160),
-  role: z.enum(["SECRETARY", "COORDINATOR", "ELDER", "SERVANT", "VIEWER"]),
+  role: z.enum(["SECRETARY", "COORDINATOR", "ELDER", "SERVANT", "VIEWER", "SCHOOL_OVERSEER"]),
   active: z.coerce.boolean(),
   publisherId: optionalString,
 });
@@ -344,6 +344,95 @@ export const hallCommitteeSchema = z.object({
   memberName: z.string().trim().max(120).default(""),
   memberEmail: optionalEmail,
   memberEmail2: optionalEmail,
+});
+
+// ------------------------------------------------- life and ministry school
+
+/** A whole number that may be left blank, stored as null. */
+const optionalWhole = (message: string, min: number, max: number) =>
+  z
+    .union([z.literal(""), z.coerce.number().int(message).min(min, message).max(max, message)])
+    .transform((v) => (v === "" ? null : v))
+    .nullable();
+
+const dateInput = (message: string) =>
+  z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, message)
+    .transform((v) => new Date(v));
+
+export const periodSchema = z.object({
+  startYear: z.coerce.number().int("Enter the year").min(2020, "Enter the year").max(2100, "Enter the year"),
+  startMonth: z.coerce.number().int().min(1).max(12),
+  meetingWeekday: z.coerce.number().int().min(0).max(6),
+  startHour: z.coerce.number().int().min(0).max(23),
+  startMinute: z.coerce.number().int().min(0).max(59),
+  label: optionalString,
+});
+
+// Editing a period: its name, the day the congregation meets and the time it
+// starts. The two months it covers cannot be changed here, because the weeks
+// already dated from them would be left behind.
+export const periodSettingsSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().trim().min(1, "Give the period a name").max(80),
+  meetingWeekday: z.coerce.number().int().min(0).max(6),
+  startHour: z.coerce.number().int().min(0).max(23),
+  startMinute: z.coerce.number().int().min(0).max(59),
+});
+
+// Importing a workbook: the two months it covers come from the file itself, so
+// only the clock the schedule runs on and an optional name are asked for.
+export const workbookSettingsSchema = z.object({
+  meetingWeekday: z.coerce.number().int().min(0).max(6),
+  startHour: z.coerce.number().int().min(0).max(23),
+  startMinute: z.coerce.number().int().min(0).max(59),
+  label: optionalString,
+});
+
+export const addWeekSchema = z.object({
+  periodId: z.string().min(1, "Choose the schedule this week belongs to"),
+  weekOf: dateInput("Choose the date of the meeting"),
+});
+
+export const weekHeaderSchema = z.object({
+  weekOf: dateInput("Choose the date of the meeting"),
+  bibleReading: optionalString,
+  chairmanId: optionalString,
+  counselorId: optionalString,
+  openingPrayerId: optionalString,
+  closingPrayerId: optionalString,
+  openingSong: optionalWhole("A song number is a whole number", 1, 999),
+  livingSong: optionalWhole("A song number is a whole number", 1, 999),
+  closingSong: optionalWhole("A song number is a whole number", 1, 999),
+  cancelled: z.coerce.boolean(),
+  cancelledReason: optionalString,
+  note: optionalString,
+});
+
+export const partSchema = z.object({
+  title: z.string().trim().min(1, "Give the part a title").max(140),
+  section: z.enum(["TREASURES", "MINISTRY", "LIVING"]),
+  kind: z.enum(["TALK", "READING", "STUDENT", "STUDY"]),
+  minutes: optionalWhole("Minutes are a whole number", 1, 120),
+  detail: optionalString,
+  dualHall: z.coerce.boolean(),
+});
+
+// A student of the school who is not publishing yet. There are no reports and
+// no group here on purpose: this roll is not the congregation's roll.
+export const schoolStudentSchema = z.object({
+  firstName: z.string().trim().min(1, "First name is required").max(80),
+  lastName: z.string().trim().min(1, "Last name is required").max(80),
+  gender: z.enum(["MALE", "FEMALE"]),
+  dateOfBirth: optionalDate,
+  phone: optionalString,
+  guardianName: optionalString,
+  guardianPhone: optionalString,
+  conductorId: optionalString,
+  enrolledAt: optionalDate,
+  notes: optionalString,
+  publisherId: optionalString,
 });
 
 export function fieldErrors(error: z.ZodError): Record<string, string> {

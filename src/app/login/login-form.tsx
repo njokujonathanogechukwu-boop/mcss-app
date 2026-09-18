@@ -4,8 +4,16 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import { signIn, type LoginState } from "./actions";
 import { SubmitButton } from "@/components/ui";
 
-export function LoginForm({ next }: { next?: string }) {
-  const [state, action] = useActionState<LoginState, FormData>(signIn, {});
+export function LoginForm({
+  next,
+  action: serverAction = signIn,
+}: {
+  next?: string;
+  /** The school overseer signs in through a page of his own, which refuses
+   * accounts that cannot open the school area. */
+  action?: (prev: LoginState, formData: FormData) => Promise<LoginState>;
+}) {
+  const [state, action] = useActionState<LoginState, FormData>(serverAction, {});
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [shown, setShown] = useState(false);

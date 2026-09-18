@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/api/health", "/api/cron", "/my", "/group/", "/set-password", "/forgot-password"];
+const PUBLIC_PATHS = ["/login", "/school/login", "/api/health", "/api/cron", "/my", "/group/", "/set-password", "/forgot-password"];
 
 /**
  * Presence check only. The cookie's signature is verified in `readSession`,
@@ -14,7 +14,9 @@ export function middleware(request: NextRequest) {
   const hasSession = request.cookies.has("mcss_session");
   if (!hasSession) {
     const url = request.nextUrl.clone();
-    url.pathname = "/login";
+    // The school area has a sign-in page of its own, so the overseer never
+    // lands on the secretary's door.
+    url.pathname = pathname.startsWith("/school") ? "/school/login" : "/login";
     url.search = pathname === "/" ? "" : `?next=${encodeURIComponent(pathname)}`;
     return NextResponse.redirect(url);
   }

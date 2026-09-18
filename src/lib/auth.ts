@@ -2,7 +2,7 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { readSession, type SessionPayload } from "@/lib/session";
-import { can, type Permission } from "@/lib/rbac";
+import { can, homeFor, type Permission } from "@/lib/rbac";
 
 export async function getCurrentUser(): Promise<SessionPayload | null> {
   return readSession();
@@ -17,7 +17,7 @@ export async function requireUser(): Promise<SessionPayload> {
 
 export async function requirePermission(permission: Permission): Promise<SessionPayload> {
   const session = await requireUser();
-  if (!can(session.role, permission)) redirect("/dashboard?denied=1");
+  if (!can(session.role, permission)) redirect(`${homeFor(session.role)}?denied=1`);
   return session;
 }
 

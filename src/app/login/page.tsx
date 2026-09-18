@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
+import { homeFor } from "@/lib/rbac";
 import { LoginForm } from "./login-form";
 
 export default async function LoginPage({
@@ -8,7 +9,8 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ next?: string }>;
 }) {
-  if (await getCurrentUser()) redirect("/dashboard");
+  const user = await getCurrentUser();
+  if (user) redirect(homeFor(user.role));
   const { next } = await searchParams;
 
   return (
@@ -39,6 +41,14 @@ export default async function LoginPage({
         <p className="mt-5 text-xs leading-relaxed text-ink-faint">
           These records are confidential. Sign out when you finish, and do not share your account.
           If you need access, ask the secretary or the coordinator to create an account for you.
+        </p>
+
+        <p className="mt-3 text-xs leading-relaxed text-ink-faint">
+          Overseer of the Life and Ministry Meeting School?{" "}
+          <Link href="/school/login" className="text-pine hover:underline">
+            Use the school sign-in page
+          </Link>
+          .
         </p>
       </div>
     </main>

@@ -20,6 +20,10 @@ enum Role {
   ELDER
   SERVANT
   VIEWER
+  // The elder the body of elders chose to oversee the Life and Ministry
+  // Meeting School (S-38 par. 24). Sees the school and the publisher list
+  // only — no reports, no contact details, no elders' items.
+  SCHOOL_OVERSEER
 }
 
 enum Gender {
@@ -114,6 +118,32 @@ enum ReportOutcome {
   NO_REPORT
 }
 
+// ---------------------------------------------------- life and ministry school
+
+// The three headings a midweek schedule is divided into (S-140).
+enum MidweekSection {
+  TREASURES
+  MINISTRY
+  LIVING
+}
+
+// A student assignment is handled in the main hall and, when there is an
+// auxiliary classroom, in that classroom at the same time (S-38 par. 27).
+enum MidweekHall {
+  MAIN
+  AUXILIARY
+}
+
+// What a part needs filled: a speaker, a student and their assistant, or the
+// conductor and reader of the congregation Bible study.
+enum MidweekSlot {
+  SPEAKER
+  STUDENT
+  ASSISTANT
+  CONDUCTOR
+  READER
+}
+
 // ---------------------------------------------------------------- access
 
 model User {
@@ -136,6 +166,8 @@ model User {
   recordedStandings    StandingRecord[] @relation("StandingRecorder")
   sentMail             OutboundMail[]   @relation("MailSender")
   standingDocuments    StandingDocument[] @relation("StandingDocumentUploader")
+  createdPeriods       MidweekPeriod[]  @relation("PeriodCreator")
+  schoolDocuments      MidweekDocument[] @relation("SchoolDocUploader")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -229,6 +261,14 @@ model Publisher {
   assignedTasks        Task[]               @relation("TaskAssignee")
   auxApprovals         AuxiliaryPioneer[]   @relation("AuxApprovals")
   standingRecords      StandingRecord[]     @relation("PublisherStanding")
+
+  studentsConducted SchoolStudent[]     @relation("StudentConductor")
+  becameStudents    SchoolStudent[]     @relation("StudentPromotion")
+  chairedWeeks      MidweekWeek[]       @relation("WeekChairman")
+  counselledWeeks   MidweekWeek[]       @relation("WeekCounselor")
+  openingPrayers    MidweekWeek[]       @relation("WeekOpeningPrayer")
+  closingPrayers    MidweekWeek[]       @relation("WeekClosingPrayer")
+  schoolAssignments MidweekAssignment[] @relation("AssignmentPublisher")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -641,4 +681,191 @@ model CongregationSetting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+// ------------------------------------------------- life and ministry school
+
+// A student of the Life and Ministry Meeting School who is not publishing yet.
+// Kept apart from Publisher on purpose: they have no service reports, no group
+// and no S-21, and the congregation's figures must not count them. `publisherId`
+// is filled in only when a student later becomes a publisher, so their school
+// history stays attached to the record they now have.
+model SchoolStudent {
+  id        String @id @default(cuid())
+  firstName String
+  lastName  String
+  gender    Gender
+
+  dateOfBirth DateTime? @db.Date
+
+  phone         String?
+  guardianName  String?
+  guardianPhone String?
+
+  // The conductor of their Bible study. Enrollment is discussed in that
+  // person's presence, or in the presence of a believing parent (S-38 par. 1).
+  conductorId String?
+  conductor   Publisher? @relation("StudentConductor", fields: [conductorId], references: [id], onDelete: SetNull)
+
+  enrolledAt DateTime @default(now())
+  active     Boolean  @default(true)
+  notes      String?
+
+  publisherId String?    @unique
+  publisher   Publisher? @relation("StudentPromotion", fields: [publisherId], references: [id], onDelete: SetNull)
+
+  assignments MidweekAssignment[] @relation("AssignmentStudent")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([lastName, firstName])
+  @@index([active])
+}
+
+// One workbook, normally the two months it covers. The overseer plans the whole
+// period as soon as the workbook arrives and hands the assignments out at least
+// three weeks ahead (S-38 par. 24). `startYear`/`startMonth` identify it.
+model MidweekPeriod {
+  id         String @id @default(cuid())
+  label      String
+  startYear  Int
+  startMonth Int
+
+  // The day of the week the congregation meets (0 = Sunday, 2 = Tuesday) and
+  // the time it starts, used to date the weeks of a new period and to clock the
+  // printed schedule.
+  meetingWeekday Int @default(2)
+  startHour      Int @default(18)
+  startMinute    Int @default(0)
+
+  weeks     MidweekWeek[]
+  documents MidweekDocument[]
+
+  createdById String?
+  createdBy   User?    @relation("PeriodCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([startYear, startMonth])
+}
+
+// One midweek meeting. The people named at the head of the schedule — chairman,
+// auxiliary classroom counselor and the two prayers — hang off the week rather
+// than off a part, because they are not numbered parts of it.
+model MidweekWeek {
+  id       String        @id @default(cuid())
+  periodId String
+  period   MidweekPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+
+  weekOf DateTime @db.Date
+
+  bibleReading String?
+
+  chairmanId      String?
+  chairman        Publisher? @relation("WeekChairman", fields: [chairmanId], references: [id], onDelete: SetNull)
+  counselorId     String?
+  counselor       Publisher? @relation("WeekCounselor", fields: [counselorId], references: [id], onDelete: SetNull)
+  openingPrayerId String?
+  openingPrayer   Publisher? @relation("WeekOpeningPrayer", fields: [openingPrayerId], references: [id], onDelete: SetNull)
+  closingPrayerId String?
+  closingPrayer   Publisher? @relation("WeekClosingPrayer", fields: [closingPrayerId], references: [id], onDelete: SetNull)
+
+  openingSong Int?
+  livingSong  Int?
+  closingSong Int?
+
+  // No meeting that week: an assembly or convention, or the Memorial falling on
+  // a weekday (S-38 par. 20).
+  cancelled       Boolean @default(false)
+  cancelledReason String?
+
+  note String?
+
+  parts     MidweekPart[]
+  documents MidweekDocument[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([periodId, weekOf])
+  @@index([weekOf])
+}
+
+// A numbered line of the schedule. `position` is the order on the printed page
+// and gives the part its number; `slots` says who has to be assigned to it, and
+// `dualHall` whether the main hall and the auxiliary classroom each need their
+// own student. Titles are free text because the workbook changes them.
+model MidweekPart {
+  id     String      @id @default(cuid())
+  weekId String
+  week   MidweekWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
+
+  position Int
+  section  MidweekSection
+  title    String
+  minutes  Int?
+  // The scripture range, the setting of a student assignment, the lmd lesson.
+  detail String?
+
+  slots      MidweekSlot[] @default([])
+  dualHall   Boolean       @default(false)
+
+  assignments MidweekAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([weekId, position])
+  @@index([weekId, position])
+}
+
+// One person in one slot of one part. Exactly one of `publisherId` and
+// `studentId` is set: a publisher, or a student of the school who is not
+// publishing yet.
+model MidweekAssignment {
+  id     String      @id @default(cuid())
+  partId String
+  part   MidweekPart @relation(fields: [partId], references: [id], onDelete: Cascade)
+
+  hall MidweekHall @default(MAIN)
+  slot MidweekSlot
+
+  publisherId String?
+  publisher   Publisher?     @relation("AssignmentPublisher", fields: [publisherId], references: [id], onDelete: SetNull)
+  studentId   String?
+  student     SchoolStudent? @relation("AssignmentStudent", fields: [studentId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([partId, hall, slot])
+  @@index([publisherId])
+  @@index([studentId])
+}
+
+// Schedules already printed before the app, or the workbook page for a week.
+// Word, PDF and photos are all kept, as bytes in the database, because the
+// platform has no other place to put a file.
+model MidweekDocument {
+  id       String         @id @default(cuid())
+  periodId String?
+  period   MidweekPeriod? @relation(fields: [periodId], references: [id], onDelete: SetNull)
+  weekId   String?
+  week     MidweekWeek?   @relation(fields: [weekId], references: [id], onDelete: Cascade)
+
+  label    String
+  fileName String
+  mimeType String
+  size     Int
+  bytes    Bytes
+
+  uploadedById String?
+  uploadedBy   User?   @relation("SchoolDocUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([periodId])
+  @@index([weekId])
 }
