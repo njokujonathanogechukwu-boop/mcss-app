@@ -2,7 +2,7 @@ import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { formatDate } from "@/lib/format";
 import { assignmentFacts, pairingsFrom } from "@/lib/rotation";
-import { personOptions } from "@/lib/school-queries";
+import { defaultMeetingWeekday, personOptions } from "@/lib/school-queries";
 import { DataTable, EmptyState, PageHeader, Section, Td, Th } from "@/components/shell";
 import { Badge } from "@/components/ui";
 import { SchoolTabs } from "../tabs";
@@ -23,7 +23,7 @@ export default async function SchoolHistoryPage() {
 
   const facts = await assignmentFacts();
   const pairings = pairingsFrom(facts);
-  const people = await personOptions();
+  const [people, weekday] = await Promise.all([personOptions(), defaultMeetingWeekday()]);
 
   return (
     <>
@@ -37,7 +37,7 @@ export default async function SchoolHistoryPage() {
 
       {canWrite && (
         <Section>
-          <PastScheduleForm people={people} />
+          <PastScheduleForm people={people} defaultYear={new Date().getUTCFullYear()} defaultWeekday={weekday} />
         </Section>
       )}
 

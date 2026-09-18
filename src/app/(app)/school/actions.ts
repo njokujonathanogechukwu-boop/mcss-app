@@ -6,14 +6,18 @@ import type { MidweekSlot, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
 import { displayName, formatDate, safeFileName } from "@/lib/format";
-import { PART_KINDS, WEEK_SKELETON, historyOverridePath, meetingDateIn, meetingDates, parsePersonRef, periodLabel, slotField } from "@/lib/school";
+import {
+  CONCLUDING_COMMENTS_MINUTES, MINUTES_PER_S38, OPENING_COMMENTS_MINUTES, PART_KINDS, SONG_MINUTES,
+  WEEK_SKELETON, correctedMeetingDate, historyOverridePath, meetingDateIn, meetingDates,
+  parsePersonRef, periodLabel, slotField,
+} from "@/lib/school";
 import { WorkbookError, readWorkbook, readWorkbookEntries, toPreview, type WorkbookEntries, type WorkbookPreview } from "@/lib/workbook";
 import { PastScheduleError, readPastSchedule, slotsForRole, type PastSchedule, type PastWeek } from "@/lib/past-schedule";
 import {
   APPROVED_READERS_KEY, approvedReaderIds, matchName, personIndex, restrictedPublisherIds, type PersonMatch,
 } from "@/lib/school-queries";
 import {
-  addWeekSchema, fieldErrors, partSchema, periodSchema, periodSettingsSchema,
+  addWeekSchema, fieldErrors, historyFixSchema, partSchema, periodSchema, periodSettingsSchema,
   schoolStudentSchema, weekHeaderSchema, workbookSettingsSchema,
 } from "@/lib/validation";
 
@@ -332,6 +336,42 @@ export async function savePart(_prev: SchoolState, formData: FormData): Promise<
   return { ok: "Saved." };
 }
 
+/**
+ * Shortens the parts already on the week by `excess` minutes so the meeting
+ * fits the hour and three-quarters of S-38 par. 20. Each part gives up minutes
+ * in proportion to the slack it has, and no part goes under one minute.
+ */
+function spreadCuts(
+  parts: { id: string; title: string; minutes: number | null }[],
+  excess: number,
+): { id: string; title: string; from: number; to: number }[] {
+  const rooms = parts
+    .filter((part) => (part.minutes ?? 0) > 1)
+    .map((part) => ({ id: part.id, title: part.title, minutes: part.minutes!, room: part.minutes! - 1 }));
+  const totalRoom = rooms.reduce((total, room) => total + room.room, 0);
+  const take = Math.min(excess, totalRoom);
+  if (take <= 0) return [];
+
+  let handed = 0;
+  const cuts = rooms.map((room) => {
+    const exact = (take * room.room) / totalRoom;
+    const whole = Math.floor(exact);
+    handed += whole;
+    return { ...room, cut: whole, frac: exact - whole };
+  });
+  cuts.sort((a, b) => b.frac - a.frac);
+  for (const cut of cuts) {
+    if (handed >= take) break;
+    if (cut.cut < cut.room) {
+      cut.cut += 1;
+      handed += 1;
+    }
+  }
+  return cuts
+    .filter((cut) => cut.cut > 0)
+    .map(({ id, title, minutes, cut }) => ({ id, title, from: minutes, to: minutes - cut }));
+}
+
 export async function addPart(_prev: SchoolState, formData: FormData): Promise<SchoolState> {
   const auth = await guard("school:write");
   if (!auth.ok) return { error: auth.error };
@@ -342,13 +382,22 @@ export async function addPart(_prev: SchoolState, formData: FormData): Promise<S
 
   const week = await prisma.midweekWeek.findUnique({
     where: { id: weekId },
-    select: { weekOf: true, parts: { select: { position: true } } },
+    select: { weekOf: true, parts: { select: { id: true, position: true, title: true, minutes: true } } },
   });
   if (!week) return { error: "That week is no longer on the schedule." };
 
   // Added below the part the button sits on, or at the end of the schedule.
   const after = Number(formData.get("afterPosition"));
   const position = Number.isInteger(after) && after > 0 ? after + 1 : week.parts.length + 1;
+
+  // The meeting runs one hour forty-five minutes (S-38 par. 20), counting the
+  // songs, the comments and the parts. A part added on top would push it past,
+  // so the rest are forced down to fit rather than left printing a long meeting.
+  const fixed = SONG_MINUTES * 2 + OPENING_COMMENTS_MINUTES + CONCLUDING_COMMENTS_MINUTES;
+  const total =
+    fixed + week.parts.reduce((sum, part) => sum + (part.minutes ?? 0), 0) + (parsed.data.minutes ?? 0);
+  const excess = total - MINUTES_PER_S38;
+  const cuts = excess > 0 ? spreadCuts(week.parts, excess) : [];
 
   const { title, section, minutes, detail, kind } = parsed.data;
   await prisma.$transaction([
@@ -362,15 +411,22 @@ export async function addPart(_prev: SchoolState, formData: FormData): Promise<S
         slots: [...PART_KINDS[kind].slots] as MidweekSlot[],
       },
     }),
+    ...cuts.map((cut) => prisma.midweekPart.update({ where: { id: cut.id }, data: { minutes: cut.to } })),
   ]);
 
   await recordAudit(
     auth.session.userId, "created", "MidweekPart", weekId,
-    `Added “${title}” to the meeting of ${formatDate(week.weekOf)}`,
+    `Added “${title}” to the meeting of ${formatDate(week.weekOf)}` +
+      (cuts.length ? ` and shortened ${cuts.length} other part${cuts.length === 1 ? "" : "s"} to keep the hour and three-quarters` : ""),
   );
 
   revalidateSchool();
-  return { ok: `“${title}” added at number ${position}.` };
+  const retimed = cuts.length
+    ? ` The meeting would have run ${excess} minute${excess === 1 ? "" : "s"} over the hour and three-quarters, so the clock was made to fit: ${cuts.map((cut) => `${cut.title} ${cut.from}→${cut.to}`).join(", ")}.`
+    : excess > 0
+      ? ` The meeting now runs ${excess} minute${excess === 1 ? "" : "s"} over the hour and three-quarters and no part has minutes left to give.`
+      : "";
+  return { ok: `“${title}” added at number ${position}.${retimed}` };
 }
 
 export async function deletePart(_prev: SchoolState, formData: FormData): Promise<SchoolState> {
@@ -1041,7 +1097,27 @@ export async function importPastSchedule(_prev: HistoryState, formData: FormData
     if (key.startsWith("ov:") && typeof value === "string" && value) overrides.set(key, value);
   }
 
-  const dated = schedule.weeks.filter((week) => week.date);
+  // The printed sheet carries no year, so the read one is a guess the overseer
+  // corrects here; every dated week is re-placed before anything is written.
+  const fix = historyFixSchema.safeParse({
+    fixYear: formData.get("fixYear"),
+    fixWeekday: formData.get("fixWeekday"),
+  });
+  if (!fix.success) return { errors: fieldErrors(fix.error) };
+  const { fixYear, fixWeekday } = fix.data;
+
+  const weeks = schedule.weeks.map((week) =>
+    week.date
+      ? {
+          ...week,
+          date: correctedMeetingDate(new Date(`${week.date}T00:00:00Z`), fixYear, fixWeekday)
+            .toISOString()
+            .slice(0, 10),
+        }
+      : week,
+  );
+
+  const dated = weeks.filter((week) => week.date);
   if (dated.length === 0) {
     return { error: "No meeting date was read on that file, so the weeks cannot be placed on the schedule." };
   }
@@ -1060,7 +1136,7 @@ export async function importPastSchedule(_prev: HistoryState, formData: FormData
         label: periodLabel(startYear, startMonth),
         startYear,
         startMonth,
-        meetingWeekday: first.getUTCDay(),
+        meetingWeekday: fixWeekday,
         startHour: 18,
         startMinute: 0,
         createdById: auth.session.userId,
@@ -1080,7 +1156,7 @@ export async function importPastSchedule(_prev: HistoryState, formData: FormData
   let unmatched = 0;
   let skipped = 0;
 
-  for (const [weekIndex, week] of schedule.weeks.entries()) {
+  for (const [weekIndex, week] of weeks.entries()) {
     if (!week.date || have.has(new Date(`${week.date}T00:00:00Z`).getTime())) {
       skipped += 1;
       continue;

@@ -2,10 +2,12 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { SelectField, TextField } from "@/components/fields";
 import { NamePicker, type NameOption } from "@/components/name-picker";
 import { Notice } from "@/components/shell";
 import { Button, SubmitButton } from "@/components/ui";
 import { SECTION_LABELS, SLOT_LABELS, historyOverridePath } from "@/lib/school";
+import { WEEKDAY_OPTIONS } from "../school-forms";
 import { importPastSchedule, type HistoryPerson, type HistoryState, type HistoryPreviewWeek } from "../actions";
 
 /**
@@ -14,7 +16,13 @@ import { importPastSchedule, type HistoryPerson, type HistoryState, type History
  * overseer to check — a misread name would otherwise sit in the history and
  * skew the rotation — and nothing is written until it is confirmed.
  */
-export function PastScheduleForm({ people }: { people: NameOption[] }) {
+export function PastScheduleForm({
+  people, defaultYear, defaultWeekday,
+}: {
+  people: NameOption[];
+  defaultYear: number;
+  defaultWeekday: number;
+}) {
   const [state, action] = useActionState<HistoryState, FormData>(importPastSchedule, {});
   const [attempt, setAttempt] = useState(0);
   const router = useRouter();
@@ -56,6 +64,26 @@ export function PastScheduleForm({ people }: { people: NameOption[] }) {
           <input type="hidden" name="confirm" value="1" />
           <input type="hidden" name="parsed" value={state.parsed ?? ""} />
           {state.ok && <Notice tone="info">{state.ok}</Notice>}
+
+          <div className="space-y-2 rounded border border-rule bg-surface p-3">
+            <p className="font-serif text-sm text-ink">Before it is filed</p>
+            <p className="text-xs text-ink-soft">
+              The printed sheet carries no year, so the dates below are the ones the reader guessed. Set the year
+              the meetings were held and the day of the week the congregation meets; every week is moved to that
+              day before anything is written.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <TextField
+                label="Year these meetings were held" name="fixYear" type="number" min={2000} max={2100} required
+                defaultValue={defaultYear} error={state.errors?.fixYear}
+              />
+              <SelectField
+                label="Day of the meeting" name="fixWeekday" options={WEEKDAY_OPTIONS}
+                defaultValue={String(defaultWeekday)} error={state.errors?.fixWeekday}
+              />
+            </div>
+          </div>
+
           <PreviewWeeks weeks={preview} people={people} />
           <div className="flex flex-wrap items-center gap-3">
             <SubmitButton size="sm" pendingLabel="Filing…">File these weeks</SubmitButton>

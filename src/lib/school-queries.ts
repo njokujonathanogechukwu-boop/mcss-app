@@ -43,6 +43,19 @@ export async function loadWeek(id: string): Promise<WeekRow | null> {
   return prisma.midweekWeek.findUnique({ where: { id }, include: weekInclude });
 }
 
+/**
+ * The day the congregation meets, taken from the newest schedule on file. The
+ * history correction step offers it as the default; Tuesday when nothing is on
+ * file yet, because that is the day this congregation has always met.
+ */
+export async function defaultMeetingWeekday(): Promise<number> {
+  const latest = await prisma.midweekPeriod.findFirst({
+    orderBy: [{ startYear: "desc" }, { startMonth: "desc" }],
+    select: { meetingWeekday: true },
+  });
+  return latest?.meetingWeekday ?? 2;
+}
+
 export async function loadWeeks(periodId: string): Promise<WeekRow[]> {
   return prisma.midweekWeek.findMany({
     where: { periodId },

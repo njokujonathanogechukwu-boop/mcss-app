@@ -168,6 +168,19 @@ export function meetingDateIn(start: Date, weekday: number): Date {
 }
 
 /**
+ * The meeting day a date read off a year-less printed sheet really names. The
+ * reader has to guess the year, and a wrong year drags the weekday with it, so
+ * the overseer corrects both in the preview: the month and day stay as printed,
+ * the year is the one given, and the date then snaps to the congregation's
+ * meeting day inside the same week.
+ */
+export function correctedMeetingDate(read: Date, year: number, weekday: number): Date {
+  const placed = new Date(Date.UTC(year, read.getUTCMonth(), read.getUTCDate()));
+  const monday = new Date(placed.getTime() - ((placed.getUTCDay() + 6) % 7) * 86_400_000);
+  return meetingDateIn(monday, weekday);
+}
+
+/**
  * The start of the next workbook period with no schedule on file yet. Workbooks
  * come out two months at a time from January, so a period always starts in an
  * odd month; the search skips the ones already taken.

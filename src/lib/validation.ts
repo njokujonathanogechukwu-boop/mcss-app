@@ -395,6 +395,14 @@ export const addWeekSchema = z.object({
   weekOf: dateInput("Choose the date of the meeting"),
 });
 
+// Filing a past schedule: the printed sheet carries no year and the reader
+// guesses one, so the overseer corrects the year and the meeting day before
+// anything is written.
+export const historyFixSchema = z.object({
+  fixYear: z.coerce.number().int("Enter the year").min(2000, "Enter the year").max(2100, "Enter the year"),
+  fixWeekday: z.coerce.number().int().min(0).max(6),
+});
+
 export const weekHeaderSchema = z.object({
   weekOf: dateInput("Choose the date of the meeting"),
   bibleReading: optionalString,

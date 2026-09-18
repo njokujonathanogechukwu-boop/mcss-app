@@ -291,6 +291,11 @@ export function AddPartForm({ weekId, positions }: { weekId: string; positions: 
         defaultValue={String(positions[positions.length - 1] ?? 0)}
       />
 
+      <p className="text-xs text-ink-faint">
+        The meeting runs one hour forty-five minutes (S-38 par. 20). If this part pushes it past, the other
+        parts&rsquo; minutes are shortened to fit, and the running clock on every line moves with them.
+      </p>
+
       <SubmitButton size="sm" variant="secondary" pendingLabel="Adding…">Add this part</SubmitButton>
     </form>
   );
