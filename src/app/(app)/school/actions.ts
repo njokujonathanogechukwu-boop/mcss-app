@@ -975,6 +975,8 @@ export type HistoryState = {
   preview?: HistoryPreviewWeek[];
   /** The read schedule, carried to the confirm pass so it files exactly what was previewed. */
   parsed?: string;
+  /** The uploaded file's name, carried because the file itself does not survive the preview. */
+  fileName?: string;
   periodId?: string;
 };
 
@@ -1051,16 +1053,24 @@ export async function importPastSchedule(_prev: HistoryState, formData: FormData
   const auth = await guard("school:write");
   if (!auth.ok) return { error: auth.error };
 
-  const file = formData.get("schedule");
-  if (!(file instanceof File) || file.size === 0) {
+  // The file input is hidden once the preview shows, and a hidden input loses
+  // its file, so the confirm pass cannot count on the upload still being there:
+  // the read it confirmed is carried as text, and the name as a plain field.
+  const confirm = formData.get("confirm") === "1";
+  const entry = formData.get("schedule");
+  const uploaded = entry instanceof File && entry.size > 0 ? entry : null;
+
+  if (!confirm && !uploaded) {
     return { errors: { schedule: "Choose the photo, Word file or PDF of the schedule first." } };
   }
-  if (file.size > MAX_PAST_BYTES) {
+  if (uploaded && uploaded.size > MAX_PAST_BYTES) {
     return { errors: { schedule: "That file is over 3.5 MB, the most that can be posted. Photograph the schedule again at a smaller size, or upload the Word file instead." } };
   }
 
-  const bytes = new Uint8Array((await file.arrayBuffer()) as ArrayBuffer);
-  const confirm = formData.get("confirm") === "1";
+  const bytes = uploaded ? new Uint8Array((await uploaded.arrayBuffer()) as ArrayBuffer) : null;
+  const scheduleName = uploaded
+    ? uploaded.name
+    : String(formData.get("scheduleName") ?? "").trim() || "a past schedule";
 
   let schedule: PastSchedule;
   const carried = confirm ? String(formData.get("parsed") ?? "") : "";
@@ -1072,7 +1082,7 @@ export async function importPastSchedule(_prev: HistoryState, formData: FormData
     }
   } else {
     try {
-      schedule = await readPastSchedule(bytes, file.type, file.name);
+      schedule = await readPastSchedule(bytes!, uploaded!.type, uploaded!.name);
     } catch (error) {
       return {
         errors: {
@@ -1088,6 +1098,7 @@ export async function importPastSchedule(_prev: HistoryState, formData: FormData
     return {
       preview: schedule.weeks.map((week) => previewWeek(week, index)),
       parsed: JSON.stringify(schedule),
+      fileName: scheduleName,
       ok: "Read it. Check every week and name below, then file it.",
     };
   }
@@ -1184,7 +1195,7 @@ export async function importPastSchedule(_prev: HistoryState, formData: FormData
         openingSong: week.openingSong,
         livingSong: week.livingSong,
         closingSong: week.closingSong,
-        note: `Imported from a past schedule (${file.name})`,
+        note: `Imported from a past schedule (${scheduleName})`,
         parts: {
           create: week.parts.map((part) => {
             const slots = slotsForRole(part.role, part.section);
@@ -1223,21 +1234,25 @@ export async function importPastSchedule(_prev: HistoryState, formData: FormData
     weeksWritten += 1;
   }
 
-  await prisma.midweekDocument.create({
-    data: {
-      periodId: period.id,
-      label: `Past schedule · ${file.name}`,
-      fileName: safeFileName(file.name),
-      mimeType: file.type || "application/octet-stream",
-      size: file.size,
-      bytes,
-      uploadedById: auth.session.userId,
-    },
-  });
+  // The upload itself does not survive the preview, so the archive copy is
+  // filed only when the browser still had it; the weeks are what matter.
+  if (bytes && uploaded) {
+    await prisma.midweekDocument.create({
+      data: {
+        periodId: period.id,
+        label: `Past schedule · ${scheduleName}`,
+        fileName: safeFileName(scheduleName),
+        mimeType: uploaded.type || "application/octet-stream",
+        size: bytes.length,
+        bytes,
+        uploadedById: auth.session.userId,
+      },
+    });
+  }
 
   await recordAudit(
     auth.session.userId, "created", "MidweekPeriod", period.id,
-    `Filed ${weeksWritten} past week${weeksWritten === 1 ? "" : "s"} from ${file.name} with ${namesWritten} matched name${namesWritten === 1 ? "" : "s"}`,
+    `Filed ${weeksWritten} past week${weeksWritten === 1 ? "" : "s"} from ${scheduleName} with ${namesWritten} matched name${namesWritten === 1 ? "" : "s"}`,
   );
 
   revalidateSchool();

@@ -48,6 +48,9 @@ export function WorkbookImportForm({
       bypass.current = false;
       return;
     }
+    // The confirmed pass already carries the extracted text, and the file input
+    // loses its file once the preview hides it, so the file is wanted only once.
+    if (textRef.current?.value) return;
     const file = fileRef.current?.files?.[0];
     if (!file) return;
     event.preventDefault();

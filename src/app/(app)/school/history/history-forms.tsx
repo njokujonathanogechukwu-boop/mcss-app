@@ -63,6 +63,7 @@ export function PastScheduleForm({
         <>
           <input type="hidden" name="confirm" value="1" />
           <input type="hidden" name="parsed" value={state.parsed ?? ""} />
+          <input type="hidden" name="scheduleName" value={state.fileName ?? ""} />
           {state.ok && <Notice tone="info">{state.ok}</Notice>}
 
           <div className="space-y-2 rounded border border-rule bg-surface p-3">
