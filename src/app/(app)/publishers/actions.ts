@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
 import { publisherSchema, transferSchema, quickPublisherSchema, fieldErrors } from "@/lib/validation";
+import { rotateSelfToken } from "@/lib/self-service";
 
 export type FormState = { error?: string; errors?: Record<string, string>; ok?: string };
 
@@ -165,6 +166,34 @@ export async function transferPublisher(
   revalidatePath(`/publishers/${parsed.data.publisherId}`);
   revalidatePath("/groups");
   return { ok: "Transfer recorded." };
+}
+
+export type RotateLinkState = { error?: string; ok?: string; link?: string };
+
+/**
+ * Replaces one publisher's personal update link, killing the old one. This is
+ * how a link that was forwarded, lost or printed on a sheet that has gone
+ * astray is taken out of circulation — the publisher's record is untouched.
+ */
+export async function rotatePublisherLink(publisherId: string): Promise<RotateLinkState> {
+  const auth = await guard("publisher:write");
+  if (!auth.ok) return { error: auth.error };
+
+  const publisher = await prisma.publisher.findUnique({
+    where: { id: publisherId },
+    select: { id: true, firstName: true, lastName: true },
+  });
+  if (!publisher) return { error: "That publisher is not on file." };
+
+  const link = await rotateSelfToken(publisher.id);
+
+  await recordAudit(
+    auth.session.userId, "rotated", "Publisher", publisher.id,
+    `Replaced ${publisher.firstName} ${publisher.lastName}'s personal update link — the old one stopped working.`,
+  );
+
+  revalidatePath("/publishers/links");
+  return { ok: "Replaced. The old link no longer works.", link: link ?? undefined };
 }
 
 export async function deletePublisher(formData: FormData) {

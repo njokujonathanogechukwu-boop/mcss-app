@@ -2,9 +2,9 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { displayName } from "@/lib/format";
 import { ensureSelfTokens, requestOrigin } from "@/lib/self-service";
-import { PageHeader, Section, DataTable, Th, Td } from "@/components/shell";
+import { PageHeader, Section, DataTable, Th } from "@/components/shell";
 import { Button } from "@/components/ui";
-import { CopyLinkButton, LinkInput } from "./copy-link";
+import { PublisherLinkRow } from "./copy-link";
 import { EmailLinksButton } from "./email-links";
 
 export const dynamic = "force-dynamic";
@@ -65,7 +65,9 @@ export default async function PublisherLinksPage() {
           <p className="max-w-xl text-sm text-ink-soft">
             Treat each link like a key: anyone holding it can edit that publisher&rsquo;s details, so
             send it to the publisher only. A link stays the same once created, so a publisher can keep
-            using the one you sent.
+            using the one you sent. <span className="font-medium text-ink">Replace</span> gives them a
+            new one and kills the old at once — do that if a link was forwarded, lost, or printed on a
+            QR sheet that has gone astray, then send the publisher the new one.
           </p>
           <EmailLinksButton />
         </div>
@@ -80,16 +82,7 @@ export default async function PublisherLinksPage() {
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id} className="hover:bg-paper">
-                <Td className="font-medium whitespace-nowrap">{r.name}</Td>
-                <Td className="text-ink-soft whitespace-nowrap">{r.group}</Td>
-                <Td>
-                  <LinkInput url={r.url} publisherName={r.name} />
-                </Td>
-                <Td align="right">
-                  <CopyLinkButton url={r.url} />
-                </Td>
-              </tr>
+              <PublisherLinkRow key={r.id} publisherId={r.id} name={r.name} group={r.group} url={r.url} />
             ))}
           </tbody>
         </DataTable>

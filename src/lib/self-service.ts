@@ -33,6 +33,20 @@ export async function ensureSelfTokens(ids: string[]): Promise<Map<string, strin
   return tokens;
 }
 
+/**
+ * Replaces one publisher's personal link. The old one stops working the moment
+ * this lands, so a link that was forwarded, lost, or printed on a QR sheet that
+ * has gone astray can be killed without touching the publisher's record.
+ * Returns the new absolute link, or null when the request carries no host.
+ */
+export async function rotateSelfToken(publisherId: string): Promise<string | null> {
+  const token = randomBytes(24).toString("base64url");
+  await prisma.publisher.update({ where: { id: publisherId }, data: { selfToken: token } });
+  const origin = await requestOrigin();
+  if (!origin) return null;
+  return `${origin}/my/${token}`;
+}
+
 /** Absolute origin of the current request, to build shareable /my links. */
 export async function requestOrigin(): Promise<string | null> {
   const h = await headers();
