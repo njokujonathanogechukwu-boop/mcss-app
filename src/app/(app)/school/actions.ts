@@ -2,12 +2,13 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import type { MidweekHall, MidweekSlot, Prisma } from "@prisma/client";
+import type { MidweekSlot, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
 import { displayName, formatDate, safeFileName } from "@/lib/format";
-import { PART_KINDS, WEEK_SKELETON, hallsFor, meetingDateIn, meetingDates, parsePersonRef, periodLabel, slotField } from "@/lib/school";
+import { PART_KINDS, WEEK_SKELETON, meetingDateIn, meetingDates, parsePersonRef, periodLabel, slotField } from "@/lib/school";
 import { WorkbookError, readWorkbook, toPreview, type WorkbookPreview } from "@/lib/workbook";
+import { APPROVED_READERS_KEY, approvedReaderIds } from "@/lib/school-queries";
 import {
   addWeekSchema, fieldErrors, partSchema, periodSchema, periodSettingsSchema,
   schoolStudentSchema, weekHeaderSchema, workbookSettingsSchema,
@@ -24,7 +25,7 @@ function revalidateSchool() {
   revalidatePath("/school", "layout");
 }
 
-/** The parts a new week starts with, in the order the S-140 prints them. */
+/** The parts a new week starts with, in the order the schedule prints them. */
 function skeletonParts(): Prisma.MidweekPartCreateWithoutWeekInput[] {
   return WEEK_SKELETON.map((part, index) => ({
     position: index + 1,
@@ -32,7 +33,6 @@ function skeletonParts(): Prisma.MidweekPartCreateWithoutWeekInput[] {
     title: part.title,
     minutes: part.minutes,
     slots: [...PART_KINDS[part.kind].slots],
-    dualHall: part.dualHall ?? false,
   }));
 }
 
@@ -197,7 +197,6 @@ function readWeekHeader(formData: FormData) {
     weekOf: formData.get("weekOf"),
     bibleReading: formData.get("bibleReading") ?? "",
     chairmanId: formData.get("chairmanId") ?? "",
-    counselorId: formData.get("counselorId") ?? "",
     openingPrayerId: formData.get("openingPrayerId") ?? "",
     closingPrayerId: formData.get("closingPrayerId") ?? "",
     openingSong: formData.get("openingSong") ?? "",
@@ -252,7 +251,6 @@ function readPart(formData: FormData) {
     kind: formData.get("kind"),
     minutes: formData.get("minutes") ?? "",
     detail: formData.get("detail") ?? "",
-    dualHall: formData.get("dualHall") === "true",
   });
 }
 
@@ -278,33 +276,29 @@ export async function savePart(_prev: SchoolState, formData: FormData): Promise<
   const slots = [...PART_KINDS[parsed.data.kind].slots] as MidweekSlot[];
   const assignments: {
     partId: string;
-    hall: MidweekHall;
     slot: MidweekSlot;
     publisherId: string | null;
     studentId: string | null;
   }[] = [];
 
   for (const slot of slots) {
-    for (const hall of hallsFor(parsed.data.dualHall)) {
-      // One picker offers both publishers and the students of the school, so
-      // the value says which of the two tables it points at.
-      const person = parsePersonRef(String(formData.get(slotField(slot, hall)) ?? ""));
-      if (!person) continue;
-      assignments.push({
-        partId,
-        hall,
-        slot,
-        publisherId: person.kind === "publisher" ? person.id : null,
-        studentId: person.kind === "student" ? person.id : null,
-      });
-    }
+    // One picker offers both publishers and the students of the school, so
+    // the value says which of the two tables it points at.
+    const person = parsePersonRef(String(formData.get(slotField(slot)) ?? ""));
+    if (!person) continue;
+    assignments.push({
+      partId,
+      slot,
+      publisherId: person.kind === "publisher" ? person.id : null,
+      studentId: person.kind === "student" ? person.id : null,
+    });
   }
 
-  const { title, section, minutes, detail, dualHall } = parsed.data;
+  const { title, section, minutes, detail } = parsed.data;
   await prisma.$transaction([
     prisma.midweekPart.update({
       where: { id: partId },
-      data: { title, section, minutes, detail, slots, dualHall },
+      data: { title, section, minutes, detail, slots },
     }),
     prisma.midweekAssignment.deleteMany({ where: { partId } }),
     prisma.midweekAssignment.createMany({ data: assignments }),
@@ -338,7 +332,7 @@ export async function addPart(_prev: SchoolState, formData: FormData): Promise<S
   const after = Number(formData.get("afterPosition"));
   const position = Number.isInteger(after) && after > 0 ? after + 1 : week.parts.length + 1;
 
-  const { title, section, minutes, detail, dualHall, kind } = parsed.data;
+  const { title, section, minutes, detail, kind } = parsed.data;
   await prisma.$transaction([
     prisma.midweekPart.updateMany({
       where: { weekId, position: { gte: position } },
@@ -346,7 +340,7 @@ export async function addPart(_prev: SchoolState, formData: FormData): Promise<S
     }),
     prisma.midweekPart.create({
       data: {
-        weekId, position, section, title, minutes, detail, dualHall,
+        weekId, position, section, title, minutes, detail,
         slots: [...PART_KINDS[kind].slots] as MidweekSlot[],
       },
     }),
@@ -537,6 +531,75 @@ export async function linkStudentToPublisher(_prev: SchoolState, formData: FormD
 
   revalidateSchool();
   return { ok: publisher ? `${displayName(student)} is now linked to their publisher record.` : "Link removed." };
+}
+
+// ---------------------------------------------------------- approved readers
+
+/**
+ * The brothers the body of elders approved to read the Scriptures at the
+ * meeting. The reader of the congregation Bible study is picked from this list
+ * alone, so it is the one list the overseer has to keep current.
+ */
+async function writeApprovedReaders(ids: string[]) {
+  await prisma.congregationSetting.upsert({
+    where: { key: APPROVED_READERS_KEY },
+    update: { value: JSON.stringify(ids) },
+    create: { key: APPROVED_READERS_KEY, value: JSON.stringify(ids) },
+  });
+}
+
+export async function addApprovedReader(_prev: SchoolState, formData: FormData): Promise<SchoolState> {
+  const auth = await guard("school:write");
+  if (!auth.ok) return { error: auth.error };
+
+  const person = parsePersonRef(String(formData.get("readerId") ?? ""));
+  if (!person || person.kind !== "publisher") {
+    return { errors: { readerId: "Choose the brother to add." } };
+  }
+
+  const publisher = await prisma.publisher.findUnique({
+    where: { id: person.id },
+    select: { firstName: true, lastName: true, gender: true },
+  });
+  if (!publisher) return { errors: { readerId: "That publisher record is no longer on file." } };
+  if (publisher.gender !== "MALE") {
+    return { errors: { readerId: "Only a brother may be approved to read." } };
+  }
+
+  const ids = [...(await approvedReaderIds())];
+  if (ids.includes(person.id)) return { error: `${displayName(publisher)} is already on the list.` };
+  ids.push(person.id);
+
+  await writeApprovedReaders(ids);
+  await recordAudit(
+    auth.session.userId, "created", "CongregationSetting", APPROVED_READERS_KEY,
+    `Approved ${displayName(publisher)} to read the Scriptures at the meeting`,
+  );
+
+  revalidateSchool();
+  return { ok: `${displayName(publisher)} may now be picked as the reader.` };
+}
+
+export async function removeApprovedReader(_prev: SchoolState, formData: FormData): Promise<SchoolState> {
+  const auth = await guard("school:write");
+  if (!auth.ok) return { error: auth.error };
+
+  const id = String(formData.get("id") ?? "");
+  const publisher = await prisma.publisher.findUnique({
+    where: { id },
+    select: { firstName: true, lastName: true },
+  });
+  if (!publisher) return { error: "That brother is not on the list." };
+
+  const ids = [...(await approvedReaderIds())].filter((r) => r !== id);
+  await writeApprovedReaders(ids);
+  await recordAudit(
+    auth.session.userId, "deleted", "CongregationSetting", APPROVED_READERS_KEY,
+    `Took ${displayName(publisher)} off the list of approved readers`,
+  );
+
+  revalidateSchool();
+  return { ok: `${displayName(publisher)} is off the list. Schedules already printed keep his name.` };
 }
 
 // ----------------------------------------------------------------- documents
@@ -732,7 +795,6 @@ export async function importWorkbook(_prev: WorkbookState, formData: FormData): 
           minutes: part.minutes,
           detail: part.detail,
           slots: [...PART_KINDS[part.kind].slots],
-          dualHall: part.dualHall,
         })),
       },
     };

@@ -155,7 +155,6 @@ function PreviewTable({ weeks }: { weeks: Preview["weeks"] }) {
                   <span className="text-ink">{part.title}</span>
                   <span className="text-xs text-ink-faint">
                     {part.minutes === null ? "—" : `${part.minutes} min`} · {PART_KINDS[part.kind].label}
-                    {part.dualHall ? " · both halls" : ""}
                   </span>
                   {part.detail && <span className="w-full pl-7 text-xs text-ink-soft">{part.detail}</span>}
                 </li>

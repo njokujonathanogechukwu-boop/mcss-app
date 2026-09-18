@@ -22,7 +22,6 @@ export type WorkbookPart = {
   minutes: number | null;
   detail: string | null;
   kind: PartKind;
-  dualHall: boolean;
 };
 
 export type WorkbookWeek = {
@@ -154,15 +153,14 @@ function sectionOf(block: Block): MidweekSection | null {
 
 /**
  * Who a part has to be given to. The field ministry is all student assignments;
- * the Bible reading and the congregation Bible study have their own shapes, and
- * only those two of them are handled in the auxiliary classroom as well.
+ * the Bible reading and the congregation Bible study have their own shapes.
  */
-function shapeOf(section: MidweekSection, title: string): { kind: PartKind; dualHall: boolean } {
+function shapeOf(section: MidweekSection, title: string): PartKind {
   const said = title.toLowerCase().replace(/[^a-z0-9]/g, "");
-  if (section === "MINISTRY") return { kind: "STUDENT", dualHall: true };
-  if (section === "TREASURES" && said === "biblereading") return { kind: "READING", dualHall: true };
-  if (said.includes("congregationbiblestudy")) return { kind: "STUDY", dualHall: false };
-  return { kind: "TALK", dualHall: false };
+  if (section === "MINISTRY") return "STUDENT";
+  if (section === "TREASURES" && said === "biblereading") return "READING";
+  if (said.includes("congregationbiblestudy")) return "STUDY";
+  return "TALK";
 }
 
 const MINUTES = /^\((\d+)\s*min\.?\)\s*(.*)$/;
@@ -214,7 +212,6 @@ function parseWeek(chapter: string, label: string, anchor: Date): WorkbookWeek {
       ? [timed[2]]
       : block.paragraphs.slice(timed ? 1 : 0);
     const detail = material.join(" ").trim().slice(0, 400) || null;
-    const { kind, dualHall } = shapeOf(section, title);
 
     parts.push({
       position: Number(numbered[1]),
@@ -222,8 +219,7 @@ function parseWeek(chapter: string, label: string, anchor: Date): WorkbookWeek {
       title,
       minutes,
       detail,
-      kind,
-      dualHall,
+      kind: shapeOf(section, title),
     });
   }
 

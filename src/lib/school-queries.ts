@@ -3,8 +3,8 @@ import type { MidweekSlot, Prisma, PublisherStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { displayName } from "@/lib/format";
 import {
-  SLOT_LABELS, hallsFor, personRef, slotField,
-  type SchedulePart, type ScheduleWeek,
+  SLOT_LABELS, personRef, slotField,
+  type SchoolPools, type SchedulePart, type ScheduleWeek,
 } from "@/lib/school";
 import type { NameOption } from "@/components/name-picker";
 
@@ -19,7 +19,6 @@ const ROLL: PublisherStatus[] = ["ACTIVE", "IRREGULAR"];
 export const weekInclude = {
   period: true,
   chairman: { select: { firstName: true, lastName: true } },
-  counselor: { select: { firstName: true, lastName: true } },
   openingPrayer: { select: { firstName: true, lastName: true } },
   closingPrayer: { select: { firstName: true, lastName: true } },
   parts: {
@@ -69,7 +68,7 @@ export async function loadPeriods() {
           note: true,
           chairman: { select: { firstName: true, lastName: true } },
           parts: {
-            select: { slots: true, dualHall: true, assignments: { select: { id: true } } },
+            select: { slots: true, assignments: { select: { id: true } } },
           },
         },
       },
@@ -96,7 +95,7 @@ export async function loadPeriod(id: string): Promise<PeriodRow | null> {
           note: true,
           chairman: { select: { firstName: true, lastName: true } },
           parts: {
-            select: { slots: true, dualHall: true, assignments: { select: { id: true } } },
+            select: { slots: true, assignments: { select: { id: true } } },
           },
         },
       },
@@ -106,15 +105,14 @@ export async function loadPeriod(id: string): Promise<PeriodRow | null> {
 }
 
 /**
- * How many names a week still owes. The denominator is every slot the week's
- * parts ask for, in both halls where a part is handled twice, so a week reads as
- * finished only when the auxiliary classroom is filled in too.
+ * How many names a week still owes: every slot of every part, since each part
+ * is handled once.
  */
-export function weekProgress(week: { parts: { slots: MidweekSlot[]; dualHall: boolean; assignments: { id: string }[] }[] }) {
+export function weekProgress(week: { parts: { slots: MidweekSlot[]; assignments: { id: string }[] }[] }) {
   let need = 0;
   let have = 0;
   for (const part of week.parts) {
-    need += part.slots.length * hallsFor(part.dualHall).length;
+    need += part.slots.length;
     have += part.assignments.length;
   }
   return { need, have };
@@ -305,44 +303,95 @@ export async function rollForSchool(filter?: { q?: string; groupId?: string }) {
   });
 }
 
-/** Options for the pickers that name a chairman, a counselor or a prayer. */
-export async function chairmanOptions(roll: Awaited<ReturnType<typeof rollForSchool>>): Promise<NameOption[]> {
-  return roll
-    .filter((p) => p.gender === "MALE")
-    .map((p) => ({
-      value: p.id,
-      label:
-        p.appointment === "ELDER"
-          ? `${displayName(p)} — elder`
-          : p.appointment === "MINISTERIAL_SERVANT"
-            ? `${displayName(p)} — ministerial servant`
-            : displayName(p),
-    }));
+/**
+ * The brothers the body of elders has approved to read the Scriptures at the
+ * meeting. The list is the overseer's to keep and the secretary's to correct, so
+ * it lives in a congregation setting rather than on each publisher record.
+ */
+export const APPROVED_READERS_KEY = "school:approvedReaders";
+
+export async function approvedReaderIds(): Promise<Set<string>> {
+  const row = await prisma.congregationSetting.findUnique({ where: { key: APPROVED_READERS_KEY } });
+  if (!row) return new Set();
+  try {
+    const parsed: unknown = JSON.parse(row.value);
+    return new Set(Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export async function approvedReaders() {
+  const ids = await approvedReaderIds();
+  if (ids.size === 0) return [];
+  return prisma.publisher.findMany({
+    where: { id: { in: [...ids] } },
+    select: { id: true, firstName: true, lastName: true, appointment: true },
+    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+  });
 }
 
 /**
- * Options for the pickers that assign a part. Publishers and the students of
- * the school who are not publishing yet are offered together, in one alphabetical
- * list, because the overseer thinks of them as one body of speakers.
+ * Fills the picker pools from the two rolls and the approved-reader list.
  */
-export async function assignmentOptions(): Promise<NameOption[]> {
-  const [publishers, students] = await Promise.all([
+export async function loadPools(): Promise<SchoolPools> {
+  const [publishers, students, readers] = await Promise.all([
     prisma.publisher.findMany({
       where: { status: { in: ROLL } },
-      select: { id: true, firstName: true, lastName: true },
+      select: { id: true, firstName: true, lastName: true, gender: true, appointment: true },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
     prisma.schoolStudent.findMany({
       where: { active: true },
-      select: { id: true, firstName: true, lastName: true },
+      select: { id: true, firstName: true, lastName: true, gender: true },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
+    approvedReaderIds(),
   ]);
 
-  return [
-    ...publishers.map((p) => ({ value: personRef("publisher", p.id), label: displayName(p) })),
-    ...students.map((s) => ({ value: personRef("student", s.id), label: `${displayName(s)} (student)` })),
-  ].sort((a, b) => a.label.localeCompare(b.label));
+  const brothers = publishers.filter((p) => p.gender === "MALE");
+  const elders = brothers.filter((p) => p.appointment === "ELDER");
+  const maleStudents = students.filter((s) => s.gender === "MALE");
+
+  const publisher = (p: { id: string; firstName: string; lastName: string }): NameOption => ({
+    value: personRef("publisher", p.id),
+    label: displayName(p),
+  });
+  const student = (s: { id: string; firstName: string; lastName: string }): NameOption => ({
+    value: personRef("student", s.id),
+    label: `${displayName(s)} (student)`,
+  });
+
+  return {
+    chairman: elders.map(publisher),
+    prayer: brothers.map(publisher),
+    speaker: brothers.map(publisher),
+    reading: [...brothers.map(publisher), ...maleStudents.map(student)].sort(byLabel),
+    ministry: [...publishers.map(publisher), ...students.map(student)].sort(byLabel),
+    conductor: elders.map(publisher),
+    reader: publishers.filter((p) => readers.has(p.id)).map(publisher),
+  };
+}
+
+const byLabel = (a: NameOption, b: NameOption) => a.label.localeCompare(b.label);
+
+/** How often each brother has actually read, and when he last did. */
+export async function readerUsage(): Promise<Map<string, Usage>> {
+  const rows = await prisma.midweekAssignment.findMany({
+    where: { slot: "READER", publisherId: { not: null } },
+    select: { publisherId: true, part: { select: { week: { select: { weekOf: true } } } } },
+  });
+
+  const usage = new Map<string, Usage>();
+  for (const row of rows) {
+    if (!row.publisherId) continue;
+    const weekOf = row.part.week.weekOf;
+    const seen = usage.get(row.publisherId) ?? { total: 0, last: weekOf };
+    seen.total += 1;
+    if (weekOf > seen.last) seen.last = weekOf;
+    usage.set(row.publisherId, seen);
+  }
+  return usage;
 }
 
 /** Who an assignment points at, whichever of the two rolls they are on. */
@@ -363,7 +412,7 @@ export function assignedValue(assignment: AssignmentRow): string {
 export function toSchedulePart(part: PartRow): SchedulePart {
   const names: Record<string, string | null> = {};
   for (const assignment of part.assignments) {
-    names[slotField(assignment.slot, assignment.hall)] = assignedName(assignment);
+    names[slotField(assignment.slot)] = assignedName(assignment);
   }
   return {
     position: part.position,
@@ -371,7 +420,6 @@ export function toSchedulePart(part: PartRow): SchedulePart {
     title: part.title,
     minutes: part.minutes,
     detail: part.detail,
-    dualHall: part.dualHall,
     names,
   };
 }
@@ -382,7 +430,6 @@ export function toScheduleWeek(row: WeekRow): ScheduleWeek {
     bibleReading: row.bibleReading,
     note: row.note,
     chairman: row.chairman ? displayName(row.chairman) : null,
-    counselor: row.counselor ? displayName(row.counselor) : null,
     openingSong: row.openingSong,
     livingSong: row.livingSong,
     closingSong: row.closingSong,

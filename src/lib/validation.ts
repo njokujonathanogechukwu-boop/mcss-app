@@ -399,7 +399,6 @@ export const weekHeaderSchema = z.object({
   weekOf: dateInput("Choose the date of the meeting"),
   bibleReading: optionalString,
   chairmanId: optionalString,
-  counselorId: optionalString,
   openingPrayerId: optionalString,
   closingPrayerId: optionalString,
   openingSong: optionalWhole("A song number is a whole number", 1, 999),
@@ -416,7 +415,6 @@ export const partSchema = z.object({
   kind: z.enum(["TALK", "READING", "STUDENT", "STUDY"]),
   minutes: optionalWhole("Minutes are a whole number", 1, 120),
   detail: optionalString,
-  dualHall: z.coerce.boolean(),
 });
 
 // A student of the school who is not publishing yet. There are no reports and

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { GENDER_LABELS, displayName, formatDate, toDateInput } from "@/lib/format";
-import { HALL_LABELS, SECTION_LABELS, SLOT_LABELS, formatWeekOf } from "@/lib/school";
+import { SECTION_LABELS, SLOT_LABELS, formatWeekOf } from "@/lib/school";
 import { loadStudent, rollForSchool } from "@/lib/school-queries";
 import type { NameOption } from "@/components/name-picker";
 import { DataTable, EmptyState, PageHeader, Panel, Section, Td, Th } from "@/components/shell";
@@ -54,7 +54,6 @@ export default async function StudentPage({ params }: { params: Promise<{ id: st
                 <Th>Schedule</Th>
                 <Th>Part</Th>
                 <Th>Handled as</Th>
-                <Th>Hall</Th>
               </tr>
             </thead>
             <tbody>
@@ -76,7 +75,6 @@ export default async function StudentPage({ params }: { params: Promise<{ id: st
                     </span>
                   </Td>
                   <Td className="text-ink-soft">{SLOT_LABELS[assignment.slot]}</Td>
-                  <Td className="text-ink-soft">{HALL_LABELS[assignment.hall]}</Td>
                 </tr>
               ))}
             </tbody>

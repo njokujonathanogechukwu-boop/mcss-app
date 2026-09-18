@@ -1,4 +1,5 @@
-import type { MidweekHall, MidweekSection, MidweekSlot } from "@prisma/client";
+import type { MidweekSection, MidweekSlot } from "@prisma/client";
+import type { NameOption } from "@/components/name-picker";
 
 /**
  * The Life and Ministry Meeting School: the shape of a week's schedule, how a
@@ -38,11 +39,6 @@ export const SLOT_LABELS: Record<MidweekSlot, string> = {
 /** The order slots are printed in, which is not alphabetical. */
 export const SLOT_ORDER: MidweekSlot[] = ["SPEAKER", "STUDENT", "ASSISTANT", "CONDUCTOR", "READER"];
 
-export const HALL_LABELS: Record<MidweekHall, string> = {
-  MAIN: "Main hall",
-  AUXILIARY: "Auxiliary classroom",
-};
-
 export const WEEKDAY_LABELS = [
   "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
 ];
@@ -59,7 +55,6 @@ export type SkeletonPart = {
   title: string;
   minutes: number;
   kind: PartKind;
-  dualHall?: boolean;
 };
 
 /**
@@ -76,6 +71,31 @@ export const PART_KINDS = {
 
 export type PartKind = keyof typeof PART_KINDS;
 
+/**
+ * The names each picker may offer. The S-38 keeps the parts apart: only a
+ * brother the elders approved chairs the meeting or conducts the Bible study,
+ * the reading goes to any brother or male student, and the reader is one of the
+ * brothers the body of elders approved to read. Student assignments are the one
+ * part the whole roll shares.
+ */
+export type SchoolPools = {
+  chairman: NameOption[];
+  prayer: NameOption[];
+  speaker: NameOption[];
+  reading: NameOption[];
+  ministry: NameOption[];
+  conductor: NameOption[];
+  reader: NameOption[];
+};
+
+/** The pool a part's slot draws its names from. */
+export function poolFor(pools: SchoolPools, kind: PartKind, slot: MidweekSlot): NameOption[] {
+  if (kind === "STUDY") return slot === "READER" ? pools.reader : pools.conductor;
+  if (kind === "READING") return pools.reading;
+  if (kind === "STUDENT") return pools.ministry;
+  return pools.speaker;
+}
+
 const slotSignature = (slots: readonly MidweekSlot[]) =>
   SLOT_ORDER.filter((s) => slots.includes(s)).join(",");
 
@@ -91,16 +111,15 @@ export function partKind(slots: readonly MidweekSlot[]): PartKind {
 /**
  * A week as the workbook prints it. Every line can be renamed, retimed, added
  * or removed afterwards: the number of student assignments moves from period to
- * period, a feature may be a discussion, and a circuit overseer's week drops
- * the auxiliary classroom altogether.
+ * period and a feature may be a discussion.
  */
 export const WEEK_SKELETON: SkeletonPart[] = [
   { section: "TREASURES", title: "Talk", minutes: 10, kind: "TALK" },
   { section: "TREASURES", title: "Spiritual Gems", minutes: 10, kind: "TALK" },
-  { section: "TREASURES", title: "Bible Reading", minutes: 4, kind: "READING", dualHall: true },
-  { section: "MINISTRY", title: "Student assignment", minutes: 3, kind: "STUDENT", dualHall: true },
-  { section: "MINISTRY", title: "Student assignment", minutes: 4, kind: "STUDENT", dualHall: true },
-  { section: "MINISTRY", title: "Student assignment", minutes: 5, kind: "STUDENT", dualHall: true },
+  { section: "TREASURES", title: "Bible Reading", minutes: 4, kind: "READING" },
+  { section: "MINISTRY", title: "Student assignment", minutes: 3, kind: "STUDENT" },
+  { section: "MINISTRY", title: "Student assignment", minutes: 4, kind: "STUDENT" },
+  { section: "MINISTRY", title: "Student assignment", minutes: 5, kind: "STUDENT" },
   { section: "LIVING", title: "Feature", minutes: 15, kind: "TALK" },
   { section: "LIVING", title: "Congregation Bible Study", minutes: 30, kind: "STUDY" },
 ];
@@ -209,7 +228,7 @@ export const MINUTES_PER_S38 = 105;
 export type ScheduleLine =
   | { kind: "song"; which: "opening" | "living" | "closing"; number: number | null; time: string; prayer: string | null }
   | { kind: "comments"; which: "opening" | "concluding"; minutes: number; time: string }
-  | { kind: "heading"; section: MidweekSection; columnHeaders: boolean }
+  | { kind: "heading"; section: MidweekSection }
   | {
       kind: "part";
       position: number;
@@ -217,7 +236,11 @@ export type ScheduleLine =
       minutes: number | null;
       detail: string | null;
       time: string;
-      names: { hall: MidweekHall; label: string }[];
+      /**
+       * Who handles the part, as the schedule prints it: the role label in one
+       * column and the slash-joined names in the other. Null while unassigned.
+       */
+      names: { role: string; people: string } | null;
     };
 
 export type ScheduleWeek = {
@@ -226,7 +249,6 @@ export type ScheduleWeek = {
   /** Printed across the top of the schedule: a circuit overseer's week, an assembly. */
   note: string | null;
   chairman: string | null;
-  counselor: string | null;
   openingSong: number | null;
   livingSong: number | null;
   closingSong: number | null;
@@ -242,8 +264,7 @@ export type SchedulePart = {
   title: string;
   minutes: number | null;
   detail: string | null;
-  dualHall: boolean;
-  /** Names by `${slot}@${hall}`, already resolved to display names. */
+  /** Names by slot, already resolved to display names. */
   names: Record<string, string | null>;
 };
 
@@ -252,9 +273,8 @@ function clock(totalMinutes: number): string {
 }
 
 /**
- * Lays a week out in the order the S-140 prints it, with a running clock. The
- * sections a week has no parts in are left out, and the two-hall column headers
- * only appear where a part is actually handled in the auxiliary classroom.
+ * Lays a week out in the order the schedule prints it, with a running clock. The
+ * sections a week has no parts in are left out.
  */
 export function buildSchedule(
   week: ScheduleWeek,
@@ -267,7 +287,6 @@ export function buildSchedule(
   const at = () => clock(startHour * 60 + startMinute + elapsed);
 
   const ordered = [...parts].sort((a, b) => a.position - b.position);
-  const dualHall = ordered.some((p) => p.dualHall);
   const seen = new Set<MidweekSection>();
 
   lines.push({
@@ -281,27 +300,22 @@ export function buildSchedule(
   for (const part of ordered) {
     if (!seen.has(part.section)) {
       seen.add(part.section);
-      lines.push({
-        kind: "heading",
-        section: part.section,
-        columnHeaders: dualHall && part.section !== "LIVING",
-      });
+      lines.push({ kind: "heading", section: part.section });
       if (part.section === "LIVING") {
         lines.push({ kind: "song", which: "living", number: week.livingSong, time: at(), prayer: null });
         elapsed += SONG_MINUTES;
       }
     }
 
-    const names: { hall: MidweekHall; label: string }[] = [];
-    for (const hall of ["AUXILIARY", "MAIN"] as MidweekHall[]) {
-      // SLOT_ORDER, not the alphabet: the S-140 reads "Student/Assistant" and
-      // "Conductor/Reader", and both would come out backwards otherwise.
-      const slots = SLOT_ORDER.filter((slot) => part.names[slotField(slot, hall)]);
-      if (slots.length === 0) continue;
-      const prefix = slots.map((s) => SLOT_PREFIX[s]).filter(Boolean).join("/");
-      const who = slots.map((s) => part.names[slotField(s, hall)]).join("/");
-      names.push({ hall, label: prefix ? `${prefix}: ${who}` : who });
-    }
+    // SLOT_ORDER, not the alphabet: the schedule reads "Student/Assistant" and
+    // "Conductor/Reader", and both would come out backwards otherwise.
+    const slots = SLOT_ORDER.filter((slot) => part.names[slotField(slot)]);
+    const names = slots.length
+      ? {
+          role: slots.map((s) => SLOT_PREFIX[s]).filter(Boolean).join("/"),
+          people: slots.map((s) => part.names[slotField(s)]).join("/"),
+        }
+      : null;
 
     lines.push({
       kind: "part",
@@ -356,11 +370,7 @@ export function parsePersonRef(value: string | null | undefined): PersonRef | nu
   return null;
 }
 
-/** The form field name of one slot of one part: `STUDENT@MAIN`. */
-export function slotField(slot: MidweekSlot, hall: MidweekHall): string {
-  return `${slot}@${hall}`;
-}
-
-export function hallsFor(dualHall: boolean): MidweekHall[] {
-  return dualHall ? (["MAIN", "AUXILIARY"] as MidweekHall[]) : (["MAIN"] as MidweekHall[]);
+/** The form field name of one slot of one part. */
+export function slotField(slot: MidweekSlot): string {
+  return slot;
 }

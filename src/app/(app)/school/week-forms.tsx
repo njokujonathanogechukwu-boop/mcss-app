@@ -5,7 +5,7 @@ import { CheckField, NameField, SelectField, TextField } from "@/components/fiel
 import { NamePicker, type NameOption } from "@/components/name-picker";
 import { Notice } from "@/components/shell";
 import { Button, SubmitButton } from "@/components/ui";
-import { HALL_LABELS, PART_KINDS, SECTION_LABELS, SLOT_LABELS, hallsFor, slotField, type PartKind } from "@/lib/school";
+import { PART_KINDS, SECTION_LABELS, SLOT_LABELS, poolFor, slotField, type PartKind, type SchoolPools } from "@/lib/school";
 import type { MidweekSection, MidweekSlot } from "@prisma/client";
 import { addPart, deletePart, movePart, savePart, saveWeekHeader, type SchoolState } from "./actions";
 
@@ -24,7 +24,6 @@ export type WeekHeaderProps = {
   weekOf: string;
   bibleReading: string | null;
   chairmanId: string | null;
-  counselorId: string | null;
   openingPrayerId: string | null;
   closingPrayerId: string | null;
   openingSong: number | null;
@@ -37,10 +36,16 @@ export type WeekHeaderProps = {
 
 /**
  * The head of the schedule: the date, the weekly Bible reading, the chairman,
- * the auxiliary classroom counselor, the two prayers, the three songs, and the
- * banner a circuit overseer's week or an assembly carries.
+ * the two prayers, the three songs, and the banner a circuit overseer's week or
+ * an assembly carries.
  */
-export function WeekHeaderForm({ week, people }: { week: WeekHeaderProps; people: NameOption[] }) {
+export function WeekHeaderForm({
+  week, chairmen, prayers,
+}: {
+  week: WeekHeaderProps;
+  chairmen: NameOption[];
+  prayers: NameOption[];
+}) {
   const [state, action] = useActionState<SchoolState, FormData>(saveWeekHeader, {});
   const [cancelled, setCancelled] = useState(week.cancelled);
   const [saved, setSaved] = useState(0);
@@ -62,7 +67,7 @@ export function WeekHeaderForm({ week, people }: { week: WeekHeaderProps; people
         />
         <TextField
           label="Weekly Bible reading" name="bibleReading" defaultValue={week.bibleReading ?? ""}
-          placeholder="Psalm 18–22" hint="Printed beside the date at the head of the schedule."
+          placeholder="Jeremiah 26–28" hint="Printed beside the date at the head of the schedule."
         />
         <TextField
           label="Banner for the week" name="note" defaultValue={week.note ?? ""}
@@ -71,22 +76,19 @@ export function WeekHeaderForm({ week, people }: { week: WeekHeaderProps; people
         />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <NameField
-          label="Chairman" name="chairmanId" options={people} defaultValue={week.chairmanId ?? ""}
+          label="Chairman" name="chairmanId" options={chairmen} defaultValue={week.chairmanId ?? ""}
           emptyLabel="Not assigned yet" clearOnSubmit={false}
           hint="A brother the body of elders has approved."
         />
         <NameField
-          label="Auxiliary classroom counselor" name="counselorId" options={people}
-          defaultValue={week.counselorId ?? ""} emptyLabel="Not assigned yet" clearOnSubmit={false}
-        />
-        <NameField
-          label="Opening prayer" name="openingPrayerId" options={people}
+          label="Opening prayer" name="openingPrayerId" options={prayers}
           defaultValue={week.openingPrayerId ?? ""} emptyLabel="Not assigned yet" clearOnSubmit={false}
+          hint="Left blank, the schedule prints the chairman."
         />
         <NameField
-          label="Closing prayer" name="closingPrayerId" options={people}
+          label="Closing prayer" name="closingPrayerId" options={prayers}
           defaultValue={week.closingPrayerId ?? ""} emptyLabel="Not assigned yet" clearOnSubmit={false}
         />
       </div>
@@ -133,16 +135,20 @@ export type PartProps = {
   minutes: number | null;
   detail: string | null;
   kind: PartKind;
-  dualHall: boolean;
-  /** Who is assigned, by `SLOT@HALL`, as a picker value. */
+  /** Who is assigned, by slot, as a picker value. */
   values: Record<string, string>;
 };
 
 /** One numbered line of the schedule, with everyone assigned to it. */
-export function PartCard({ part, people, count }: { part: PartProps; people: NameOption[]; count: number }) {
+export function PartCard({
+  part, pools, count,
+}: {
+  part: PartProps;
+  pools: SchoolPools;
+  count: number;
+}) {
   const [state, action] = useActionState<SchoolState, FormData>(savePart, {});
   const [kind, setKind] = useState<PartKind>(part.kind);
-  const [dualHall, setDualHall] = useState(part.dualHall);
   const [saved, setSaved] = useState(0);
 
   useEffect(() => {
@@ -190,40 +196,27 @@ export function PartCard({ part, people, count }: { part: PartProps; people: Nam
           hint="The scripture, the setting of a student assignment, or the lesson and point to work on."
         />
 
-        <div className="border-t border-rule pt-3">
-          <CheckField
-            label="Also handled in the auxiliary classroom" name="dualHall"
-            checked={dualHall} onChange={(e) => setDualHall(e.target.checked)}
-            hint="Students move to the auxiliary classroom after Spiritual Gems and come back for the last part (S-38 par. 27). Untick it for a circuit overseer's week."
-          />
-
-          <div className="mt-2 grid gap-3 sm:grid-cols-2">
-            {hallsFor(dualHall).map((hall) =>
-              slots.map((slot: MidweekSlot) => {
-                const field = slotField(slot, hall);
-                // The id has to carry the part: several parts on this page ask
-                // for a student in the main hall, and ids are page-wide.
-                const id = `${part.id}-${field}`;
-                return (
-                  <div key={field}>
-                    <label className="field-label" htmlFor={id}>
-                      {SLOT_LABELS[slot]}
-                      {dualHall ? ` — ${HALL_LABELS[hall].toLowerCase()}` : ""}
-                    </label>
-                    <NamePicker
-                      id={id}
-                      name={field}
-                      options={people}
-                      defaultValue={part.values[field] ?? ""}
-                      emptyLabel="Not assigned yet"
-                      placeholder="Type a name…"
-                      clearOnSubmit={false}
-                    />
-                  </div>
-                );
-              }),
-            )}
-          </div>
+        <div className="grid gap-3 border-t border-rule pt-3 sm:grid-cols-2">
+          {slots.map((slot: MidweekSlot) => {
+            const field = slotField(slot);
+            // The id has to carry the part: several parts on this page ask
+            // for a student, and ids are page-wide.
+            const id = `${part.id}-${field}`;
+            return (
+              <div key={field}>
+                <label className="field-label" htmlFor={id}>{SLOT_LABELS[slot]}</label>
+                <NamePicker
+                  id={id}
+                  name={field}
+                  options={poolFor(pools, kind, slot)}
+                  defaultValue={part.values[field] ?? ""}
+                  emptyLabel="Not assigned yet"
+                  placeholder="Type a name…"
+                  clearOnSubmit={false}
+                />
+              </div>
+            );
+          })}
         </div>
 
         <SubmitButton size="sm" pendingLabel="Saving…">Save part {part.position}</SubmitButton>
@@ -292,16 +285,11 @@ export function AddPartForm({ weekId, positions }: { weekId: string; positions: 
         <TextField label="Minutes" name="minutes" type="number" min={1} max={120} defaultValue={15} />
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <SelectField
-          label="Add it after" name="afterPosition"
-          options={positions.map((p) => ({ value: String(p), label: `Part ${p}` }))}
-          defaultValue={String(positions[positions.length - 1] ?? 0)}
-        />
-        <div className="flex items-end pb-1">
-          <CheckField label="Also handled in the auxiliary classroom" name="dualHall" />
-        </div>
-      </div>
+      <SelectField
+        label="Add it after" name="afterPosition"
+        options={positions.map((p) => ({ value: String(p), label: `Part ${p}` }))}
+        defaultValue={String(positions[positions.length - 1] ?? 0)}
+      />
 
       <SubmitButton size="sm" variant="secondary" pendingLabel="Adding…">Add this part</SubmitButton>
     </form>

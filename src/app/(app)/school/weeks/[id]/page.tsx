@@ -8,8 +8,7 @@ import {
   formatWeekOf, meetingLength, partKind, slotField,
 } from "@/lib/school";
 import {
-  assignedValue, assignmentOptions, chairmanOptions, loadWeek, rollForSchool,
-  schoolDocuments, toSchedulePart, toScheduleWeek,
+  assignedValue, loadPools, loadWeek, schoolDocuments, toSchedulePart, toScheduleWeek,
 } from "@/lib/school-queries";
 import { DataTable, Notice, PageHeader, Panel, Section, Td, Th } from "@/components/shell";
 import { Badge, Button } from "@/components/ui";
@@ -28,10 +27,8 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
   const week = await loadWeek(id);
   if (!week) notFound();
 
-  const roll = await rollForSchool();
-  const [chairmen, people, documents] = await Promise.all([
-    chairmanOptions(roll),
-    assignmentOptions(),
+  const [pools, documents] = await Promise.all([
+    loadPools(),
     schoolDocuments({ weekId: week.id }),
   ]);
 
@@ -44,9 +41,8 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
     minutes: part.minutes,
     detail: part.detail,
     kind: partKind(part.slots),
-    dualHall: part.dualHall,
     values: Object.fromEntries(
-      part.assignments.map((a) => [slotField(a.slot, a.hall), assignedValue(a)]),
+      part.assignments.map((a) => [slotField(a.slot), assignedValue(a)]),
     ),
   }));
 
@@ -62,15 +58,14 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
   const preview = (
     <Section
       title="How it will print"
-      description="The S-140 layout, with the running clock. Times move as the parts change."
+      description="The layout of the congregation's own schedule, with the running clock. Times move as the parts change."
     >
       <DataTable>
         <thead>
           <tr>
             <Th className="w-16">Time</Th>
             <Th>Programme</Th>
-            <Th>Auxiliary classroom</Th>
-            <Th>Main hall</Th>
+            <Th className="w-64">Names</Th>
           </tr>
         </thead>
         <tbody>
@@ -78,7 +73,7 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
             if (line.kind === "heading") {
               return (
                 <tr key={`h-${index}`} className="bg-paper">
-                  <Td colSpan={4} className="pt-3 text-xs font-semibold tracking-wide text-ink">
+                  <Td colSpan={3} className="pt-3 text-xs font-semibold tracking-wide text-ink">
                     {SECTION_LABELS[line.section]}
                   </Td>
                 </tr>
@@ -89,7 +84,7 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
               return (
                 <tr key={`s-${index}`}>
                   <Td className="text-ink-soft">{line.time}</Td>
-                  <Td colSpan={3}>
+                  <Td colSpan={2}>
                     {which}
                     {line.number ? ` ${line.number}` : ""}
                     {line.prayer && <span className="text-ink-soft"> and prayer — {line.prayer}</span>}
@@ -101,15 +96,13 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
               return (
                 <tr key={`c-${index}`}>
                   <Td className="text-ink-soft">{line.time}</Td>
-                  <Td colSpan={3}>
+                  <Td colSpan={2}>
                     {line.which === "opening" ? "Opening Comments" : "Concluding Comments"}{" "}
                     <span className="text-ink-faint">({line.minutes} min.)</span>
                   </Td>
                 </tr>
               );
             }
-            const auxiliary = line.names.find((n) => n.hall === "AUXILIARY");
-            const main = line.names.find((n) => n.hall === "MAIN");
             return (
               <tr key={`p-${index}`}>
                 <Td className="text-ink-soft">{line.time}</Td>
@@ -119,8 +112,16 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
                   {line.minutes ? <span className="text-ink-faint"> ({line.minutes} min.)</span> : null}
                   {line.detail && <span className="block text-xs text-ink-soft">{line.detail}</span>}
                 </Td>
-                <Td className="text-ink-soft">{auxiliary?.label ?? ""}</Td>
-                <Td className="text-ink-soft">{main?.label ?? ""}</Td>
+                <Td className="text-ink-soft">
+                  {line.names ? (
+                    <>
+                      {line.names.role && <span className="font-medium text-ink">{line.names.role}: </span>}
+                      {line.names.people}
+                    </>
+                  ) : (
+                    ""
+                  )}
+                </Td>
               </tr>
             );
           })}
@@ -160,16 +161,16 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
         <>
           <Section
             title="The heading"
-            description="The date, the weekly Bible reading, the chairman and the auxiliary classroom counselor, the two prayers and the three songs."
+            description="The date, the weekly Bible reading, the chairman, the two prayers and the three songs."
           >
             <WeekHeaderForm
-              people={chairmen}
+              chairmen={pools.chairman}
+              prayers={pools.prayer}
               week={{
                 id: week.id,
                 weekOf: toDateInput(week.weekOf),
                 bibleReading: week.bibleReading,
                 chairmanId: week.chairmanId,
-                counselorId: week.counselorId,
                 openingPrayerId: week.openingPrayerId,
                 closingPrayerId: week.closingPrayerId,
                 openingSong: week.openingSong,
@@ -184,11 +185,11 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
 
           <Section
             title="The parts"
-            description="Each line of the schedule, with everyone assigned to it. Tick the auxiliary classroom box where a part is handled twice; a circuit overseer's week has no auxiliary class."
+            description="Each line of the schedule, with everyone assigned to it. Each picker offers only the names the part may be given to."
           >
             <div className="space-y-4">
               {parts.map((part) => (
-                <PartCard key={part.id} part={part} people={people} count={parts.length} />
+                <PartCard key={part.id} part={part} pools={pools} count={parts.length} />
               ))}
               <AddPartForm weekId={week.id} positions={parts.map((p) => p.position)} />
             </div>
@@ -202,7 +203,6 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
             <Panel className="p-4 text-sm text-ink-soft">
               <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
                 <Heading label="Chairman" value={week.chairman && displayName(week.chairman)} />
-                <Heading label="Auxiliary classroom counselor" value={week.counselor && displayName(week.counselor)} />
                 <Heading label="Weekly Bible reading" value={week.bibleReading} />
                 <Heading label="Opening prayer" value={week.openingPrayer && displayName(week.openingPrayer)} />
                 <Heading label="Closing prayer" value={week.closingPrayer && displayName(week.closingPrayer)} />
@@ -237,9 +237,12 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
       </Section>
 
       <p className="text-xs text-ink-faint">
-        Students move to the auxiliary classroom after Spiritual Gems and come back for the last part
-        (S-38 par. 27). Only brothers the body of elders has approved chair the meeting or handle the
-        parts that are not student assignments (S-38 par. 24).{" "}
+        Only brothers the body of elders has approved chair the meeting, conduct the Bible study or
+        handle the parts that are not student assignments (S-38 par. 24); the reader is one of the{" "}
+        <Link href="/school/readers" className="hover:text-pine hover:underline">
+          approved readers
+        </Link>
+        .{" "}
         <Link href="/school/publishers" className="hover:text-pine hover:underline">
           See the publisher list
         </Link>

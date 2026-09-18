@@ -4,7 +4,7 @@ import {
   APPOINTMENT_LABELS, GENDER_LABELS, PIONEER_LABELS, displayName,
 } from "@/lib/format";
 import { formatWeekOf, personRef } from "@/lib/school";
-import { assignmentUsage, rollForSchool } from "@/lib/school-queries";
+import { approvedReaderIds, assignmentUsage, rollForSchool } from "@/lib/school-queries";
 import { DataTable, EmptyState, PageHeader, Section, Td, Th } from "@/components/shell";
 import { Badge, Button } from "@/components/ui";
 import { SchoolTabs } from "../tabs";
@@ -24,7 +24,7 @@ export default async function SchoolPublishersPage({
   await requirePermission("school:read");
   const sp = await searchParams;
 
-  const [roll, groups, usage] = await Promise.all([
+  const [roll, groups, usage, readers] = await Promise.all([
     rollForSchool({ q: sp.q, groupId: sp.group }),
     prisma.serviceGroup.findMany({
       where: { active: true },
@@ -32,6 +32,7 @@ export default async function SchoolPublishersPage({
       select: { id: true, number: true, name: true },
     }),
     assignmentUsage(),
+    approvedReaderIds(),
   ]);
 
   // Chairmen and the parts that are not student assignments go to brothers the
@@ -110,7 +111,14 @@ export default async function SchoolPublishersPage({
                 const used = usage.get(personRef("publisher", p.id));
                 return (
                   <tr key={p.id} className="hover:bg-paper">
-                    <Td className="font-medium">{displayName(p)}</Td>
+                    <Td className="font-medium">
+                      {displayName(p)}
+                      {readers.has(p.id) && (
+                        <span className="ml-2 inline-block align-middle">
+                          <Badge tone="good">Approved reader</Badge>
+                        </span>
+                      )}
+                    </Td>
                     <Td className="text-ink-soft">
                       {p.group ? `${p.group.number} — ${p.group.name}` : "—"}
                     </Td>
