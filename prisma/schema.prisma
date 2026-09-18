@@ -444,6 +444,11 @@ model HallBooking {
   // week ahead, so the daily cron never reminds about it twice.
   weekReminderSentAt DateTime?
 
+  // The day-before notice has its own stamp because it is not a repeat of the
+  // week-ahead one: a booking approved inside the last seven days never had a
+  // week-ahead notice, and this is the only email the committee gets about it.
+  dayReminderSentAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

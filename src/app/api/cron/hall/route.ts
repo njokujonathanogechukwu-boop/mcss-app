@@ -8,8 +8,8 @@ export const maxDuration = 60;
 
 /**
  * Vercel Cron calls this once a day (see vercel.json). It emails the Kingdom
- * Hall operating committee about the bookings a week away, and on the first of
- * a month sends them that month's schedule.
+ * Hall operating committee about the bookings a week away and the ones tomorrow,
+ * and on the first of a month sends them that month's schedule.
  *
  * Vercel Cron sends `Authorization: Bearer <CRON_SECRET>`. Without a secret
  * configured the route refuses to run, so it cannot be used to mail the

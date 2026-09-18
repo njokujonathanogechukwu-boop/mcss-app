@@ -68,7 +68,7 @@ export default async function BookingsPage() {
       {hallContacts && (
         <Section
           title="Hall emails to the operating committee"
-          description="The chairman, his assistant and one other member are emailed a week before each approved booking, and get the month's schedule on the 1st. Each of them can have two addresses."
+          description="The chairman, his assistant and one other member are emailed a week before each approved booking and again the day before, and get the month's schedule on the 1st. Each of them can have two addresses."
         >
           <HallCommittee contacts={hallContacts} mailConfigured={emailConfigured()} />
         </Section>

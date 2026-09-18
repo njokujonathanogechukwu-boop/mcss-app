@@ -69,9 +69,10 @@ export function HallCommittee({
       <div className="mt-4 border-t border-rule pt-3">
         <p className="text-xs text-ink-soft">
           Every day the system looks ahead: an approved booking is emailed to these brothers seven
-          days before it happens, and on the 1st of each month they get the whole month&rsquo;s
-          schedule. Where two addresses are given, both are used; the same address filled in twice is
-          only mailed once. A booking is only emailed once.
+          days before it happens and again the day before, and on the 1st of each month they get the
+          whole month&rsquo;s schedule. The day-before reminder is what catches a booking approved
+          too late for the week-ahead notice. Where two addresses are given, both are used; the same
+          address filled in twice is only mailed once. Each notice goes out only once per booking.
         </p>
         {!mailConfigured && (
           <p className="mt-1.5 text-xs text-clay">
@@ -81,6 +82,9 @@ export function HallCommittee({
         <form action={sendAction} className="mt-2.5 flex flex-wrap gap-2">
           <Button type="submit" name="what" value="week" variant="secondary" size="sm" disabled={sending}>
             Send the week-ahead notice now
+          </Button>
+          <Button type="submit" name="what" value="day" variant="secondary" size="sm" disabled={sending}>
+            Send the day-before reminder now
           </Button>
           <Button type="submit" name="what" value="month" variant="secondary" size="sm" disabled={sending}>
             Send this month&rsquo;s schedule now

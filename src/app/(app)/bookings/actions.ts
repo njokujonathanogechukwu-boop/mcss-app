@@ -7,6 +7,7 @@ import { bookingSchema, hallCommitteeSchema, fieldErrors } from "@/lib/validatio
 import { findClashes } from "@/lib/bookings";
 import { formatTimeRange } from "@/lib/format";
 import {
+  HALL_MAIL_LABELS,
   hallRecipients,
   recipientAddresses,
   saveHallContacts,
@@ -176,9 +177,9 @@ export async function saveHallCommittee(
 export type HallMailState = BookingState;
 
 /**
- * Sends the week-ahead notice or the month's schedule straight away, whatever
- * the daily cron has already done — this is how the secretary checks that the
- * committee's addresses and the mail account are working.
+ * Sends one of the three hall emails straight away, whatever the daily cron has
+ * already done — this is how the secretary checks that the committee's addresses
+ * and the mail account are working.
  */
 export async function sendHallMailNow(
   _prev: HallMailState,
@@ -187,9 +188,11 @@ export async function sendHallMailNow(
   const auth = await guard("booking:decide");
   if (!auth.ok) return { error: auth.error };
 
-  const what = formData.get("what") === "month" ? "month" : "week";
+  const requested = String(formData.get("what") ?? "");
+  const what = requested === "month" || requested === "day" ? requested : "week";
   const result = await sendHallMail(new Date(), {
     week: what === "week",
+    day: what === "day",
     month: what === "month",
     force: true,
   });
@@ -204,14 +207,14 @@ export async function sendHallMailNow(
   const step = result.steps[0];
   if (!step) return { error: "There was nothing to send." };
 
+  const label = HALL_MAIL_LABELS[step.what];
   const described =
-    `${step.what === "week" ? "Week-ahead notice" : "Monthly schedule"} (${step.label}): ` +
+    `${label} (${step.label}): ` +
     (step.sent ? "sent" : step.error ? step.error : step.skipped ?? "not sent");
 
   await recordAudit(
     auth.session.userId, step.sent ? "sent" : "attempted", "HallBooking", null,
-    `${step.sent ? "Sent" : "Tried to send"} the hall committee ` +
-      `${what === "week" ? "the week-ahead notice" : "the monthly schedule"}. ${described}`,
+    `${step.sent ? "Sent" : "Tried to send"} the hall committee the ${label.toLowerCase()}. ${described}`,
   );
   revalidatePath("/bookings");
 

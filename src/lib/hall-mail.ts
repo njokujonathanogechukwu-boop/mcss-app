@@ -6,13 +6,15 @@ import { formatTimeRange } from "@/lib/format";
 import { CONGREGATION_TIMEZONE, MONTH_NAMES } from "@/lib/service-year";
 
 /**
- * The Kingdom Hall operating committee is kept informed by email: once a week
- * ahead of every approved booking, and once a month with the whole month's
- * schedule. Both go to the chairman, his assistant and one other member, each
- * of whom may have two addresses — the secretary keeps the names and addresses
- * on the bookings page. With no addresses or no mail account configured nothing
- * is sent and nothing is stamped, so the daily cron can run forever without
- * doing harm.
+ * The Kingdom Hall operating committee is kept informed by email: a week ahead
+ * of every approved booking, the day before it, and once a month with the whole
+ * month's schedule. The day-before notice is not a spare copy of the week-ahead
+ * one — a booking approved inside its last seven days never had a week-ahead
+ * notice, so that is the only email the committee gets about it. All three go to
+ * the chairman, his assistant and one other member, each of whom may have two
+ * addresses — the secretary keeps the names and addresses on the bookings page.
+ * With no addresses or no mail account configured nothing is sent and nothing is
+ * stamped, so the daily cron can run forever without doing harm.
  */
 
 export type HallContact = { name: string; email: string; email2: string };
@@ -179,15 +181,19 @@ const BOOKING_SELECT = {
   resource: { select: { name: true } },
 } as const;
 
+/** Which of the two reminder stamps a query is looking for bookings without. */
+type ReminderStamp = "weekReminderSentAt" | "dayReminderSentAt";
+
 /**
  * Approved bookings inside a window of congregation days, one day wider at each
  * end than needed so a booking stored near midnight is never missed; the caller
- * filters on the day it actually falls on.
+ * filters on the day it actually falls on. `unreminded` narrows it to the
+ * bookings that notice has not gone out for yet.
  */
 async function approvedBetween(
   fromKey: string,
   toKey: string,
-  onlyUnreminded: boolean,
+  unreminded: ReminderStamp | null,
 ): Promise<HallBookingLine[]> {
   return prisma.hallBooking.findMany({
     where: {
@@ -196,16 +202,22 @@ async function approvedBetween(
         gte: new Date(`${shiftDayKey(fromKey, -1)}T00:00:00Z`),
         lt: new Date(`${shiftDayKey(toKey, 1)}T00:00:00Z`),
       },
-      ...(onlyUnreminded ? { weekReminderSentAt: null } : {}),
+      ...(unreminded ? { [unreminded]: null } : {}),
     },
     select: BOOKING_SELECT,
     orderBy: { startTime: "asc" },
   });
 }
 
-/** Approved bookings that start on one congregation day. */
-export async function bookingsOnDay(dayKey: string, onlyUnreminded = true): Promise<HallBookingLine[]> {
-  const rows = await approvedBetween(dayKey, dayKey, onlyUnreminded);
+/**
+ * Approved bookings that start on one congregation day. By default only those
+ * the notice in question has not gone out for; pass `null` for all of them.
+ */
+export async function bookingsOnDay(
+  dayKey: string,
+  unreminded: ReminderStamp | null = "weekReminderSentAt",
+): Promise<HallBookingLine[]> {
+  const rows = await approvedBetween(dayKey, dayKey, unreminded);
   return rows.filter((b) => lagosDayKey(b.startTime) === dayKey);
 }
 
@@ -213,7 +225,7 @@ export async function bookingsOnDay(dayKey: string, onlyUnreminded = true): Prom
 export async function bookingsInMonth(year: number, month: number): Promise<HallBookingLine[]> {
   const key = `${year}-${pad(month)}`;
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  const rows = await approvedBetween(`${key}-01`, `${key}-${pad(lastDay)}`, false);
+  const rows = await approvedBetween(`${key}-01`, `${key}-${pad(lastDay)}`, null);
   return rows.filter((b) => monthKeyOf(lagosDayKey(b.startTime)) === key);
 }
 
@@ -254,6 +266,23 @@ export function weekReminderText(recipients: HallRecipient[], dayKey: string, bo
   ].join("\n").trimEnd();
 }
 
+export function dayReminderSubject(dayKey: string): string {
+  return `Kingdom Hall booking tomorrow — ${longDay(dayKey)}`;
+}
+
+export function dayReminderText(recipients: HallRecipient[], dayKey: string, bookings: HallBookingLine[]): string {
+  return [
+    greeting(recipients),
+    "",
+    `Tomorrow, ${longDay(dayKey)}, the Kingdom Hall is booked for:`,
+    "",
+    ...bookings.flatMap((b) => [...bookingLines(b), ""]),
+    "Please see to it that the hall is opened, cleaned and set up in time.",
+    "",
+    FOOTER,
+  ].join("\n").trimEnd();
+}
+
 export function monthSummarySubject(year: number, month: number): string {
   return `Kingdom Hall bookings for ${MONTH_NAMES[month - 1]} ${year}`;
 }
@@ -278,14 +307,14 @@ export function monthSummaryText(
       : `Here is everything booked at the Kingdom Hall for ${label} — ${bookings.length} approved ${bookings.length === 1 ? "booking" : "bookings"}:`,
     "",
     ...body,
-    "Anything added later will reach you a week before it happens.",
+    "Anything added later will reach you a week before it happens, and again the day before.",
     "",
     FOOTER,
   ].join("\n").trimEnd();
 }
 
 export type HallMailStep = {
-  what: "week" | "month";
+  what: "week" | "day" | "month";
   label: string;
   bookings: number;
   sent: boolean;
@@ -300,14 +329,44 @@ export type HallMailResult = {
   steps: HallMailStep[];
 };
 
-async function sendWeekReminder(
+/** One of the two notices aimed at a single day: which stamp it honours, and its wording. */
+type DayNotice = {
+  what: "week" | "day";
+  stamp: ReminderStamp;
+  subject: (dayKey: string) => string;
+  text: (recipients: HallRecipient[], dayKey: string, bookings: HallBookingLine[]) => string;
+};
+
+const WEEK_NOTICE: DayNotice = {
+  what: "week",
+  stamp: "weekReminderSentAt",
+  subject: weekReminderSubject,
+  text: weekReminderText,
+};
+
+const DAY_NOTICE: DayNotice = {
+  what: "day",
+  stamp: "dayReminderSentAt",
+  subject: dayReminderSubject,
+  text: dayReminderText,
+};
+
+/** What each automatic hall email is called, wherever the secretary is told about one. */
+export const HALL_MAIL_LABELS: Record<HallMailStep["what"], string> = {
+  week: "Week-ahead notice",
+  day: "Day-before reminder",
+  month: "Monthly schedule",
+};
+
+async function sendBookingNotice(
+  notice: DayNotice,
   dayKey: string,
   recipients: HallRecipient[],
   force: boolean,
 ): Promise<HallMailStep> {
-  const bookings = await bookingsOnDay(dayKey, !force);
+  const bookings = await bookingsOnDay(dayKey, force ? null : notice.stamp);
   const step: HallMailStep = {
-    what: "week",
+    what: notice.what,
     label: longDay(dayKey),
     bookings: bookings.length,
     sent: false,
@@ -318,17 +377,21 @@ async function sendWeekReminder(
 
   const result = await sendEmail(
     recipientAddresses(recipients),
-    weekReminderSubject(dayKey),
-    weekReminderText(recipients, dayKey, bookings),
+    notice.subject(dayKey),
+    notice.text(recipients, dayKey, bookings),
     "BOOKING",
   );
   if (!result.ok) return { ...step, error: result.error ?? "send failed" };
 
   // Stamped only after the mail went out, so a failed send is retried the next
   // day rather than the booking being forgotten.
+  const sentAt = new Date();
   await prisma.hallBooking.updateMany({
     where: { id: { in: bookings.map((b) => b.id) } },
-    data: { weekReminderSentAt: new Date() },
+    data:
+      notice.stamp === "weekReminderSentAt"
+        ? { weekReminderSentAt: sentAt }
+        : { dayReminderSentAt: sentAt },
   });
   return { ...step, sent: true };
 }
@@ -364,15 +427,17 @@ async function sendMonthSummary(
 
 /**
  * Everything the daily cron does: the week-ahead notice for the day seven days
- * out, and — on the 1st, or within the first days of a month if the 1st was
- * missed — the schedule for the month now beginning. `force` sends the summary
- * whatever the month's state, for the secretary's own test.
+ * out, the day-before reminder for tomorrow, and — on the 1st, or within the
+ * first days of a month if the 1st was missed — the schedule for the month now
+ * beginning. `force` ignores what has already been sent, for the secretary's
+ * own test.
  */
 export async function sendHallMail(
   now = new Date(),
-  opts: { week?: boolean; month?: boolean; force?: boolean } = {},
+  opts: { week?: boolean; day?: boolean; month?: boolean; force?: boolean } = {},
 ): Promise<HallMailResult> {
   const doWeek = opts.week ?? true;
+  const doDay = opts.day ?? true;
   const doMonth = opts.month ?? true;
   const force = opts.force ?? false;
   const contacts = await readHallContacts();
@@ -381,6 +446,7 @@ export async function sendHallMail(
 
   if (!result.configured) {
     if (doWeek) result.steps.push({ what: "week", label: "", bookings: 0, sent: false, skipped: "no mail account" });
+    if (doDay) result.steps.push({ what: "day", label: "", bookings: 0, sent: false, skipped: "no mail account" });
     if (doMonth) result.steps.push({ what: "month", label: "", bookings: 0, sent: false, skipped: "no mail account" });
     return result;
   }
@@ -388,7 +454,11 @@ export async function sendHallMail(
   const todayKey = lagosDayKey(now);
 
   if (doWeek) {
-    result.steps.push(await sendWeekReminder(shiftDayKey(todayKey, 7), recipients, force));
+    result.steps.push(await sendBookingNotice(WEEK_NOTICE, shiftDayKey(todayKey, 7), recipients, force));
+  }
+
+  if (doDay) {
+    result.steps.push(await sendBookingNotice(DAY_NOTICE, shiftDayKey(todayKey, 1), recipients, force));
   }
 
   if (doMonth) {
