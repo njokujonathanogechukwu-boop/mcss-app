@@ -3,7 +3,7 @@ import type { MidweekSlot, Prisma, PublisherStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { displayName } from "@/lib/format";
 import {
-  SLOT_LABELS, personRef, slotField,
+  SLOT_LABELS, personRef, slotField, weekBanner,
   type SchoolPools, type SchedulePart, type ScheduleWeek,
 } from "@/lib/school";
 import type { RollEntry } from "@/lib/rotation";
@@ -560,7 +560,7 @@ export function toScheduleWeek(row: WeekRow): ScheduleWeek {
   return {
     date: row.weekOf,
     bibleReading: row.bibleReading,
-    note: row.note,
+    note: weekBanner(row.note),
     chairman: row.chairman ? displayName(row.chairman) : null,
     openingSong: row.openingSong,
     livingSong: row.livingSong,

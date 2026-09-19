@@ -256,6 +256,18 @@ export type ScheduleLine =
       names: { role: string; people: string } | null;
     };
 
+/** What prints across the top of every schedule that carries no banner of its own. */
+export const DEFAULT_WEEK_BANNER = "MAITAMA MIDWEEK MEETING SCHEDULE";
+
+/**
+ * The history import filed its provenance in the banner column, where the
+ * period list reads it; it is not a banner, so the schedule and the heading
+ * form look past it.
+ */
+export function weekBanner(note: string | null): string | null {
+  return note && note.startsWith("Imported from a past schedule (") ? null : note;
+}
+
 export type ScheduleWeek = {
   date: Date;
   bibleReading: string | null;

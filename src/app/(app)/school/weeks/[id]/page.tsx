@@ -5,7 +5,7 @@ import { can } from "@/lib/rbac";
 import { displayName, toDateInput } from "@/lib/format";
 import {
   MINUTES_PER_S38, PART_KINDS, SECTION_LABELS, SLOT_LABELS, buildSchedule, clockLabel,
-  formatWeekOf, meetingLength, partKind, poolFor, slotField,
+  formatWeekOf, meetingLength, partKind, personRef, poolFor, slotField, weekBanner,
 } from "@/lib/school";
 import {
   assignedValue, loadPools, loadWeek, rotationRoll, schoolDocuments, toSchedulePart, toScheduleWeek,
@@ -15,6 +15,7 @@ import {
 } from "@/lib/rotation";
 import { DataTable, Notice, PageHeader, Panel, Section, Td, Th } from "@/components/shell";
 import { Badge, Button } from "@/components/ui";
+import type { NameOption } from "@/components/name-picker";
 import { SchoolTabs } from "../../tabs";
 import { AddPartForm, PartCard, WeekHeaderForm, type PartProps } from "../../week-forms";
 import { DocumentTable } from "../../document-list";
@@ -76,6 +77,21 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
         )
         .filter((suggestion) => suggestion.options.length > 0)
     : [];
+
+  // A name already on the heading stays pickable even when the pool would not
+  // offer it — a brother who chaired before he was appointed an elder, say —
+  // so saving the heading cannot silently drop whoever is printed there.
+  const incumbent = (id: string | null, person: { firstName: string; lastName: string } | null): NameOption[] =>
+    id && person ? [{ value: personRef("publisher", id), label: displayName(person) }] : [];
+  const keep = (options: NameOption[], extra: NameOption[]) => [
+    ...extra.filter((option) => !options.some((o) => o.value === option.value)),
+    ...options,
+  ];
+  const chairmen = keep(pools.chairman, incumbent(week.chairmanId, week.chairman));
+  const prayers = keep(pools.prayer, [
+    ...incumbent(week.openingPrayerId, week.openingPrayer),
+    ...incumbent(week.closingPrayerId, week.closingPrayer),
+  ]);
 
   const preview = (
     <Section
@@ -186,21 +202,22 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
             description="The date, the weekly Bible reading, the chairman, the two prayers and the three songs."
           >
             <WeekHeaderForm
-              chairmen={pools.chairman}
-              prayers={pools.prayer}
+              chairmen={chairmen}
+              prayers={prayers}
               week={{
                 id: week.id,
                 weekOf: toDateInput(week.weekOf),
                 bibleReading: week.bibleReading,
-                chairmanId: week.chairmanId,
-                openingPrayerId: week.openingPrayerId,
-                closingPrayerId: week.closingPrayerId,
+                // The pickers speak in "p:<id>" refs, the way the part pickers do.
+                chairmanId: week.chairmanId ? personRef("publisher", week.chairmanId) : "",
+                openingPrayerId: week.openingPrayerId ? personRef("publisher", week.openingPrayerId) : "",
+                closingPrayerId: week.closingPrayerId ? personRef("publisher", week.closingPrayerId) : "",
                 openingSong: week.openingSong,
                 livingSong: week.livingSong,
                 closingSong: week.closingSong,
                 cancelled: week.cancelled,
                 cancelledReason: week.cancelledReason,
-                note: week.note,
+                note: weekBanner(week.note),
               }}
             />
           </Section>

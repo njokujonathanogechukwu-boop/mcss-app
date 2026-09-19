@@ -238,14 +238,30 @@ export async function saveWeekHeader(_prev: SchoolState, formData: FormData): Pr
   }
 
   const restricted = await restrictedPublisherIds();
+  // The pickers post "p:<id>" because the same component serves the parts,
+  // where a value may point at either table; the heading columns want the id.
+  const personIds: { chairmanId: string | null; openingPrayerId: string | null; closingPrayerId: string | null } = {
+    chairmanId: null,
+    openingPrayerId: null,
+    closingPrayerId: null,
+  };
   for (const field of ["chairmanId", "openingPrayerId", "closingPrayerId"] as const) {
-    const value = parsed.data[field];
+    const raw = parsed.data[field];
+    if (!raw) continue;
+    const person = parsePersonRef(raw);
+    if (!person || person.kind !== "publisher") {
+      return { errors: { [field]: "Pick a name from the list." } };
+    }
+    personIds[field] = person.id;
+  }
+  for (const field of ["chairmanId", "openingPrayerId", "closingPrayerId"] as const) {
+    const value = personIds[field];
     if (value && restricted.has(value)) {
       return { errors: { [field]: "This brother is not available for a part right now." } };
     }
   }
 
-  await prisma.midweekWeek.update({ where: { id }, data: parsed.data });
+  await prisma.midweekWeek.update({ where: { id }, data: { ...parsed.data, ...personIds } });
   await recordAudit(
     auth.session.userId, "updated", "MidweekWeek", id,
     parsed.data.cancelled

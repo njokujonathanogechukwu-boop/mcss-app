@@ -5,7 +5,7 @@ import { CheckField, NameField, SelectField, TextField } from "@/components/fiel
 import { NamePicker, type NameOption } from "@/components/name-picker";
 import { Notice } from "@/components/shell";
 import { Button, SubmitButton } from "@/components/ui";
-import { PART_KINDS, SECTION_LABELS, SLOT_LABELS, poolFor, slotField, type PartKind, type SchoolPools } from "@/lib/school";
+import { DEFAULT_WEEK_BANNER, PART_KINDS, SECTION_LABELS, SLOT_LABELS, poolFor, slotField, type PartKind, type SchoolPools } from "@/lib/school";
 import type { MidweekSection, MidweekSlot } from "@prisma/client";
 import { addPart, deletePart, movePart, savePart, saveWeekHeader, type SchoolState } from "./actions";
 
@@ -70,9 +70,9 @@ export function WeekHeaderForm({
           placeholder="Jeremiah 26–28" hint="Printed beside the date at the head of the schedule."
         />
         <TextField
-          label="Banner for the week" name="note" defaultValue={week.note ?? ""}
+          label="Banner for the week" name="note" defaultValue={week.note ?? DEFAULT_WEEK_BANNER}
           placeholder="Circuit overseer visit"
-          hint="Optional. Printed across the top of the schedule, for a special week."
+          hint="Printed across the top of the schedule. Change it only for a special week, such as a circuit overseer's visit."
         />
       </div>
 

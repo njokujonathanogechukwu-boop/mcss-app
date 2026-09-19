@@ -3,7 +3,7 @@ import type { MidweekSection } from "@prisma/client";
 import { formatDate } from "@/lib/format";
 import { newDoc, rule, text, textRight, wrap, band, INK, SOFT, type Doc } from "@/lib/pdf/kit";
 import {
-  MINUTES_PER_S38, SECTION_LABELS, buildSchedule, meetingLength,
+  DEFAULT_WEEK_BANNER, MINUTES_PER_S38, SECTION_LABELS, buildSchedule, meetingLength,
   type ScheduleLine, type SchedulePart, type ScheduleWeek,
 } from "@/lib/school";
 
@@ -165,8 +165,12 @@ function drawHead(
   const week = sheet.week;
   let y = doc.height - 46;
 
-  text(doc, "MAITAMA", L, y, { size: 11, bold: true });
-  textRight(doc, "Midweek Meeting Schedule", R, y - 2, { size: 17, bold: true });
+  // The banner the week carries, or the congregation's own title when it
+  // carries none: one line across the top of every sheet.
+  const banner = (week.note?.trim() || DEFAULT_WEEK_BANNER).toUpperCase();
+  const bannerSize = 15;
+  const bannerW = doc.bold.widthOfTextAtSize(banner, bannerSize);
+  text(doc, banner, L + Math.max(0, (R - L - bannerW) / 2), y, { size: bannerSize, bold: true });
   y -= 10;
   rule(doc, L, R, y, 1, INK);
   y -= 20;
