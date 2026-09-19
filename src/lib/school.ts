@@ -241,6 +241,11 @@ export const CONCLUDING_COMMENTS_MINUTES = 3;
 /** The meeting runs one hour forty-five minutes (S-38 par. 20). */
 export const MINUTES_PER_S38 = 105;
 
+/** One post carries the filed files plus the form, and the server-action body
+ * limit is about 4 MB, so a batch crossing this would drop the page instead of
+ * being refused. Kept here because both the action and the form guard on it. */
+export const MAX_DOCUMENT_BYTES = 3.5 * 1024 * 1024;
+
 export type ScheduleLine =
   | { kind: "song"; which: "opening" | "living" | "closing"; number: number | null; time: string; prayer: string | null }
   | { kind: "comments"; which: "opening" | "concluding"; minutes: number; time: string }

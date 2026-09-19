@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
 import { displayName, formatDate, safeFileName } from "@/lib/format";
 import {
-  CONCLUDING_COMMENTS_MINUTES, MINUTES_PER_S38, OPENING_COMMENTS_MINUTES, OPENING_SONG_MINUTES,
+  CONCLUDING_COMMENTS_MINUTES, MAX_DOCUMENT_BYTES, MINUTES_PER_S38, OPENING_COMMENTS_MINUTES, OPENING_SONG_MINUTES,
   PART_KINDS, SLOT_LABELS, SONG_MINUTES,
   WEEK_SKELETON, correctedMeetingDate, historyOverridePath, meetingDateIn, meetingDates,
   parsePersonRef, periodLabel, personRef, slotField,
@@ -829,7 +829,6 @@ export async function removeApprovedReader(_prev: SchoolState, formData: FormDat
 
 /** Schedules printed before the app, workbook pages, and the odd letter. */
 const ALLOWED_EXTENSIONS = ["pdf", "doc", "docx", "jpg", "jpeg", "png", "webp", "txt", "rtf"];
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 export async function uploadSchoolDocuments(_prev: SchoolState, formData: FormData): Promise<SchoolState> {
   const auth = await guard("school:write");
@@ -853,6 +852,11 @@ export async function uploadSchoolDocuments(_prev: SchoolState, formData: FormDa
   const files = formData.getAll("documents").filter((f): f is File => f instanceof File && f.size > 0);
   if (files.length === 0) return { errors: { documents: "Choose at least one file first." } };
 
+  const together = files.reduce((sum, file) => sum + file.size, 0);
+  if (together > MAX_DOCUMENT_BYTES) {
+    return { errors: { documents: "Those files come to more than 3.5 MB together. File them in smaller batches." } };
+  }
+
   const rejected: string[] = [];
   const accepted: { fileName: string; mimeType: string; size: number; bytes: Uint8Array<ArrayBuffer> }[] = [];
   for (const file of files) {
@@ -862,8 +866,8 @@ export async function uploadSchoolDocuments(_prev: SchoolState, formData: FormDa
       rejected.push(`${name}: keep Word files, PDFs and photos.`);
       continue;
     }
-    if (file.size > MAX_FILE_BYTES) {
-      rejected.push(`${name}: over 10 MB.`);
+    if (file.size > MAX_DOCUMENT_BYTES) {
+      rejected.push(`${name}: over 3.5 MB.`);
       continue;
     }
     accepted.push({
