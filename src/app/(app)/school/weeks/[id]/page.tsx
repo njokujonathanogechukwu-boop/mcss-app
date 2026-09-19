@@ -11,7 +11,8 @@ import {
   assignedValue, loadPools, loadWeek, rotationRoll, schoolDocuments, toSchedulePart, toScheduleWeek,
 } from "@/lib/school-queries";
 import {
-  assignmentFacts, pairingsFrom, statsFrom, suggestFrom, weekConsecutive, weekRepeatedPairings,
+  ROLE_LABELS, assignmentFacts, pairingsFrom, roleFacts, rolesAround, statsFrom, suggestFrom,
+  weekConsecutive, weekRepeatedPairings, weekSameSlot, type WeekRole,
 } from "@/lib/rotation";
 import { DataTable, Notice, PageHeader, Panel, Section, Td, Th } from "@/components/shell";
 import { Badge, Button } from "@/components/ui";
@@ -31,11 +32,12 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
   const week = await loadWeek(id);
   if (!week) notFound();
 
-  const [pools, documents, facts, roll] = await Promise.all([
+  const [pools, documents, facts, roll, roles] = await Promise.all([
     loadPools(),
     schoolDocuments({ weekId: week.id }),
     assignmentFacts(),
     rotationRoll(),
+    roleFacts(),
   ]);
 
   const scheduleParts = week.parts.map(toSchedulePart);
@@ -64,6 +66,23 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
   const stats = statsFrom(facts, roll);
   const consecutive = weekConsecutive(facts, week.weekOf);
   const repeated = weekRepeatedPairings(pairingsFrom(facts), week.weekOf);
+  const sameSlot = weekSameSlot(facts, week.weekOf);
+  const headingRoles: { key: string; name: string; role: WeekRole }[] = ([
+    ["CHAIRMAN", week.chairmanId, week.chairman],
+    ["OPENING_PRAYER", week.openingPrayerId, week.openingPrayer],
+    ["CLOSING_PRAYER", week.closingPrayerId, week.closingPrayer],
+  ] as const)
+    .filter(
+      (entry): entry is readonly [WeekRole, string, { firstName: string; lastName: string }] =>
+        Boolean(entry[1] && entry[2]),
+    )
+    .map(([role, id, person]) => ({ key: personRef("publisher", id), name: displayName(person), role }));
+  const nearbyRoles = rolesAround(roles, week.weekOf);
+  const roleClashes = headingRoles.flatMap((entry) =>
+    nearbyRoles
+      .filter((near) => near.role === entry.role && near.key === entry.key)
+      .map((near) => ({ ...entry, other: near.weekOf })),
+  );
   const taken = new Set(parts.flatMap((part) => Object.values(part.values)));
   const suggestions = canWrite
     ? parts
@@ -238,9 +257,15 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
             title="The rotation"
             description="What the history says about this week: who would be handling two meetings in a row, which pair has been together before, and who has waited longest for each part still without a name."
           >
-            {(consecutive.length > 0 || repeated.length > 0) && (
+            {(consecutive.length > 0 || repeated.length > 0 || sameSlot.length > 0 || roleClashes.length > 0) && (
               <Notice tone="warn">
                 {[
+                  ...sameSlot.map(
+                    (s) => `${s.name} handles ${SLOT_LABELS[s.slot].toLowerCase()} again, having handled it the week of ${formatWeekOf(s.other)}.`,
+                  ),
+                  ...roleClashes.map(
+                    (r) => `${r.name} is ${ROLE_LABELS[r.role].toLowerCase()} again, having been ${ROLE_LABELS[r.role].toLowerCase()} the week of ${formatWeekOf(r.other)}.`,
+                  ),
                   ...consecutive.map((c) => `${c.name} also has a part the week of ${formatWeekOf(c.other)}.`),
                   ...repeated.map(
                     (r) => `${r.student} and ${r.assistant} were put together before, the week of ${formatWeekOf(r.earlier)}.`,

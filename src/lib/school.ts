@@ -230,7 +230,10 @@ export function clockLabel(hour: number, minute: number): string {
 
 // A song and the prayer that follows it, the opening and the concluding
 // comments: the workbook gives minutes for the parts but not for these, and the
-// printed schedule still has to show a time against every line.
+// printed schedule still has to show a time against every line. The opening
+// song, its prayer and the chairman's comments together run the 5 minutes the
+// congregation allows them; the song before Living as Christians runs 5 alone.
+export const OPENING_SONG_MINUTES = 4;
 export const SONG_MINUTES = 5;
 export const OPENING_COMMENTS_MINUTES = 1;
 export const CONCLUDING_COMMENTS_MINUTES = 3;
@@ -317,7 +320,7 @@ export function buildSchedule(
   lines.push({
     kind: "song", which: "opening", number: week.openingSong, time: at(), prayer: week.openingPrayer,
   });
-  elapsed += SONG_MINUTES;
+  elapsed += OPENING_SONG_MINUTES;
 
   lines.push({ kind: "comments", which: "opening", minutes: OPENING_COMMENTS_MINUTES, time: at() });
   elapsed += OPENING_COMMENTS_MINUTES;
@@ -367,7 +370,8 @@ export function buildSchedule(
 /** How long the meeting runs, in minutes, from the opening song to the last prayer. */
 export function meetingLength(parts: SchedulePart[]): number {
   return (
-    SONG_MINUTES * 2 +
+    OPENING_SONG_MINUTES +
+    SONG_MINUTES +
     OPENING_COMMENTS_MINUTES +
     CONCLUDING_COMMENTS_MINUTES +
     parts.reduce((total, p) => total + (p.minutes ?? 0), 0)

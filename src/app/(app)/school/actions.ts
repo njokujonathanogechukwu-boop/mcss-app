@@ -7,10 +7,12 @@ import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
 import { displayName, formatDate, safeFileName } from "@/lib/format";
 import {
-  CONCLUDING_COMMENTS_MINUTES, MINUTES_PER_S38, OPENING_COMMENTS_MINUTES, PART_KINDS, SONG_MINUTES,
+  CONCLUDING_COMMENTS_MINUTES, MINUTES_PER_S38, OPENING_COMMENTS_MINUTES, OPENING_SONG_MINUTES,
+  PART_KINDS, SLOT_LABELS, SONG_MINUTES,
   WEEK_SKELETON, correctedMeetingDate, historyOverridePath, meetingDateIn, meetingDates,
-  parsePersonRef, periodLabel, slotField,
+  parsePersonRef, periodLabel, personRef, slotField,
 } from "@/lib/school";
+import { assignmentFacts, WEEK_MS } from "@/lib/rotation";
 import { WorkbookError, readWorkbook, readWorkbookEntries, toPreview, type WorkbookEntries, type WorkbookPreview } from "@/lib/workbook";
 import { PastScheduleError, readPastSchedule, slotsForRole, type PastSchedule, type PastWeek } from "@/lib/past-schedule";
 import {
@@ -225,7 +227,13 @@ export async function saveWeekHeader(_prev: SchoolState, formData: FormData): Pr
 
   const week = await prisma.midweekWeek.findUnique({
     where: { id },
-    select: { periodId: true },
+    select: {
+      periodId: true,
+      weekOf: true,
+      chairmanId: true,
+      openingPrayerId: true,
+      closingPrayerId: true,
+    },
   });
   if (!week) return { error: "That week is no longer on the schedule." };
 
@@ -258,6 +266,51 @@ export async function saveWeekHeader(_prev: SchoolState, formData: FormData): Pr
     const value = personIds[field];
     if (value && restricted.has(value)) {
       return { errors: { [field]: "This brother is not available for a part right now." } };
+    }
+  }
+
+  // The heading's three names are sessions of the meeting in their own right:
+  // the chairman is an elder, the prayers are brothers, and no brother is kept
+  // in the same one of the three two meetings running.
+  const headingIds = Object.values(personIds).filter((value): value is string => Boolean(value));
+  const headingRows = await prisma.publisher.findMany({
+    where: { id: { in: headingIds } },
+    select: { id: true, firstName: true, lastName: true, gender: true, appointment: true },
+  });
+  const headingById = new Map(headingRows.map((row) => [row.id, row]));
+  if (personIds.chairmanId && headingById.get(personIds.chairmanId)?.appointment !== "ELDER") {
+    return { errors: { chairmanId: "The chairman is one of the brothers the body of elders has approved." } };
+  }
+  for (const field of ["openingPrayerId", "closingPrayerId"] as const) {
+    const value = personIds[field];
+    if (value && headingById.get(value)?.gender !== "MALE") {
+      return { errors: { [field]: "The prayer is handled by a brother." } };
+    }
+  }
+
+  const moved = (["chairmanId", "openingPrayerId", "closingPrayerId"] as const).filter(
+    (field) => personIds[field] !== null && personIds[field] !== week[field],
+  );
+  if (moved.length > 0) {
+    const neighbours = await prisma.midweekWeek.findMany({
+      where: {
+        weekOf: {
+          in: [new Date(week.weekOf.getTime() - WEEK_MS), new Date(week.weekOf.getTime() + WEEK_MS)],
+        },
+      },
+      select: { weekOf: true, chairmanId: true, openingPrayerId: true, closingPrayerId: true },
+    });
+    for (const field of moved) {
+      const clash = neighbours.find((row) => row[field] === personIds[field]);
+      if (!clash) continue;
+      const person = headingById.get(personIds[field]!);
+      const name = person ? displayName(person) : "That brother";
+      const session = field === "chairmanId" ? "chairs the meeting" : field === "openingPrayerId" ? "offers the opening prayer" : "offers the closing prayer";
+      return {
+        errors: {
+          [field]: `${name} ${session} on ${formatDate(clash.weekOf)} too. The rotation keeps a brother out of the same session two meetings running.`,
+        },
+      };
     }
   }
 
@@ -329,6 +382,85 @@ export async function savePart(_prev: SchoolState, formData: FormData): Promise<
   for (const assignment of assignments) {
     if (assignment.publisherId && restricted.has(assignment.publisherId)) {
       return { errors: { [slotField(assignment.slot)]: "This brother is not available for a part right now." } };
+    }
+  }
+
+  // The pickers offer only the names a part may be given to; the save holds the
+  // same line, so a talk can never be posted to a sister and the Bible study
+  // never to a brother the elders have not approved to conduct or read.
+  const publisherIds = [...new Set(assignments.filter((a) => a.publisherId).map((a) => a.publisherId!))];
+  const studentIds = [...new Set(assignments.filter((a) => a.studentId).map((a) => a.studentId!))];
+  const [publisherRows, studentRows, readers] = await Promise.all([
+    prisma.publisher.findMany({
+      where: { id: { in: publisherIds } },
+      select: { id: true, firstName: true, lastName: true, gender: true, appointment: true },
+    }),
+    prisma.schoolStudent.findMany({
+      where: { id: { in: studentIds } },
+      select: { id: true, firstName: true, lastName: true, gender: true },
+    }),
+    approvedReaderIds(),
+  ]);
+  const publisherById = new Map(publisherRows.map((row) => [row.id, row]));
+  const studentById = new Map(studentRows.map((row) => [row.id, row]));
+  const nameOf = (assignment: { publisherId: string | null; studentId: string | null }) => {
+    const publisher = assignment.publisherId ? publisherById.get(assignment.publisherId) : undefined;
+    if (publisher) return displayName(publisher);
+    const student = assignment.studentId ? studentById.get(assignment.studentId) : undefined;
+    return student ? `${displayName(student)} (student)` : "That name";
+  };
+
+  for (const assignment of assignments) {
+    const field = slotField(assignment.slot);
+    const publisher = assignment.publisherId ? publisherById.get(assignment.publisherId) : undefined;
+    const student = assignment.studentId ? studentById.get(assignment.studentId) : undefined;
+    const gender = (publisher ?? student)?.gender;
+    if (parsed.data.kind === "TALK" && !publisher) {
+      return { errors: { [field]: "A talk, feature or discussion is handled by a brother, not by a student of the school." } };
+    }
+    if ((parsed.data.kind === "TALK" || parsed.data.kind === "READING") && gender !== "MALE") {
+      return { errors: { [field]: `${nameOf(assignment)} is not a brother; this part is one of the brothers'.` } };
+    }
+    if (parsed.data.kind === "STUDY" && assignment.slot === "CONDUCTOR" && publisher?.appointment !== "ELDER") {
+      return { errors: { [field]: "The congregation Bible study is conducted by an elder." } };
+    }
+    if (
+      parsed.data.kind === "STUDY" && assignment.slot === "READER" &&
+      (!assignment.publisherId || !readers.has(assignment.publisherId))
+    ) {
+      return { errors: { [field]: "The reader is one of the brothers the body of elders approved to read." } };
+    }
+  }
+
+  // A name already on the part stays as it is, so editing one slot never trips
+  // over a repeat the part already carries; a name newly put into a slot it
+  // holds in the meeting a week either side is the repeat the rotation forbids.
+  const before = await prisma.midweekAssignment.findMany({
+    where: { partId },
+    select: { slot: true, publisherId: true, studentId: true },
+  });
+  const kept = new Set(before.map((row) => `${row.slot}|${row.publisherId ?? ""}|${row.studentId ?? ""}`));
+  const fresh = assignments.filter(
+    (assignment) => !kept.has(`${assignment.slot}|${assignment.publisherId ?? ""}|${assignment.studentId ?? ""}`),
+  );
+  if (fresh.length > 0) {
+    const facts = await assignmentFacts();
+    const now = part.week.weekOf.getTime();
+    for (const assignment of fresh) {
+      const key = assignment.publisherId
+        ? personRef("publisher", assignment.publisherId)
+        : personRef("student", assignment.studentId!);
+      const clash = facts.find(
+        (fact) => fact.key === key && fact.slot === assignment.slot && Math.abs(fact.weekOf.getTime() - now) === WEEK_MS,
+      );
+      if (!clash) continue;
+      return {
+        errors: {
+          [slotField(assignment.slot)]:
+            `${nameOf(assignment)} handles ${SLOT_LABELS[assignment.slot].toLowerCase()} on ${formatDate(clash.weekOf)} too.` +
+            " The rotation keeps a brother out of the same session two meetings running.",
+        },
+      };
     }
   }
 
@@ -409,7 +541,8 @@ export async function addPart(_prev: SchoolState, formData: FormData): Promise<S
   // The meeting runs one hour forty-five minutes (S-38 par. 20), counting the
   // songs, the comments and the parts. A part added on top would push it past,
   // so the rest are forced down to fit rather than left printing a long meeting.
-  const fixed = SONG_MINUTES * 2 + OPENING_COMMENTS_MINUTES + CONCLUDING_COMMENTS_MINUTES;
+  const fixed =
+    OPENING_SONG_MINUTES + SONG_MINUTES + OPENING_COMMENTS_MINUTES + CONCLUDING_COMMENTS_MINUTES;
   const total =
     fixed + week.parts.reduce((sum, part) => sum + (part.minutes ?? 0), 0) + (parsed.data.minutes ?? 0);
   const excess = total - MINUTES_PER_S38;

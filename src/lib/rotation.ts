@@ -12,7 +12,7 @@ import type { NameOption } from "@/components/name-picker";
  * the assignments already on file, so imported history counts too.
  */
 
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+export const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type AssignmentFact = {
   key: string;
@@ -263,4 +263,157 @@ export function suggestFrom(
     .filter((option) => !taken.has(option.value) && !busyPrevious.has(option.value))
     .sort((a, b) => (waiting.get(b.value) ?? 10_000) - (waiting.get(a.value) ?? 10_000))
     .slice(0, limit);
+}
+
+// ---------------------------------------------------- the sessions of the meeting
+
+export type SameSlotRepeat = { key: string; name: string; slot: MidweekSlot; first: Date; second: Date };
+
+/**
+ * The same person kept in the same session of the meeting two meetings running:
+ * the chairman who chaired last week, the conductor who conducted it. A brother
+ * may well have a part two weeks running, but not the same one.
+ */
+export function sameSlotConsecutive(facts: AssignmentFact[]): SameSlotRepeat[] {
+  const groups = new Map<string, { key: string; name: string; slot: MidweekSlot; weeks: Set<number> }>();
+  for (const fact of facts) {
+    const id = `${fact.key}|${fact.slot}`;
+    const group = groups.get(id) ?? { key: fact.key, name: fact.name, slot: fact.slot, weeks: new Set<number>() };
+    group.weeks.add(fact.weekOf.getTime());
+    groups.set(id, group);
+  }
+
+  const out: SameSlotRepeat[] = [];
+  for (const group of groups.values()) {
+    for (const time of group.weeks) {
+      if (group.weeks.has(time + WEEK_MS)) {
+        out.push({ key: group.key, name: group.name, slot: group.slot, first: new Date(time), second: new Date(time + WEEK_MS) });
+      }
+    }
+  }
+  return out.sort((a, b) => a.first.getTime() - b.first.getTime());
+}
+
+/** This week's names who hold the same session the week before or after. */
+export function weekSameSlot(facts: AssignmentFact[], weekOf: Date): { name: string; slot: MidweekSlot; other: Date }[] {
+  const now = weekOf.getTime();
+  const out: { name: string; slot: MidweekSlot; other: Date }[] = [];
+  const seen = new Set<string>();
+  for (const fact of facts) {
+    if (fact.weekOf.getTime() !== now) continue;
+    const id = `${fact.key}|${fact.slot}`;
+    if (seen.has(id)) continue;
+    const other = facts.find(
+      (f) => f.key === fact.key && f.slot === fact.slot && Math.abs(f.weekOf.getTime() - now) === WEEK_MS,
+    );
+    if (!other) continue;
+    seen.add(id);
+    out.push({ name: fact.name, slot: fact.slot, other: other.weekOf });
+  }
+  return out;
+}
+
+/** The chairman and the two prayers: held on the week itself, not on a part. */
+export type WeekRole = "CHAIRMAN" | "OPENING_PRAYER" | "CLOSING_PRAYER";
+
+export const ROLE_LABELS: Record<WeekRole, string> = {
+  CHAIRMAN: "Chairman",
+  OPENING_PRAYER: "Opening prayer",
+  CLOSING_PRAYER: "Closing prayer",
+};
+
+export type RoleFact = { key: string; name: string; role: WeekRole; weekOf: Date };
+
+/** Every chairman and prayer on every schedule on file, oldest meeting first. */
+export async function roleFacts(): Promise<RoleFact[]> {
+  const rows = await prisma.midweekWeek.findMany({
+    orderBy: { weekOf: "asc" },
+    select: {
+      weekOf: true,
+      chairmanId: true,
+      openingPrayerId: true,
+      closingPrayerId: true,
+      chairman: { select: { firstName: true, lastName: true } },
+      openingPrayer: { select: { firstName: true, lastName: true } },
+      closingPrayer: { select: { firstName: true, lastName: true } },
+    },
+  });
+
+  const out: RoleFact[] = [];
+  for (const row of rows) {
+    const push = (id: string | null, person: { firstName: string; lastName: string } | null, role: WeekRole) => {
+      if (id && person) out.push({ key: personRef("publisher", id), name: displayName(person), role, weekOf: row.weekOf });
+    };
+    push(row.chairmanId, row.chairman, "CHAIRMAN");
+    push(row.openingPrayerId, row.openingPrayer, "OPENING_PRAYER");
+    push(row.closingPrayerId, row.closingPrayer, "CLOSING_PRAYER");
+  }
+  return out;
+}
+
+export type RoleRepeat = { key: string; name: string; role: WeekRole; first: Date; second: Date };
+
+/** A brother kept in the same chair or prayer two meetings running. */
+export function roleRepeats(roles: RoleFact[]): RoleRepeat[] {
+  const groups = new Map<string, { key: string; name: string; role: WeekRole; weeks: Set<number> }>();
+  for (const fact of roles) {
+    const id = `${fact.key}|${fact.role}`;
+    const group = groups.get(id) ?? { key: fact.key, name: fact.name, role: fact.role, weeks: new Set<number>() };
+    group.weeks.add(fact.weekOf.getTime());
+    groups.set(id, group);
+  }
+
+  const out: RoleRepeat[] = [];
+  for (const group of groups.values()) {
+    for (const time of group.weeks) {
+      if (group.weeks.has(time + WEEK_MS)) {
+        out.push({ key: group.key, name: group.name, role: group.role, first: new Date(time), second: new Date(time + WEEK_MS) });
+      }
+    }
+  }
+  return out.sort((a, b) => a.first.getTime() - b.first.getTime());
+}
+
+/** The chairman and prayers of the meetings a week either side of this one. */
+export function rolesAround(roles: RoleFact[], weekOf: Date): RoleFact[] {
+  const now = weekOf.getTime();
+  return roles.filter((fact) => Math.abs(fact.weekOf.getTime() - now) === WEEK_MS);
+}
+
+// ------------------------------------------------------------------ the trend
+
+export type PersonTrend = {
+  /** How many times each session of the parts has been theirs. */
+  slots: Partial<Record<MidweekSlot, number>>;
+  /** How many times each chair and prayer has been theirs. */
+  roles: Partial<Record<WeekRole, number>>;
+  /** Everything they handled in the eight weeks up to now. */
+  recent: number;
+};
+
+/**
+ * Where one person's parts have fallen: the sessions they have served and how
+ * busy the last eight weeks have been for them. This is the trend the overseer
+ * reads an elder's or a ministerial servant's rotation from.
+ */
+export function trendsFrom(facts: AssignmentFact[], roles: RoleFact[], now = new Date()): Map<string, PersonTrend> {
+  const cutoff = now.getTime() - 8 * WEEK_MS;
+  const out = new Map<string, PersonTrend>();
+  const entry = (key: string): PersonTrend => {
+    const found = out.get(key) ?? { slots: {}, roles: {}, recent: 0 };
+    out.set(key, found);
+    return found;
+  };
+
+  for (const fact of facts) {
+    const trend = entry(fact.key);
+    trend.slots[fact.slot] = (trend.slots[fact.slot] ?? 0) + 1;
+    if (fact.weekOf.getTime() >= cutoff) trend.recent += 1;
+  }
+  for (const fact of roles) {
+    const trend = entry(fact.key);
+    trend.roles[fact.role] = (trend.roles[fact.role] ?? 0) + 1;
+    if (fact.weekOf.getTime() >= cutoff) trend.recent += 1;
+  }
+  return out;
 }
