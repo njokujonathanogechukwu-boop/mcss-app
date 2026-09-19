@@ -62,6 +62,9 @@ export function WorkbookImportForm({
       bypass.current = false;
       return;
     }
+    // An event's currentTarget is only set while it is being dispatched, so it is
+    // null by the time the read below finishes — the form has to be held on to.
+    const form = event.currentTarget;
     const file = fileRef.current?.files?.[0];
     // The confirmed pass already carries the extracted text, and the file input
     // loses its file once the preview hides it, so the file is wanted only once.
@@ -90,7 +93,7 @@ export function WorkbookImportForm({
     }
     posted.current = true;
     bypass.current = true;
-    event.currentTarget.requestSubmit();
+    form.requestSubmit();
   }
 
   return (
