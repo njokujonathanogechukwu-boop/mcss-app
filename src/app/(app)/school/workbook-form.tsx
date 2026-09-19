@@ -35,11 +35,25 @@ export function WorkbookImportForm({
   const textRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const bypass = useRef(false);
+  const posted = useRef(false);
   const { preview, settings } = state;
 
   useEffect(() => {
     if (state.periodId) router.push(`/school/periods/${state.periodId}`);
   }, [state.periodId, router]);
+
+  // A pass came back with neither a preview nor a schedule: whatever was posted
+  // was refused, so hand the overseer a clean form to choose the file again.
+  useEffect(() => {
+    if (!posted.current || preview || state.periodId) return;
+    posted.current = false;
+    if (textRef.current) textRef.current.value = "";
+    if (nameRef.current) nameRef.current.value = "";
+    if (fileRef.current) {
+      fileRef.current.disabled = false;
+      fileRef.current.value = "";
+    }
+  }, [state, preview]);
 
   // The EPUB itself is far too large to post, so its readable text — the OPF and
   // the chapter XHTML — is pulled out here in the browser and only that is sent.
@@ -48,11 +62,15 @@ export function WorkbookImportForm({
       bypass.current = false;
       return;
     }
+    const file = fileRef.current?.files?.[0];
     // The confirmed pass already carries the extracted text, and the file input
     // loses its file once the preview hides it, so the file is wanted only once.
-    if (textRef.current?.value) return;
-    const file = fileRef.current?.files?.[0];
-    if (!file) return;
+    if (textRef.current?.value && !file) return;
+    if (!file) {
+      event.preventDefault();
+      setReadError("Choose the workbook file first.");
+      return;
+    }
     event.preventDefault();
     setReadError(null);
     try {
@@ -64,6 +82,13 @@ export function WorkbookImportForm({
       setReadError("That EPUB could not be opened here. Download it again from jw.org and choose it once more.");
       return;
     }
+    // The raw EPUB must not ride along with its own text: together they cross
+    // the post limit, and the server only ever reads the text.
+    if (fileRef.current) {
+      fileRef.current.disabled = true;
+      fileRef.current.value = "";
+    }
+    posted.current = true;
     bypass.current = true;
     event.currentTarget.requestSubmit();
   }
@@ -98,7 +123,6 @@ export function WorkbookImportForm({
         type="file"
         name="workbook"
         accept=".epub,application/epub+zip"
-        required={!preview}
         hidden={Boolean(preview)}
         className="block w-full text-sm text-ink-soft file:mr-3 file:rounded file:border file:border-rule-strong file:bg-surface file:px-3 file:py-1.5 file:text-sm file:text-ink"
       />
