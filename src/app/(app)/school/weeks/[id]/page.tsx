@@ -119,12 +119,19 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
   const waiting = new Map(stats.map((s) => [s.key, s.waitingWeeks]));
   const heldAround = slotsAround(facts, week.weekOf);
   const busy = new Set(taken);
-  const longestWaiting = (options: NameOption[], held?: Set<string>): NameOption | null => {
-    const option = options
-      .filter((o) => !busy.has(o.value) && !held?.has(o.value))
-      .sort((a, b) => (waiting.get(b.value) ?? 10_000) - (waiting.get(a.value) ?? 10_000))[0];
-    if (option) busy.add(option.value);
-    return option ?? null;
+  // Drawn at random from the five who have waited longest, so the rotation
+  // spreads without always landing on the same name; a student's assistant is
+  // drawn from the same gender only.
+  const longestWaiting = (options: NameOption[], held?: Set<string>, sameGenderAs?: string): NameOption | null => {
+    const gender = sameGenderAs ? pools.gender[sameGenderAs] : undefined;
+    const band = options
+      .filter((o) => !busy.has(o.value) && !held?.has(o.value) && (!gender || pools.gender[o.value] === gender))
+      .sort((a, b) => (waiting.get(b.value) ?? 10_000) - (waiting.get(a.value) ?? 10_000))
+      .slice(0, 5);
+    if (band.length === 0) return null;
+    const option = band[Math.floor(Math.random() * band.length)];
+    busy.add(option.value);
+    return option;
   };
   const suggestedParts: Record<string, Record<string, NameOption>> = {};
   const suggestedHeading: Record<string, NameOption> = {};
@@ -134,7 +141,8 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
       for (const slot of PART_KINDS[part.kind].slots) {
         const field = slotField(slot);
         if (part.values[field]) continue;
-        const option = longestWaiting(poolFor(pools, part.kind, slot), heldAround.get(slot));
+        const sameGenderAs = slot === "ASSISTANT" ? ((picks.STUDENT?.value ?? part.values.STUDENT) || undefined) : undefined;
+        const option = longestWaiting(poolFor(pools, part.kind, slot), heldAround.get(slot), sameGenderAs);
         if (option) picks[field] = option;
       }
       if (Object.keys(picks).length > 0) suggestedParts[part.id] = picks;
@@ -283,7 +291,7 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
 
           <Section
             title="The parts"
-            description="Each line of the schedule, with everyone assigned to it. Each picker offers only the names the part may be given to, and an empty one already holds the rotation's first choice — save to keep it, or pick another."
+            description="Each line of the schedule, with everyone assigned to it. Each picker offers only the names the part may be given to, and an empty one already holds a name drawn from the longest waiting — save to keep it, or pick another."
           >
             <div className="space-y-4">
               {parts.map((part) => (
@@ -379,12 +387,13 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
       </Section>
 
       <p className="text-xs text-ink-faint">
-        Only brothers the body of elders has approved chair the meeting, conduct the Bible study or
-        handle the parts that are not student assignments (S-38 par. 24); the reader is one of the{" "}
+        An elder approved by the body of elders chairs the meeting; the talks, features and discussions of
+        Treasures from God&apos;s Word and Living as Christians, and the congregation Bible study, are handled
+        by elders and ministerial servants (S-38 par. 24). The reader is one of the{" "}
         <Link href="/school/readers" className="hover:text-pine hover:underline">
           approved readers
         </Link>
-        .{" "}
+        , and a student is assisted by one of the same gender.{" "}
         <Link href="/school/publishers" className="hover:text-pine hover:underline">
           See the publisher list
         </Link>

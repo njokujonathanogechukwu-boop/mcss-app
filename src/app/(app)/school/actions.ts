@@ -421,14 +421,48 @@ export async function savePart(_prev: SchoolState, formData: FormData): Promise<
     if ((parsed.data.kind === "TALK" || parsed.data.kind === "READING") && gender !== "MALE") {
       return { errors: { [field]: `${nameOf(assignment)} is not a brother; this part is one of the brothers'.` } };
     }
-    if (parsed.data.kind === "STUDY" && assignment.slot === "CONDUCTOR" && publisher?.appointment !== "ELDER") {
-      return { errors: { [field]: "The congregation Bible study is conducted by an elder." } };
+    // The teaching parts of Treasures from God's Word and Living as Christians,
+    // and the congregation Bible study, are the appointed brothers' to handle.
+    const appointed =
+      publisher?.appointment === "ELDER" || publisher?.appointment === "MINISTERIAL_SERVANT";
+    if (parsed.data.kind === "TALK" && publisher && !appointed) {
+      return {
+        errors: { [field]: "The talks, features and discussions are handled by an elder or a ministerial servant." },
+      };
+    }
+    if (parsed.data.kind === "STUDY" && assignment.slot === "CONDUCTOR" && !appointed) {
+      return {
+        errors: { [field]: "The congregation Bible study is conducted by an elder or a ministerial servant." },
+      };
     }
     if (
       parsed.data.kind === "STUDY" && assignment.slot === "READER" &&
       (!assignment.publisherId || !readers.has(assignment.publisherId))
     ) {
       return { errors: { [field]: "The reader is one of the brothers the body of elders approved to read." } };
+    }
+  }
+
+  // A student is helped by one of the same gender: a brother helps a brother,
+  // a sister helps a sister. The pickers narrow themselves the same way.
+  if (parsed.data.kind === "STUDENT") {
+    const studentSlot = assignments.find((a) => a.slot === "STUDENT");
+    const assistantSlot = assignments.find((a) => a.slot === "ASSISTANT");
+    if (studentSlot && assistantSlot) {
+      const genderOf = (a: { publisherId: string | null; studentId: string | null }) =>
+        a.publisherId
+          ? publisherById.get(a.publisherId)?.gender
+          : a.studentId
+            ? studentById.get(a.studentId)?.gender
+            : undefined;
+      const studentGender = genderOf(studentSlot);
+      if (studentGender && studentGender !== genderOf(assistantSlot)) {
+        return {
+          errors: {
+            [slotField("ASSISTANT")]: "A student is assisted by one of the same gender: a brother helps a brother, a sister helps a sister.",
+          },
+        };
+      }
     }
   }
 

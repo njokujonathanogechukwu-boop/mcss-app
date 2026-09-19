@@ -73,10 +73,12 @@ export type PartKind = keyof typeof PART_KINDS;
 
 /**
  * The names each picker may offer. The S-38 keeps the parts apart: only a
- * brother the elders approved chairs the meeting or conducts the Bible study,
- * the reading goes to any brother or male student, and the reader is one of the
- * brothers the body of elders approved to read. Student assignments are the one
- * part the whole roll shares.
+ * brother the body of elders has approved chairs the meeting; the talks,
+ * features and discussions and the congregation Bible study are handled by
+ * elders and ministerial servants; the reading goes to any brother or male
+ * student, and the reader is one of the brothers approved to read. Student
+ * assignments are the one part the whole roll shares, and a student is helped
+ * by one of the same gender.
  */
 export type SchoolPools = {
   chairman: NameOption[];
@@ -86,6 +88,8 @@ export type SchoolPools = {
   ministry: NameOption[];
   conductor: NameOption[];
   reader: NameOption[];
+  /** The gender of every name the pools offer, keyed by its picker value. */
+  gender: Record<string, "MALE" | "FEMALE">;
 };
 
 /** The pool a part's slot draws its names from. */

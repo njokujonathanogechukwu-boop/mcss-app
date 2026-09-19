@@ -19,6 +19,7 @@ export function NamePicker({
   ariaLabel,
   className = "",
   clearOnSubmit = true,
+  onPick,
 }: {
   id: string;
   name: string;
@@ -32,6 +33,8 @@ export function NamePicker({
    * validation fails (e.g. adding an account) turn this off and reset by
    * remounting instead. */
   clearOnSubmit?: boolean;
+  /** Lets a form react to a pick, such as narrowing a paired picker. */
+  onPick?: (value: string) => void;
 }) {
   const [selected, setSelected] = useState(defaultValue);
   const [text, setText] = useState(
@@ -70,6 +73,7 @@ export function NamePicker({
     setSelected(value);
     setText(label);
     setOpen(false);
+    onPick?.(value);
   }
 
   function reconcile() {

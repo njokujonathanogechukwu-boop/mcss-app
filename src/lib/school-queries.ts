@@ -380,6 +380,9 @@ export async function loadPools(): Promise<SchoolPools> {
   const eligible = publishers.filter((p) => !restricted.has(p.id));
   const brothers = eligible.filter((p) => p.gender === "MALE");
   const elders = brothers.filter((p) => p.appointment === "ELDER");
+  // The talks, the features and the congregation Bible study belong to the
+  // appointed brothers; the chair stays with the elders alone.
+  const appointed = brothers.filter((p) => p.appointment === "ELDER" || p.appointment === "MINISTERIAL_SERVANT");
   const maleStudents = students.filter((s) => s.gender === "MALE");
 
   const publisher = (p: { id: string; firstName: string; lastName: string }): NameOption => ({
@@ -391,14 +394,19 @@ export async function loadPools(): Promise<SchoolPools> {
     label: `${displayName(s)} (student)`,
   });
 
+  const gender: Record<string, "MALE" | "FEMALE"> = {};
+  for (const p of publishers) gender[personRef("publisher", p.id)] = p.gender;
+  for (const s of students) gender[personRef("student", s.id)] = s.gender;
+
   return {
     chairman: elders.map(publisher),
     prayer: brothers.map(publisher),
-    speaker: brothers.map(publisher),
+    speaker: appointed.map(publisher),
     reading: [...brothers.map(publisher), ...maleStudents.map(student)].sort(byLabel),
     ministry: [...eligible.map(publisher), ...students.map(student)].sort(byLabel),
-    conductor: elders.map(publisher),
+    conductor: appointed.map(publisher),
     reader: eligible.filter((p) => readers.has(p.id)).map(publisher),
+    gender,
   };
 }
 

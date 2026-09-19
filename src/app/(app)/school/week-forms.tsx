@@ -22,7 +22,7 @@ const KIND_OPTIONS = (Object.keys(PART_KINDS) as PartKind[]).map((k) => ({
 /** What to say under a name the rotation placed: it is a proposal, not a saving. */
 function suggestHint(assigned: string | null, option: NameOption | undefined, base?: string): string | undefined {
   if (assigned || !option) return base;
-  return `Suggested: ${option.label} — longest waiting. Save to keep, or pick another.`;
+  return `Suggested: ${option.label} — drawn from the longest waiting. Save to keep, or pick another.`;
 }
 
 export type WeekHeaderProps = {
@@ -171,6 +171,20 @@ export function PartCard({
 
   const slots = PART_KINDS[kind].slots;
 
+  // A student is helped by one of the same gender, so each of the pair narrows
+  // the other's list as soon as one of them is picked.
+  const [pair, setPair] = useState({
+    STUDENT: part.values.STUDENT ?? suggested?.STUDENT?.value ?? "",
+    ASSISTANT: part.values.ASSISTANT ?? suggested?.ASSISTANT?.value ?? "",
+  });
+  const optionsFor = (slot: MidweekSlot): NameOption[] => {
+    const base = poolFor(pools, kind, slot);
+    if (kind !== "STUDENT" || (slot !== "STUDENT" && slot !== "ASSISTANT")) return base;
+    const other = slot === "STUDENT" ? pair.ASSISTANT : pair.STUDENT;
+    const gender = other ? pools.gender[other] : undefined;
+    return gender ? base.filter((option) => pools.gender[option.value] === gender) : base;
+  };
+
   return (
     <div className="rounded border border-rule bg-surface">
       <div className="flex items-start justify-between gap-3 border-b border-rule px-4 py-2.5">
@@ -223,15 +237,20 @@ export function PartCard({
                 <NamePicker
                   id={id}
                   name={field}
-                  options={poolFor(pools, kind, slot)}
+                  options={optionsFor(slot)}
                   defaultValue={part.values[field] || suggestion?.value || ""}
                   emptyLabel="Not assigned yet"
                   placeholder="Type a name…"
                   clearOnSubmit={false}
+                  onPick={
+                    slot === "STUDENT" || slot === "ASSISTANT"
+                      ? (value) => setPair((p) => ({ ...p, [slot]: value }))
+                      : undefined
+                  }
                 />
                 {suggestion && (
                   <p className="field-hint">
-                    Suggested: {suggestion.label} — longest waiting. Save to keep, or pick another.
+                    Suggested: {suggestion.label} — drawn from the longest waiting. Save to keep, or pick another.
                   </p>
                 )}
               </div>
