@@ -917,6 +917,8 @@ export type WorkbookState = SchoolState & {
   preview?: WorkbookPreview;
   /** The clock chosen on the first pass, echoed so the confirmed pass keeps it. */
   settings?: { meetingWeekday: number; startHour: number; startMinute: number; label: string };
+  /** The schedule these weeks would rebuild, and how many names it carries. */
+  existing?: { label: string; assigned: number } | null;
   periodId?: string;
 };
 
@@ -988,6 +990,22 @@ async function uploadedWorkbook(formData: FormData) {
 }
 
 /**
+ * The schedule a workbook would rebuild, and how many names it carries: a
+ * rebuild takes every one of them off, so the overseer has to say so plainly.
+ */
+async function periodOnFile(startYear: number, startMonth: number) {
+  const period = await prisma.midweekPeriod.findUnique({
+    where: { startYear_startMonth: { startYear, startMonth } },
+    select: { id: true, label: true },
+  });
+  if (!period) return null;
+  const assigned = await prisma.midweekAssignment.count({
+    where: { part: { week: { periodId: period.id } } },
+  });
+  return { ...period, assigned };
+}
+
+/**
  * Builds the schedule for one workbook. The first pass reads the file and hands
  * back what it found for the overseer to check; the second writes it. Both read
  * the same upload, so nothing is written that was not shown first.
@@ -1011,9 +1029,11 @@ export async function importWorkbook(_prev: WorkbookState, formData: FormData): 
   const { fileName, workbook } = read;
 
   if (formData.get("confirm") !== "1") {
+    const onFile = await periodOnFile(workbook.startYear, workbook.startMonth);
     return {
       preview: toPreview(workbook, meetingWeekday),
       settings: { meetingWeekday, startHour, startMinute, label: wanted },
+      existing: onFile ? { label: onFile.label, assigned: onFile.assigned } : null,
       ok: "Read the workbook. Check the weeks below, then build the schedule.",
     };
   }
@@ -1021,19 +1041,16 @@ export async function importWorkbook(_prev: WorkbookState, formData: FormData): 
   const { startYear, startMonth } = workbook;
   const name = wanted || periodLabel(startYear, startMonth);
 
-  const existing = await prisma.midweekPeriod.findUnique({
-    where: { startYear_startMonth: { startYear, startMonth } },
-    select: { id: true, label: true },
-  });
-  if (existing) {
-    const assigned = await prisma.midweekAssignment.count({
-      where: { part: { week: { periodId: existing.id } } },
-    });
-    if (assigned > 0) {
-      return {
-        error: `${existing.label} is already on file with ${assigned} name${assigned === 1 ? "" : "s"} given out against it. Change that schedule week by week, or take it off the file first and upload the workbook again.`,
-      };
-    }
+  const existing = await periodOnFile(startYear, startMonth);
+  if (existing && existing.assigned > 0 && formData.get("replace") !== "true") {
+    // The weeks are handed back with the refusal so the overseer keeps the
+    // preview, and the replace tick, instead of an emptied form.
+    return {
+      error: `${existing.label} is already on file with ${existing.assigned} name${existing.assigned === 1 ? "" : "s"} given out against it. Tick “replace” below to take those names off and put the workbook's weeks in their place, or change that schedule week by week.`,
+      preview: toPreview(workbook, meetingWeekday),
+      settings: { meetingWeekday, startHour, startMinute, label: wanted },
+      existing: { label: existing.label, assigned: existing.assigned },
+    };
   }
 
   const weeks = workbook.weeks.map((week) => {
@@ -1088,7 +1105,8 @@ export async function importWorkbook(_prev: WorkbookState, formData: FormData): 
 
   await recordAudit(
     auth.session.userId, existing ? "updated" : "created", "MidweekPeriod", periodId,
-    `Built the ${name} midweek schedule from the workbook ${fileName}: ${weeks.length} weeks, ${totalParts} parts`,
+    `Built the ${name} midweek schedule from the workbook ${fileName}: ${weeks.length} weeks, ${totalParts} parts` +
+      (existing?.assigned ? `, replacing ${existing.assigned} names already given out` : ""),
   );
 
   revalidateSchool();

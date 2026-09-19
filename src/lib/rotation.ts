@@ -243,6 +243,23 @@ export function weekRepeatedPairings(pairings: Pairing[], weekOf: Date): { stude
 }
 
 /**
+ * Who held each session of the parts the week before or after this one. The
+ * rotation keeps a brother out of the same slot two meetings running, so a
+ * suggestion has to keep him out of it too.
+ */
+export function slotsAround(facts: AssignmentFact[], weekOf: Date): Map<MidweekSlot, Set<string>> {
+  const now = weekOf.getTime();
+  const out = new Map<MidweekSlot, Set<string>>();
+  for (const fact of facts) {
+    if (Math.abs(fact.weekOf.getTime() - now) !== WEEK_MS) continue;
+    const set = out.get(fact.slot) ?? new Set<string>();
+    set.add(fact.key);
+    out.set(fact.slot, set);
+  }
+  return out;
+}
+
+/**
  * Who to consider for a slot: the longest-waiting candidates who are not
  * already in this week's meeting and had no part the week before, so the
  * suggestion never breaks the rotation it is meant to protect.

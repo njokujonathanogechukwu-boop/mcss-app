@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { SelectField, TextField } from "@/components/fields";
+import { CheckField, SelectField, TextField } from "@/components/fields";
 import { Notice } from "@/components/shell";
 import { Button, SubmitButton } from "@/components/ui";
 import { PART_KINDS, WEEKDAY_LABELS, clockLabel } from "@/lib/school";
@@ -36,7 +36,11 @@ export function WorkbookImportForm({
   const nameRef = useRef<HTMLInputElement>(null);
   const bypass = useRef(false);
   const posted = useRef(false);
-  const { preview, settings } = state;
+  // The extracted text lives here as well as in the hidden input: the input is
+  // recreated whenever the form remounts, and the confirmed pass still has to
+  // post what was previewed.
+  const upload = useRef<{ entries: Record<string, string>; name: string } | null>(null);
+  const { preview, settings, existing } = state;
 
   useEffect(() => {
     if (state.periodId) router.push(`/school/periods/${state.periodId}`);
@@ -47,6 +51,7 @@ export function WorkbookImportForm({
   useEffect(() => {
     if (!posted.current || preview || state.periodId) return;
     posted.current = false;
+    upload.current = null;
     if (textRef.current) textRef.current.value = "";
     if (nameRef.current) nameRef.current.value = "";
     if (fileRef.current) {
@@ -54,6 +59,14 @@ export function WorkbookImportForm({
       fileRef.current.value = "";
     }
   }, [state, preview]);
+
+  // A remount (Start again) recreates the hidden inputs empty, so put the read
+  // text back before the confirmed pass can ask for it.
+  useEffect(() => {
+    if (!preview || !upload.current) return;
+    if (textRef.current && !textRef.current.value) textRef.current.value = JSON.stringify(upload.current.entries);
+    if (nameRef.current && !nameRef.current.value) nameRef.current.value = upload.current.name;
+  }, [preview, attempt]);
 
   // The EPUB itself is far too large to post, so its readable text — the OPF and
   // the chapter XHTML — is pulled out here in the browser and only that is sent.
@@ -66,10 +79,15 @@ export function WorkbookImportForm({
     // null by the time the read below finishes — the form has to be held on to.
     const form = event.currentTarget;
     const file = fileRef.current?.files?.[0];
-    // The confirmed pass already carries the extracted text, and the file input
-    // loses its file once the preview hides it, so the file is wanted only once.
-    if (textRef.current?.value && !file) return;
+    // The confirmed pass posts the text read earlier, whether the hidden input
+    // still carries it or the ref has to put it back after a remount.
     if (!file) {
+      if (upload.current) {
+        if (textRef.current) textRef.current.value = JSON.stringify(upload.current.entries);
+        if (nameRef.current) nameRef.current.value = upload.current.name;
+        return;
+      }
+      if (textRef.current?.value) return;
       event.preventDefault();
       setReadError("Choose the workbook file first.");
       return;
@@ -79,6 +97,7 @@ export function WorkbookImportForm({
     try {
       const entries = await extractEntries(file);
       if (!textRef.current || !nameRef.current) return;
+      upload.current = { entries, name: file.name };
       textRef.current.value = JSON.stringify(entries);
       nameRef.current.value = file.name;
     } catch {
@@ -120,14 +139,18 @@ export function WorkbookImportForm({
       <input type="hidden" name="workbookName" ref={nameRef} defaultValue="" />
 
       {/* Stays mounted once a file is chosen, so the confirmed pass posts the
-          very upload that was previewed rather than asking for it again. */}
+          very upload that was previewed rather than asking for it again. Hidden
+          by class, not by the attribute: the display class would override it. */}
       <input
         ref={fileRef}
         type="file"
         name="workbook"
         accept=".epub,application/epub+zip"
-        hidden={Boolean(preview)}
-        className="block w-full text-sm text-ink-soft file:mr-3 file:rounded file:border file:border-rule-strong file:bg-surface file:px-3 file:py-1.5 file:text-sm file:text-ink"
+        className={
+          preview
+            ? "hidden"
+            : "block w-full text-sm text-ink-soft file:mr-3 file:rounded file:border file:border-rule-strong file:bg-surface file:px-3 file:py-1.5 file:text-sm file:text-ink"
+        }
       />
 
       {preview && settings ? (
@@ -142,6 +165,25 @@ export function WorkbookImportForm({
             {WEEKDAY_LABELS[settings.meetingWeekday]}s at {clockLabel(settings.startHour, settings.startMinute)}
             {settings.label ? ` · named “${settings.label}”` : ""}
           </p>
+
+          {existing && existing.assigned > 0 && (
+            <div className="space-y-1 rounded border border-clay/40 bg-paper p-3">
+              <Notice tone="warn">
+                {existing.label} is already on file with {existing.assigned} name{existing.assigned === 1 ? "" : "s"}{" "}
+                given out against it. Building now takes every one of those names off the weeks the workbook covers.
+              </Notice>
+              <CheckField
+                label={`Replace ${existing.label} with these weeks`}
+                name="replace"
+                hint="Tick to take the names already given out off those weeks and put the workbook's weeks in their place. Weeks of other schedules are untouched."
+              />
+            </div>
+          )}
+          {existing && existing.assigned === 0 && (
+            <p className="text-xs text-ink-faint">
+              These weeks rebuild {existing.label}, which has no names given out against it yet.
+            </p>
+          )}
 
           {state.ok && <Notice tone="info">{state.ok}</Notice>}
           <PreviewTable weeks={preview.weeks} />

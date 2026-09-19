@@ -19,6 +19,12 @@ const KIND_OPTIONS = (Object.keys(PART_KINDS) as PartKind[]).map((k) => ({
   label: PART_KINDS[k].label,
 }));
 
+/** What to say under a name the rotation placed: it is a proposal, not a saving. */
+function suggestHint(assigned: string | null, option: NameOption | undefined, base?: string): string | undefined {
+  if (assigned || !option) return base;
+  return `Suggested: ${option.label} — longest waiting. Save to keep, or pick another.`;
+}
+
 export type WeekHeaderProps = {
   id: string;
   weekOf: string;
@@ -40,11 +46,13 @@ export type WeekHeaderProps = {
  * an assembly carries.
  */
 export function WeekHeaderForm({
-  week, chairmen, prayers,
+  week, chairmen, prayers, suggested,
 }: {
   week: WeekHeaderProps;
   chairmen: NameOption[];
   prayers: NameOption[];
+  /** The rotation's first choice for each heading name still missing. */
+  suggested?: Record<string, NameOption>;
 }) {
   const [state, action] = useActionState<SchoolState, FormData>(saveWeekHeader, {});
   const [cancelled, setCancelled] = useState(week.cancelled);
@@ -78,18 +86,22 @@ export function WeekHeaderForm({
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <NameField
-          label="Chairman" name="chairmanId" options={chairmen} defaultValue={week.chairmanId ?? ""}
+          label="Chairman" name="chairmanId" options={chairmen}
+          defaultValue={week.chairmanId ?? suggested?.chairmanId?.value ?? ""}
           emptyLabel="Not assigned yet" clearOnSubmit={false}
-          hint="A brother the body of elders has approved."
+          hint={suggestHint(week.chairmanId, suggested?.chairmanId, "A brother the body of elders has approved.")}
         />
         <NameField
           label="Opening prayer" name="openingPrayerId" options={prayers}
-          defaultValue={week.openingPrayerId ?? ""} emptyLabel="Not assigned yet" clearOnSubmit={false}
-          hint="Left blank, the schedule prints the chairman."
+          defaultValue={week.openingPrayerId ?? suggested?.openingPrayerId?.value ?? ""}
+          emptyLabel="Not assigned yet" clearOnSubmit={false}
+          hint={suggestHint(week.openingPrayerId, suggested?.openingPrayerId, "Left blank, the schedule prints the chairman.")}
         />
         <NameField
           label="Closing prayer" name="closingPrayerId" options={prayers}
-          defaultValue={week.closingPrayerId ?? ""} emptyLabel="Not assigned yet" clearOnSubmit={false}
+          defaultValue={week.closingPrayerId ?? suggested?.closingPrayerId?.value ?? ""}
+          emptyLabel="Not assigned yet" clearOnSubmit={false}
+          hint={suggestHint(week.closingPrayerId, suggested?.closingPrayerId)}
         />
       </div>
 
@@ -141,11 +153,13 @@ export type PartProps = {
 
 /** One numbered line of the schedule, with everyone assigned to it. */
 export function PartCard({
-  part, pools, count,
+  part, pools, count, suggested,
 }: {
   part: PartProps;
   pools: SchoolPools;
   count: number;
+  /** The rotation's first choice for each slot of this part still missing. */
+  suggested?: Record<string, NameOption>;
 }) {
   const [state, action] = useActionState<SchoolState, FormData>(savePart, {});
   const [kind, setKind] = useState<PartKind>(part.kind);
@@ -202,6 +216,7 @@ export function PartCard({
             // The id has to carry the part: several parts on this page ask
             // for a student, and ids are page-wide.
             const id = `${part.id}-${field}`;
+            const suggestion = part.values[field] ? undefined : suggested?.[field];
             return (
               <div key={field}>
                 <label className="field-label" htmlFor={id}>{SLOT_LABELS[slot]}</label>
@@ -209,11 +224,16 @@ export function PartCard({
                   id={id}
                   name={field}
                   options={poolFor(pools, kind, slot)}
-                  defaultValue={part.values[field] ?? ""}
+                  defaultValue={part.values[field] || suggestion?.value || ""}
                   emptyLabel="Not assigned yet"
                   placeholder="Type a name…"
                   clearOnSubmit={false}
                 />
+                {suggestion && (
+                  <p className="field-hint">
+                    Suggested: {suggestion.label} — longest waiting. Save to keep, or pick another.
+                  </p>
+                )}
               </div>
             );
           })}

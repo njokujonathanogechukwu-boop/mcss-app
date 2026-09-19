@@ -11,8 +11,8 @@ import {
   assignedValue, loadPools, loadWeek, rotationRoll, schoolDocuments, toSchedulePart, toScheduleWeek,
 } from "@/lib/school-queries";
 import {
-  ROLE_LABELS, assignmentFacts, pairingsFrom, roleFacts, rolesAround, statsFrom, suggestFrom,
-  weekConsecutive, weekRepeatedPairings, weekSameSlot, type WeekRole,
+  ROLE_LABELS, assignmentFacts, pairingsFrom, roleFacts, rolesAround, slotsAround, statsFrom,
+  suggestFrom, weekConsecutive, weekRepeatedPairings, weekSameSlot, type WeekRole,
 } from "@/lib/rotation";
 import { DataTable, Notice, PageHeader, Panel, Section, Td, Th } from "@/components/shell";
 import { Badge, Button } from "@/components/ui";
@@ -111,6 +111,45 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
     ...incumbent(week.openingPrayerId, week.openingPrayer),
     ...incumbent(week.closingPrayerId, week.closingPrayer),
   ]);
+
+  // The rotation's first choice, placed straight into each empty picker: the
+  // overseer accepts it by saving, or picks another name first. One person is
+  // never offered twice in the same meeting, and never for a session they held
+  // the week before or after.
+  const waiting = new Map(stats.map((s) => [s.key, s.waitingWeeks]));
+  const heldAround = slotsAround(facts, week.weekOf);
+  const busy = new Set(taken);
+  const longestWaiting = (options: NameOption[], held?: Set<string>): NameOption | null => {
+    const option = options
+      .filter((o) => !busy.has(o.value) && !held?.has(o.value))
+      .sort((a, b) => (waiting.get(b.value) ?? 10_000) - (waiting.get(a.value) ?? 10_000))[0];
+    if (option) busy.add(option.value);
+    return option ?? null;
+  };
+  const suggestedParts: Record<string, Record<string, NameOption>> = {};
+  const suggestedHeading: Record<string, NameOption> = {};
+  if (canWrite) {
+    for (const part of parts) {
+      const picks: Record<string, NameOption> = {};
+      for (const slot of PART_KINDS[part.kind].slots) {
+        const field = slotField(slot);
+        if (part.values[field]) continue;
+        const option = longestWaiting(poolFor(pools, part.kind, slot), heldAround.get(slot));
+        if (option) picks[field] = option;
+      }
+      if (Object.keys(picks).length > 0) suggestedParts[part.id] = picks;
+    }
+    const heldRole = (role: WeekRole) => new Set(nearbyRoles.filter((r) => r.role === role).map((r) => r.key));
+    for (const [field, role, options, current] of [
+      ["chairmanId", "CHAIRMAN", chairmen, week.chairmanId],
+      ["openingPrayerId", "OPENING_PRAYER", prayers, week.openingPrayerId],
+      ["closingPrayerId", "CLOSING_PRAYER", prayers, week.closingPrayerId],
+    ] as const) {
+      if (current) continue;
+      const option = longestWaiting([...options], heldRole(role));
+      if (option) suggestedHeading[field] = option;
+    }
+  }
 
   const preview = (
     <Section
@@ -223,6 +262,7 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
             <WeekHeaderForm
               chairmen={chairmen}
               prayers={prayers}
+              suggested={suggestedHeading}
               week={{
                 id: week.id,
                 weekOf: toDateInput(week.weekOf),
@@ -243,11 +283,11 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
 
           <Section
             title="The parts"
-            description="Each line of the schedule, with everyone assigned to it. Each picker offers only the names the part may be given to."
+            description="Each line of the schedule, with everyone assigned to it. Each picker offers only the names the part may be given to, and an empty one already holds the rotation's first choice — save to keep it, or pick another."
           >
             <div className="space-y-4">
               {parts.map((part) => (
-                <PartCard key={part.id} part={part} pools={pools} count={parts.length} />
+                <PartCard key={part.id} part={part} pools={pools} count={parts.length} suggested={suggestedParts[part.id]} />
               ))}
               <AddPartForm weekId={week.id} positions={parts.map((p) => p.position)} />
             </div>
