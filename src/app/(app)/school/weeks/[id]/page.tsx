@@ -11,8 +11,8 @@ import {
   assignedValue, loadPools, loadWeek, rotationRoll, schoolDocuments, toSchedulePart, toScheduleWeek,
 } from "@/lib/school-queries";
 import {
-  ROLE_LABELS, assignmentFacts, pairingsFrom, roleFacts, rolesAround, slotsAround, statsFrom,
-  suggestFrom, weekConsecutive, weekRepeatedPairings, weekSameSlot, type WeekRole,
+  ROLE_LABELS, assignmentFacts, lastServedFrom, pairingsFrom, roleFacts, rolesAround, slotsAround,
+  statsFrom, suggestFrom, weekConsecutive, weekRepeatedPairings, weekSameSlot, type WeekRole,
 } from "@/lib/rotation";
 import { DataTable, Notice, PageHeader, Panel, Section, Td, Th } from "@/components/shell";
 import { Badge, Button } from "@/components/ui";
@@ -64,6 +64,13 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
   const running = length !== MINUTES_PER_S38;
 
   const stats = statsFrom(facts, roll);
+  // Printed under a picker the moment a name is typed, so the overseer reads
+  // what that person last handled — or what is already ahead of them — before
+  // saving rather than after.
+  const history: Record<string, string> = {};
+  for (const [key, entry] of lastServedFrom(facts, roles, week.weekOf)) {
+    history[key] = `${entry.after ? "Next on file" : "Last had"}: ${formatWeekOf(entry.date)} — ${entry.what}`;
+  }
   const consecutive = weekConsecutive(facts, week.weekOf);
   const repeated = weekRepeatedPairings(pairingsFrom(facts), week.weekOf);
   const sameSlot = weekSameSlot(facts, week.weekOf);
@@ -271,6 +278,7 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
               chairmen={chairmen}
               prayers={prayers}
               suggested={suggestedHeading}
+              history={history}
               week={{
                 id: week.id,
                 weekOf: toDateInput(week.weekOf),
@@ -291,11 +299,18 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
 
           <Section
             title="The parts"
-            description="Each line of the schedule, with everyone assigned to it. Each picker offers only the names the part may be given to, and an empty one already holds a name drawn from the longest waiting — save to keep it, or pick another."
+            description="Each line of the schedule, with everyone assigned to it. Each picker offers only the names the part may be given to, and an empty one already holds a name drawn from the longest waiting — save to keep it, or pick another. As soon as a name is typed, the picker says when they last had something and what it was."
           >
             <div className="space-y-4">
               {parts.map((part) => (
-                <PartCard key={part.id} part={part} pools={pools} count={parts.length} suggested={suggestedParts[part.id]} />
+                <PartCard
+                  key={part.id}
+                  part={part}
+                  pools={pools}
+                  count={parts.length}
+                  suggested={suggestedParts[part.id]}
+                  history={history}
+                />
               ))}
               <AddPartForm weekId={week.id} positions={parts.map((p) => p.position)} />
             </div>

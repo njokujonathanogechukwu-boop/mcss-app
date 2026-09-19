@@ -46,13 +46,15 @@ export type WeekHeaderProps = {
  * an assembly carries.
  */
 export function WeekHeaderForm({
-  week, chairmen, prayers, suggested,
+  week, chairmen, prayers, suggested, history,
 }: {
   week: WeekHeaderProps;
   chairmen: NameOption[];
   prayers: NameOption[];
   /** The rotation's first choice for each heading name still missing. */
   suggested?: Record<string, NameOption>;
+  /** When each name last had something on a schedule, and what it was. */
+  history?: Record<string, string>;
 }) {
   const [state, action] = useActionState<SchoolState, FormData>(saveWeekHeader, {});
   const [cancelled, setCancelled] = useState(week.cancelled);
@@ -88,19 +90,19 @@ export function WeekHeaderForm({
         <NameField
           label="Chairman" name="chairmanId" options={chairmen}
           defaultValue={week.chairmanId ?? suggested?.chairmanId?.value ?? ""}
-          emptyLabel="Not assigned yet" clearOnSubmit={false}
+          emptyLabel="Not assigned yet" clearOnSubmit={false} history={history}
           hint={suggestHint(week.chairmanId, suggested?.chairmanId, "A brother the body of elders has approved.")}
         />
         <NameField
           label="Opening prayer" name="openingPrayerId" options={prayers}
           defaultValue={week.openingPrayerId ?? suggested?.openingPrayerId?.value ?? ""}
-          emptyLabel="Not assigned yet" clearOnSubmit={false}
+          emptyLabel="Not assigned yet" clearOnSubmit={false} history={history}
           hint={suggestHint(week.openingPrayerId, suggested?.openingPrayerId, "Left blank, the schedule prints the chairman.")}
         />
         <NameField
           label="Closing prayer" name="closingPrayerId" options={prayers}
           defaultValue={week.closingPrayerId ?? suggested?.closingPrayerId?.value ?? ""}
-          emptyLabel="Not assigned yet" clearOnSubmit={false}
+          emptyLabel="Not assigned yet" clearOnSubmit={false} history={history}
           hint={suggestHint(week.closingPrayerId, suggested?.closingPrayerId)}
         />
       </div>
@@ -153,13 +155,15 @@ export type PartProps = {
 
 /** One numbered line of the schedule, with everyone assigned to it. */
 export function PartCard({
-  part, pools, count, suggested,
+  part, pools, count, suggested, history,
 }: {
   part: PartProps;
   pools: SchoolPools;
   count: number;
   /** The rotation's first choice for each slot of this part still missing. */
   suggested?: Record<string, NameOption>;
+  /** When each name last had something on a schedule, and what it was. */
+  history?: Record<string, string>;
 }) {
   const [state, action] = useActionState<SchoolState, FormData>(savePart, {});
   const [kind, setKind] = useState<PartKind>(part.kind);
@@ -242,6 +246,7 @@ export function PartCard({
                   emptyLabel="Not assigned yet"
                   placeholder="Type a name…"
                   clearOnSubmit={false}
+                  history={history}
                   onPick={
                     slot === "STUDENT" || slot === "ASSISTANT"
                       ? (value) => setPair((p) => ({ ...p, [slot]: value }))

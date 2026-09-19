@@ -20,6 +20,7 @@ export function NamePicker({
   className = "",
   clearOnSubmit = true,
   onPick,
+  history,
 }: {
   id: string;
   name: string;
@@ -35,6 +36,10 @@ export function NamePicker({
   clearOnSubmit?: boolean;
   /** Lets a form react to a pick, such as narrowing a paired picker. */
   onPick?: (value: string) => void;
+  /** When each name last had something on a schedule and what it was, keyed by
+   * its value. Printed under the field once a name is settled on, so the
+   * rotation can be read before saving. */
+  history?: Record<string, string>;
 }) {
   const [selected, setSelected] = useState(defaultValue);
   const [text, setText] = useState(
@@ -68,6 +73,13 @@ export function NamePicker({
     return q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options;
   }, [options, text]);
   const shown = filtered.slice(0, 60);
+
+  // The name settled on, whether it was picked from the list or typed out:
+  // enough to look up what they last handled without waiting for a save.
+  const resolved =
+    selected ||
+    options.find((o) => o.label.toLowerCase() === text.trim().toLowerCase())?.value ||
+    (filtered.length === 1 ? filtered[0].value : "");
 
   function commit(value: string, label: string) {
     setSelected(value);
@@ -140,6 +152,11 @@ export function NamePicker({
           }
         }}
       />
+      {history && resolved && (
+        <p className="mt-1 text-xxs text-ink-faint" aria-live="polite">
+          {history[resolved] ?? "Nothing on a schedule yet — this would be their first."}
+        </p>
+      )}
       {open && (
         <ul
           id={`${id}-list`}

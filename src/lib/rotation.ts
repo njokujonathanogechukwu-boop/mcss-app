@@ -2,7 +2,7 @@ import "server-only";
 import type { Appointment, MidweekSlot } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { displayName } from "@/lib/format";
-import { personRef } from "@/lib/school";
+import { SLOT_LABELS, personRef } from "@/lib/school";
 import type { NameOption } from "@/components/name-picker";
 
 /**
@@ -395,6 +395,41 @@ export function roleRepeats(roles: RoleFact[]): RoleRepeat[] {
 export function rolesAround(roles: RoleFact[], weekOf: Date): RoleFact[] {
   const now = weekOf.getTime();
   return roles.filter((fact) => Math.abs(fact.weekOf.getTime() - now) === WEEK_MS);
+}
+
+export type LastServed = { date: Date; what: string; after: boolean };
+
+/**
+ * What each name had nearest to one meeting: the most recent thing at or before
+ * it, or — for someone with nothing behind them — the first thing already on
+ * file after it, flagged so the page can call it what is ahead rather than what
+ * they last had. Parts and week-heading roles are folded together because the
+ * chairman and the prayers live on the week, not on a part. The week page
+ * prints the answer under a picker the moment a name is typed, so the overseer
+ * reads the history before saving rather than after.
+ */
+export function lastServedFrom(
+  facts: AssignmentFact[],
+  roles: RoleFact[],
+  meeting: Date,
+): Map<string, LastServed> {
+  const all = new Map<string, LastServed[]>();
+  const add = (key: string, date: Date, what: string) => {
+    const list = all.get(key) ?? [];
+    list.push({ date, what, after: date.getTime() > meeting.getTime() });
+    all.set(key, list);
+  };
+  for (const fact of facts) add(fact.key, fact.weekOf, `${SLOT_LABELS[fact.slot]} — ${fact.partTitle}`);
+  for (const fact of roles) add(fact.key, fact.weekOf, ROLE_LABELS[fact.role]);
+
+  const out = new Map<string, LastServed>();
+  for (const [key, list] of all) {
+    const byTime = (a: LastServed, b: LastServed) => a.date.getTime() - b.date.getTime();
+    const past = list.filter((entry) => !entry.after).sort((a, b) => byTime(b, a));
+    const ahead = list.filter((entry) => entry.after).sort(byTime);
+    out.set(key, past[0] ?? ahead[0]);
+  }
+  return out;
 }
 
 // ------------------------------------------------------------------ the trend
