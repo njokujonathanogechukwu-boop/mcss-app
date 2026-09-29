@@ -16,9 +16,10 @@ import {
 } from "@/lib/rotation";
 import { DataTable, Notice, PageHeader, Panel, Section, Td, Th } from "@/components/shell";
 import { Badge, Button } from "@/components/ui";
+import { JpegExportButton } from "@/components/jpeg-export";
 import type { NameOption } from "@/components/name-picker";
 import { SchoolTabs } from "../../tabs";
-import { AddPartForm, PartCard, WeekHeaderForm, type PartProps } from "../../week-forms";
+import { AddPartForm, PartCard, SaveWeekButton, WeekHeaderForm, type PartProps } from "../../week-forms";
 import { DocumentTable } from "../../document-list";
 import { UploadDocumentsForm } from "../../document-forms";
 
@@ -255,6 +256,8 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
             <a href={`/api/exports/midweek?week=${week.id}`} target="_blank" rel="noopener">
               <Button variant="secondary" size="sm">Print the schedule</Button>
             </a>
+            <JpegExportButton href={`/api/exports/midweek?week=${week.id}`} />
+            {canWrite && <SaveWeekButton size="sm" />}
           </>
         }
       />
@@ -312,6 +315,7 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
                   history={history}
                 />
               ))}
+              <SaveWeekButton />
               <AddPartForm weekId={week.id} positions={parts.map((p) => p.position)} />
             </div>
           </Section>

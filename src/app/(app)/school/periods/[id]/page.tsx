@@ -9,6 +9,7 @@ import {
 } from "@/lib/school-queries";
 import { DataTable, EmptyState, PageHeader, Section, Td, Th } from "@/components/shell";
 import { Badge, Button } from "@/components/ui";
+import { JpegExportButton } from "@/components/jpeg-export";
 import { SchoolTabs } from "../../tabs";
 import {
   AddWeekForm, DeletePeriodForm, DeleteWeekForm, PeriodSettingsForm,
@@ -47,6 +48,7 @@ export default async function PeriodPage({ params }: { params: Promise<{ id: str
             <a href={`/api/exports/midweek?period=${period.id}`} target="_blank" rel="noopener">
               <Button variant="secondary" size="sm">Print every week</Button>
             </a>
+            <JpegExportButton href={`/api/exports/midweek?period=${period.id}`} label="Every week as JPEG" />
             {canWrite && (
               <DeletePeriodForm id={period.id} label={period.label} weeks={period.weeks.length} />
             )}
@@ -111,9 +113,12 @@ export default async function PeriodPage({ params }: { params: Promise<{ id: str
                       )}
                     </Td>
                     <Td align="right">
-                      <a href={`/api/exports/midweek?week=${week.id}`} target="_blank" rel="noopener">
-                        <Button variant="ghost" size="sm">Print</Button>
-                      </a>
+                      <div className="flex items-start justify-end gap-1">
+                        <a href={`/api/exports/midweek?week=${week.id}`} target="_blank" rel="noopener">
+                          <Button variant="ghost" size="sm">Print</Button>
+                        </a>
+                        <JpegExportButton href={`/api/exports/midweek?week=${week.id}`} label="JPEG" variant="ghost" />
+                      </div>
                     </Td>
                     {canWrite && (
                       <Td align="right">

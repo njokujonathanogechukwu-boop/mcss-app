@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
-import { TextArea } from "@/components/fields";
+import { TextArea, useRestoreAfterReset } from "@/components/fields";
 import { NamePicker } from "@/components/name-picker";
 import { SubmitButton } from "@/components/ui";
 import { Notice } from "@/components/shell";
@@ -34,6 +34,9 @@ export function StandingForm({
   useEffect(() => {
     if (state.ok) setSaved((n) => n + 1);
   }, [state]);
+  const keepKind = useRestoreAfterReset<HTMLSelectElement>((el) => {
+    el.value = kind;
+  });
 
   return (
     <form key={saved} action={action} className="space-y-4 rounded border border-rule bg-surface p-5">
@@ -52,7 +55,7 @@ export function StandingForm({
       <div>
         <label htmlFor="kind" className="field-label">What happened</label>
         <select
-          id="kind" name="kind" className="field-input"
+          ref={keepKind} id="kind" name="kind" className="field-input"
           value={kind} onChange={(e) => setKind(e.target.value)}
         >
           {KIND_OPTIONS.map((o) => (

@@ -65,7 +65,7 @@ export function WeekHeaderForm({
   }, [state]);
 
   return (
-    <form key={saved} action={action} className="space-y-4 rounded border border-rule bg-surface p-5">
+    <form key={saved} action={action} data-save-week className="space-y-4 rounded border border-rule bg-surface p-5">
       <input type="hidden" name="id" value={week.id} />
       {state.error && <Notice tone="error">{state.error}</Notice>}
       {state.ok && <Notice tone="success">{state.ok}</Notice>}
@@ -202,7 +202,7 @@ export function PartCard({
         </div>
       </div>
 
-      <form key={saved} action={action} className="space-y-3 p-4">
+      <form key={saved} action={action} data-save-week className="space-y-3 p-4">
         <input type="hidden" name="partId" value={part.id} />
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -303,6 +303,36 @@ function PartTools({
           ✕
         </Button>
       </form>
+    </div>
+  );
+}
+
+/**
+ * Saves the heading and every part of the week at once. Each form still goes
+ * through its own save, so every check a single part makes still holds, and
+ * each part reports "Saved." or what needs fixing beside its number.
+ */
+export function SaveWeekButton({ size = "md" }: { size?: "sm" | "md" }) {
+  const [note, setNote] = useState<string | null>(null);
+
+  function saveAll() {
+    const forms = [...document.querySelectorAll<HTMLFormElement>("form[data-save-week]")];
+    // A form with a required field left empty would be skipped by the browser;
+    // it is shown instead of sending the rest without it.
+    const incomplete = forms.find((form) => !form.checkValidity());
+    if (incomplete) {
+      incomplete.reportValidity();
+      setNote("Fill in the highlighted field first, then save the week again.");
+      return;
+    }
+    for (const form of forms) form.requestSubmit();
+    setNote(`Saving the heading and ${forms.length - 1} parts. Each part shows “Saved.” or what needs fixing beside its number.`);
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <Button type="button" size={size} onClick={saveAll}>Save week</Button>
+      {note && <span className="text-xs text-ink-soft">{note}</span>}
     </div>
   );
 }

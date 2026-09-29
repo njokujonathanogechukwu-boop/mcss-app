@@ -6,6 +6,7 @@ import { formatWeekOf, nextPeriodStart, periodLabel } from "@/lib/school";
 import { loadPeriods, weekProgress, type PeriodRow } from "@/lib/school-queries";
 import { DataTable, EmptyState, Notice, PageHeader, Panel, Section, Td, Th } from "@/components/shell";
 import { Badge, Button } from "@/components/ui";
+import { JpegExportButton } from "@/components/jpeg-export";
 import { SchoolTabs } from "./tabs";
 import { NewPeriodForm } from "./school-forms";
 import { WorkbookImportForm } from "./workbook-form";
@@ -76,6 +77,7 @@ export default async function SchoolPage({
               <a href={`/api/exports/midweek?week=${upcoming.week.id}`} target="_blank" rel="noopener">
                 <Button variant="secondary" size="sm">Print this week</Button>
               </a>
+              <JpegExportButton href={`/api/exports/midweek?week=${upcoming.week.id}`} />
               <Link href={`/school/weeks/${upcoming.week.id}`}>
                 <Button size="sm">Open the schedule</Button>
               </Link>
@@ -140,6 +142,7 @@ export default async function SchoolPage({
                         <a href={`/api/exports/midweek?period=${period.id}`} target="_blank" rel="noopener">
                           <Button variant="ghost" size="sm">Print all</Button>
                         </a>
+                        <JpegExportButton href={`/api/exports/midweek?period=${period.id}`} label="JPEG" variant="ghost" />
                         <Link href={`/school/periods/${period.id}`}>
                           <Button variant="secondary" size="sm">Open</Button>
                         </Link>

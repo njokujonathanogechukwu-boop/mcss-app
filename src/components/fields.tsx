@@ -1,5 +1,30 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import { NamePicker } from "@/components/name-picker";
+
+/**
+ * React resets a form once its action returns. A reset puts every select back
+ * on its first option and every box back to how the page loaded, whatever the
+ * controlled value says, and the next save then posts what the reset left: a
+ * Bible study saved as a talk, a mail sent to the first group in the list. The
+ * returned ref puts the field back in step right after the reset.
+ */
+export function useRestoreAfterReset<T extends HTMLElement>(restore: (el: T) => void) {
+  const latest = useRef(restore);
+  useEffect(() => {
+    latest.current = restore;
+  });
+  return useCallback((el: T | null) => {
+    if (!el) return;
+    const form = el instanceof HTMLFormElement ? el : (el as unknown as { form: HTMLFormElement | null }).form;
+    if (!form) return;
+    // The reset event fires before the reset itself, so the restore waits a tick.
+    const onReset = () => setTimeout(() => latest.current(el));
+    form.addEventListener("reset", onReset);
+    return () => form.removeEventListener("reset", onReset);
+  }, []);
+}
 
 type Base = { label: string; name: string; hint?: string; error?: string; required?: boolean };
 
@@ -51,9 +76,12 @@ export function SelectField({
   options: { value: string; label: string }[];
   placeholder?: string;
 } & React.SelectHTMLAttributes<HTMLSelectElement>) {
+  const keep = useRestoreAfterReset<HTMLSelectElement>((el) => {
+    if (props.value !== undefined) el.value = String(props.value);
+  });
   return (
     <Wrapper label={label} name={name} hint={hint} error={error}>
-      <select id={name} name={name} className="field-input" {...props}>
+      <select ref={keep} id={name} name={name} className="field-input" {...props}>
         {placeholder && <option value="">{placeholder}</option>}
         {options.map((o) => (
           <option key={o.value} value={o.value}>
@@ -94,9 +122,13 @@ export function NameField({
 export function CheckField({
   label, name, hint, defaultChecked, ...props
 }: { label: string; name: string; hint?: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+  const keep = useRestoreAfterReset<HTMLInputElement>((el) => {
+    if (props.checked !== undefined) el.checked = Boolean(props.checked);
+  });
   return (
     <label htmlFor={name} className="flex items-start gap-2.5 py-1.5">
       <input
+        ref={keep}
         id={name}
         name={name}
         type="checkbox"

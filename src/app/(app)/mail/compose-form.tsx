@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { SubmitButton } from "@/components/ui";
+import { useRestoreAfterReset } from "@/components/fields";
 import { Notice } from "@/components/shell";
 import { splitAddresses, isEmailAddress } from "@/lib/mail-addresses";
 import { sendMail, type MailState } from "./actions";
@@ -37,6 +38,15 @@ export function ComposeForm({
   useEffect(() => {
     if (state.ok) setSaved((n) => n + 1);
   }, [state]);
+  // Put the audience and the group back after React's reset, or a second try
+  // would go to the first group in the list.
+  const keepChoices = useRestoreAfterReset<HTMLFormElement>((form) => {
+    for (const radio of form.querySelectorAll<HTMLInputElement>('input[name="audience"]')) {
+      radio.checked = radio.value === audience;
+    }
+    const group = form.querySelector<HTMLSelectElement>('select[name="groupId"]');
+    if (group) group.value = groupId;
+  });
 
   const typed = useMemo(() => splitAddresses(addresses), [addresses]);
   const badAddresses = audience === "manual" ? typed.filter((a) => !isEmailAddress(a)) : [];
@@ -65,6 +75,7 @@ export function ComposeForm({
   return (
     <form
       key={saved}
+      ref={keepChoices}
       action={action}
       className="space-y-4 rounded border border-rule bg-surface p-5"
       onSubmit={(e) => {
