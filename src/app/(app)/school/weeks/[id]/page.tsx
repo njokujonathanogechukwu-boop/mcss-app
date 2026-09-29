@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePermission } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { neighbours } from "@/lib/neighbours";
 import { can } from "@/lib/rbac";
 import { displayName, toDateInput } from "@/lib/format";
 import {
@@ -33,13 +35,17 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
   const week = await loadWeek(id);
   if (!week) notFound();
 
-  const [pools, documents, facts, roll, roles] = await Promise.all([
+  const [pools, documents, facts, roll, roles, allWeeks] = await Promise.all([
     loadPools(),
     schoolDocuments({ weekId: week.id }),
     assignmentFacts(),
     rotationRoll(),
     roleFacts(),
+    // Every meeting in date order, across schedules, so the arrows run on from
+    // the last week of one workbook into the first of the next.
+    prisma.midweekWeek.findMany({ select: { id: true, weekOf: true }, orderBy: [{ weekOf: "asc" }, { id: "asc" }] }),
   ]);
+  const nav = neighbours(allWeeks, week.id, (w) => ({ href: `/school/weeks/${w.id}`, label: formatWeekOf(w.weekOf) }));
 
   const scheduleParts = week.parts.map(toSchedulePart);
   const parts: PartProps[] = week.parts.map((part) => ({
@@ -246,6 +252,7 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
     <>
       <PageHeader
         back={{ href: `/school/periods/${week.periodId}`, label: week.period.label }}
+        nav={nav}
         title={formatWeekOf(week.weekOf)}
         description={`${week.period.label} · starts at ${clockLabel(week.period.startHour, week.period.startMinute)}`}
         actions={

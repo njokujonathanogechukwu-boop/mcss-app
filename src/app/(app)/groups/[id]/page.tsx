@@ -4,6 +4,7 @@ import type { PublisherStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
+import { neighbours } from "@/lib/neighbours";
 import { currentServiceYear, serviceYearLabel, serviceYearOptions } from "@/lib/service-year";
 import { groupReportLink } from "@/lib/group-reports";
 import {
@@ -44,11 +45,24 @@ export default async function GroupPage({
   });
   if (!group) notFound();
 
-  const elders = await prisma.publisher.findMany({
-    where: { appointment: { in: ["ELDER", "MINISTERIAL_SERVANT"] }, status: "ACTIVE" },
-    orderBy: [{ lastName: "asc" }],
-    select: { id: true, firstName: true, lastName: true, appointment: true },
-  });
+  const [elders, allGroups] = await Promise.all([
+    prisma.publisher.findMany({
+      where: { appointment: { in: ["ELDER", "MINISTERIAL_SERVANT"] }, status: "ACTIVE" },
+      orderBy: [{ lastName: "asc" }],
+      select: { id: true, firstName: true, lastName: true, appointment: true },
+    }),
+    // The groups list's own order, by number.
+    prisma.serviceGroup.findMany({
+      select: { id: true, number: true, name: true },
+      orderBy: [{ number: "asc" }, { id: "asc" }],
+    }),
+  ]);
+  // The service year and the open tab travel with the arrows.
+  const keep = new URLSearchParams();
+  if (sy) keep.set("sy", sy);
+  if (tab) keep.set("tab", tab);
+  const query = keep.size ? `?${keep.toString()}` : "";
+  const nav = neighbours(allGroups, group.id, (g) => ({ href: `/groups/${g.id}${query}`, label: `Group ${g.number} — ${g.name}` }));
 
   // The roll is what the Excel roster prints, so the two must agree.
   const onRoll = (status: PublisherStatus) => status === "ACTIVE" || status === "IRREGULAR";
@@ -75,6 +89,7 @@ export default async function GroupPage({
           movedOut.length ? ` · ${movedOut.length} moved out` : ""
         }. Overseer: ${group.overseer ? displayName(group.overseer) : "not assigned"}.`}
         back={{ href: "/groups", label: "Service groups" }}
+        nav={nav}
         actions={
           can(user.role, "export:run") && (
             <>

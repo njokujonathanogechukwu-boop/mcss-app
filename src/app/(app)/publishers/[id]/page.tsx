@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
+import { neighbours } from "@/lib/neighbours";
 import {
   currentServiceYear, serviceYearMonths, serviceYearLabel, serviceYearOptions,
 } from "@/lib/service-year";
@@ -67,7 +68,7 @@ export default async function PublisherPage({
         orderBy: [{ eventDate: "desc" }, { createdAt: "desc" }],
       })
     : [];
-  const [reports, groups] = await Promise.all([
+  const [reports, groups, roll] = await Promise.all([
     prisma.serviceReport.findMany({
       where: { publisherId: id, OR: months.map((m) => ({ year: m.year, month: m.month })) },
     }),
@@ -76,7 +77,14 @@ export default async function PublisherPage({
       orderBy: { number: "asc" },
       select: { id: true, number: true, name: true },
     }),
+    // The publishers list's own order, surname then first name.
+    prisma.publisher.findMany({
+      select: { id: true, firstName: true, lastName: true },
+      orderBy: [{ lastName: "asc" }, { firstName: "asc" }, { id: "asc" }],
+    }),
   ]);
+  const syParam = sp.sy ? `?sy=${sp.sy}` : "";
+  const nav = neighbours(roll, id, (p) => ({ href: `/publishers/${p.id}${syParam}`, label: displayName(p) }));
 
   const byKey = new Map(reports.map((r) => [`${r.year}-${r.month}`, r]));
   const showContact = can(user.role, "publisher:readContact");
@@ -102,6 +110,7 @@ export default async function PublisherPage({
           publisher.group ? `Group ${publisher.group.number} — ${publisher.group.name}` : "No service group",
         ].filter(Boolean).join("  ·  ")}
         back={{ href: "/publishers", label: "Publishers" }}
+        nav={nav}
         actions={
           <>
             {can(user.role, "export:run") && (

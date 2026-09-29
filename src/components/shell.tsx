@@ -1,26 +1,35 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { PrevNext } from "@/components/prev-next";
+import type { Neighbour } from "@/lib/neighbours";
 
 export function PageHeader({
   title,
   description,
   actions,
   back,
+  nav,
 }: {
   title: string;
   description?: string;
   actions?: ReactNode;
   back?: { href: string; label: string };
+  /** The previous and next record, for stepping through without the list. */
+  nav?: { prev: Neighbour; next: Neighbour };
 }) {
   return (
     <header className="mb-7 border-b border-rule pb-5">
-      {back && (
-        <Link
-          href={back.href}
-          className="mb-2 inline-block text-xs text-ink-soft hover:text-pine hover:underline"
-        >
-          ← {back.label}
-        </Link>
+      {(back || nav) && (
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          {back ? (
+            <Link href={back.href} className="text-xs text-ink-soft hover:text-pine hover:underline">
+              ← {back.label}
+            </Link>
+          ) : (
+            <span />
+          )}
+          {nav && <PrevNext prev={nav.prev} next={nav.next} />}
+        </div>
       )}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
