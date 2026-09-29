@@ -2,6 +2,18 @@
 
 import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import { NamePicker } from "@/components/name-picker";
+import { Notice } from "@/components/shell";
+
+/**
+ * Why a save was refused. The actions answer a field-level problem — a reader
+ * not approved, a schedule already on file — in `errors` rather than `error`,
+ * and a form that shows only `error` looks as if it saved when it did not.
+ */
+export function FormProblems({ state }: { state: { error?: string; errors?: Record<string, string> } }) {
+  const problems = [state.error, ...Object.values(state.errors ?? {})].filter(Boolean);
+  if (problems.length === 0) return null;
+  return <Notice tone="error">Not saved. {problems.join(" ")}</Notice>;
+}
 
 /**
  * React resets a form once its action returns. A reset puts every select back

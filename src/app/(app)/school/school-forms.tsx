@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
-import { SelectField, TextField } from "@/components/fields";
+import { FormProblems, SelectField, TextField } from "@/components/fields";
 import { Notice } from "@/components/shell";
 import { Button, SubmitButton } from "@/components/ui";
 import { MONTH_LABELS, WEEKDAY_LABELS } from "@/lib/school";
@@ -35,7 +35,7 @@ export function NewPeriodForm({
   return (
     <form key={saved} action={action} className="space-y-3 rounded border border-dashed border-rule-strong bg-paper p-4">
       <p className="font-serif text-sm text-ink">Start a schedule</p>
-      {state.error && <Notice tone="error">{state.error}</Notice>}
+      <FormProblems state={state} />
       {state.ok && <Notice tone="success">{state.ok}</Notice>}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -71,7 +71,7 @@ export function PeriodSettingsForm({ period }: {
     <form action={action} className="space-y-3 rounded border border-rule bg-surface p-4">
       <input type="hidden" name="id" value={period.id} />
       <p className="font-serif text-sm text-ink">Settings</p>
-      {state.error && <Notice tone="error">{state.error}</Notice>}
+      <FormProblems state={state} />
       {state.ok && <Notice tone="success">{state.ok}</Notice>}
 
       <div className="grid gap-3 sm:grid-cols-2">

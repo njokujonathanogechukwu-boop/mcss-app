@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
-import { CheckField, NameField, SelectField, TextField } from "@/components/fields";
+import { CheckField, FormProblems, NameField, SelectField, TextField } from "@/components/fields";
 import { NamePicker, type NameOption } from "@/components/name-picker";
 import { Notice } from "@/components/shell";
 import { Button, SubmitButton } from "@/components/ui";
@@ -67,7 +67,7 @@ export function WeekHeaderForm({
   return (
     <form key={saved} action={action} data-save-week className="space-y-4 rounded border border-rule bg-surface p-5">
       <input type="hidden" name="id" value={week.id} />
-      {state.error && <Notice tone="error">{state.error}</Notice>}
+      <FormProblems state={state} />
       {state.ok && <Notice tone="success">{state.ok}</Notice>}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -197,13 +197,14 @@ export function PartCard({
         </p>
         <div className="flex items-center gap-2">
           {state.ok && <span className="text-xs text-pine-dark">{state.ok}</span>}
-          {state.error && <span className="text-xs text-clay">{state.error}</span>}
+          {(state.error || state.errors) && <span className="text-xs text-clay">Not saved</span>}
           <PartTools partId={part.id} title={part.title} position={part.position} count={count} />
         </div>
       </div>
 
       <form key={saved} action={action} data-save-week className="space-y-3 p-4">
         <input type="hidden" name="partId" value={part.id} />
+        <FormProblems state={state} />
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <TextField
@@ -253,6 +254,7 @@ export function PartCard({
                       : undefined
                   }
                 />
+                {state.errors?.[field] && <p className="field-error">{state.errors[field]}</p>}
                 {suggestion && (
                   <p className="field-hint">
                     Suggested: {suggestion.label} — drawn from the longest waiting. Save to keep, or pick another.
@@ -326,7 +328,7 @@ export function SaveWeekButton({ size = "md" }: { size?: "sm" | "md" }) {
       return;
     }
     for (const form of forms) form.requestSubmit();
-    setNote(`Saving the heading and ${forms.length - 1} parts. Each part shows “Saved.” or what needs fixing beside its number.`);
+    setNote(`Saving the heading and ${forms.length - 1} parts. Each shows “Saved.”, or “Not saved” with the reason in red.`);
   }
 
   return (
@@ -349,7 +351,7 @@ export function AddPartForm({ weekId, positions }: { weekId: string; positions: 
     <form key={saved} action={action} className="space-y-3 rounded border border-dashed border-rule-strong bg-paper p-4">
       <input type="hidden" name="weekId" value={weekId} />
       <p className="font-serif text-sm text-ink">Add a part</p>
-      {state.error && <Notice tone="error">{state.error}</Notice>}
+      <FormProblems state={state} />
       {state.ok && <Notice tone="success">{state.ok}</Notice>}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
