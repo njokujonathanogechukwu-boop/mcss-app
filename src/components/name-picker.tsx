@@ -68,11 +68,21 @@ export function NamePicker({
     return () => form.removeEventListener("submit", clear);
   }, [clearOnSubmit]);
 
+  // Every word typed has to appear somewhere in the name, in any order, so
+  // "Alozie Amaechi" finds Amaechi Alozie as well as "amaechi" or "alo" do.
   const filtered = useMemo(() => {
-    const q = text.trim().toLowerCase();
-    return q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options;
+    const words = text.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    return words.length
+      ? options.filter((o) => {
+          const label = o.label.toLowerCase();
+          return words.every((word) => label.includes(word));
+        })
+      : options;
   }, [options, text]);
-  const shown = filtered.slice(0, 60);
+  // The whole list, not the first sixty: a congregation's roll with the
+  // school's students runs past that, and a name that never shows in the list
+  // reads as a name the app does not have.
+  const shown = filtered;
 
   // The name settled on, whether it was picked from the list or typed out:
   // enough to look up what they last handled without waiting for a save.
@@ -190,11 +200,6 @@ export function NamePicker({
           ))}
           {shown.length === 0 && (
             <li className="px-3 py-2 text-xs text-ink-faint">No match — check the spelling</li>
-          )}
-          {filtered.length > shown.length && (
-            <li className="px-3 py-1.5 text-xxs text-ink-faint">
-              …and {filtered.length - shown.length} more — keep typing to narrow
-            </li>
           )}
         </ul>
       )}
