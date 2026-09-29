@@ -99,7 +99,7 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
             .filter((slot) => !part.values[slotField(slot)])
             .map((slot) => ({
               label: `Part ${part.position} · ${SLOT_LABELS[slot]}`,
-              options: suggestFrom(facts, stats, week.weekOf, poolFor(pools, part.kind, slot), taken),
+              options: suggestFrom(facts, stats, week.weekOf, poolFor(pools, part.kind, slot, part.section), taken),
             })),
         )
         .filter((suggestion) => suggestion.options.length > 0)
@@ -150,7 +150,7 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
         const field = slotField(slot);
         if (part.values[field]) continue;
         const sameGenderAs = slot === "ASSISTANT" ? ((picks.STUDENT?.value ?? part.values.STUDENT) || undefined) : undefined;
-        const option = longestWaiting(poolFor(pools, part.kind, slot), heldAround.get(slot), sameGenderAs);
+        const option = longestWaiting(poolFor(pools, part.kind, slot, part.section),heldAround.get(slot), sameGenderAs);
         if (option) picks[field] = option;
       }
       if (Object.keys(picks).length > 0) suggestedParts[part.id] = picks;

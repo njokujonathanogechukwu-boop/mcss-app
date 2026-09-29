@@ -415,7 +415,10 @@ export async function savePart(_prev: SchoolState, formData: FormData): Promise<
     const publisher = assignment.publisherId ? publisherById.get(assignment.publisherId) : undefined;
     const student = assignment.studentId ? studentById.get(assignment.studentId) : undefined;
     const gender = (publisher ?? student)?.gender;
-    if (parsed.data.kind === "TALK" && !publisher) {
+    // A talk in Apply Yourself to the Field Ministry is a student talk, open to
+    // any brother or male student; the pickers offer the same list.
+    const studentTalk = parsed.data.kind === "TALK" && parsed.data.section === "MINISTRY";
+    if (parsed.data.kind === "TALK" && !studentTalk && !publisher) {
       return { errors: { [field]: "A talk, feature or discussion is handled by a brother, not by a student of the school." } };
     }
     if ((parsed.data.kind === "TALK" || parsed.data.kind === "READING") && gender !== "MALE") {
@@ -425,7 +428,7 @@ export async function savePart(_prev: SchoolState, formData: FormData): Promise<
     // and the congregation Bible study, are the appointed brothers' to handle.
     const appointed =
       publisher?.appointment === "ELDER" || publisher?.appointment === "MINISTERIAL_SERVANT";
-    if (parsed.data.kind === "TALK" && publisher && !appointed) {
+    if (parsed.data.kind === "TALK" && !studentTalk && publisher && !appointed) {
       return {
         errors: { [field]: "The talks, features and discussions are handled by an elder or a ministerial servant." },
       };

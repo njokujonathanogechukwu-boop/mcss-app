@@ -167,6 +167,9 @@ export function PartCard({
 }) {
   const [state, action] = useActionState<SchoolState, FormData>(savePart, {});
   const [kind, setKind] = useState<PartKind>(part.kind);
+  // Kept here rather than left to the select: a talk's list of names depends on
+  // the section it sits in.
+  const [section, setSection] = useState<MidweekSection>(part.section);
   const [saved, setSaved] = useState(0);
 
   useEffect(() => {
@@ -182,7 +185,7 @@ export function PartCard({
     ASSISTANT: part.values.ASSISTANT ?? suggested?.ASSISTANT?.value ?? "",
   });
   const optionsFor = (slot: MidweekSlot): NameOption[] => {
-    const base = poolFor(pools, kind, slot);
+    const base = poolFor(pools, kind, slot, section);
     if (kind !== "STUDENT" || (slot !== "STUDENT" && slot !== "ASSISTANT")) return base;
     const other = slot === "STUDENT" ? pair.ASSISTANT : pair.STUDENT;
     const gender = other ? pools.gender[other] : undefined;
@@ -211,7 +214,10 @@ export function PartCard({
             label="Title as the workbook prints it" name="title" required defaultValue={part.title}
             placeholder="A Guarded Heart"
           />
-          <SelectField label="Section" name="section" options={SECTION_OPTIONS} defaultValue={part.section} />
+          <SelectField
+            label="Section" name="section" options={SECTION_OPTIONS} value={section}
+            onChange={(e) => setSection(e.target.value as MidweekSection)}
+          />
           <SelectField
             label="What it needs" name="kind" value={kind}
             onChange={(e) => setKind(e.target.value as PartKind)}

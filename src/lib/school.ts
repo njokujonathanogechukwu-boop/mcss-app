@@ -92,11 +92,19 @@ export type SchoolPools = {
   gender: Record<string, "MALE" | "FEMALE">;
 };
 
-/** The pool a part's slot draws its names from. */
-export function poolFor(pools: SchoolPools, kind: PartKind, slot: MidweekSlot): NameOption[] {
+/**
+ * The pool a part's slot draws its names from. A talk in Apply Yourself to the
+ * Field Ministry is a student talk: any brother or male student may give it,
+ * the way he may handle the Bible reading. The talks of the other two sections
+ * stay with the appointed brothers.
+ */
+export function poolFor(
+  pools: SchoolPools, kind: PartKind, slot: MidweekSlot, section: MidweekSection,
+): NameOption[] {
   if (kind === "STUDY") return slot === "READER" ? pools.reader : pools.conductor;
   if (kind === "READING") return pools.reading;
   if (kind === "STUDENT") return pools.ministry;
+  if (section === "MINISTRY") return pools.reading;
   return pools.speaker;
 }
 
