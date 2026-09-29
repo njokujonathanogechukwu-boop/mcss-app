@@ -78,7 +78,7 @@ export type PartKind = keyof typeof PART_KINDS;
  * elders and ministerial servants; the reading goes to any brother or male
  * student, and the reader is one of the brothers approved to read. Student
  * assignments are the one part the whole roll shares, and a student is helped
- * by one of the same gender.
+ * by one of the same gender or a member of their own family.
  */
 export type SchoolPools = {
   chairman: NameOption[];
@@ -90,7 +90,20 @@ export type SchoolPools = {
   reader: NameOption[];
   /** The gender of every name the pools offer, keyed by its picker value. */
   gender: Record<string, "MALE" | "FEMALE">;
+  /** The family each name belongs to, keyed by its picker value; absent when none. */
+  family: Record<string, string>;
 };
+
+/**
+ * Whether two people may be student and assistant together: one of the same
+ * gender, or a member of the student's own family (S-38 par. 12).
+ */
+export function canPair(pools: Pick<SchoolPools, "gender" | "family">, a: string, b: string): boolean {
+  if (!a || !b) return true;
+  if (pools.gender[a] === pools.gender[b]) return true;
+  const family = pools.family[a];
+  return Boolean(family) && family === pools.family[b];
+}
 
 /**
  * The pool a part's slot draws its names from. A talk in Apply Yourself to the

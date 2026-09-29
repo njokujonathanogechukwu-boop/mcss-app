@@ -412,7 +412,11 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
         <Link href="/school/readers" className="hover:text-pine hover:underline">
           approved readers
         </Link>
-        , and a student is assisted by one of the same gender.{" "}
+        , and a student is assisted by one of the same gender or a member of their own{" "}
+        <Link href="/school/families" className="hover:text-pine hover:underline">
+          family
+        </Link>
+        .{" "}
         <Link href="/school/publishers" className="hover:text-pine hover:underline">
           See the publisher list
         </Link>

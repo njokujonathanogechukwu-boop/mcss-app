@@ -5,7 +5,7 @@ import { CheckField, FormProblems, NameField, SelectField, TextField } from "@/c
 import { NamePicker, type NameOption } from "@/components/name-picker";
 import { Notice } from "@/components/shell";
 import { Button, SubmitButton } from "@/components/ui";
-import { DEFAULT_WEEK_BANNER, PART_KINDS, SECTION_LABELS, SLOT_LABELS, poolFor, slotField, type PartKind, type SchoolPools } from "@/lib/school";
+import { DEFAULT_WEEK_BANNER, PART_KINDS, SECTION_LABELS, SLOT_LABELS, canPair, poolFor, slotField, type PartKind, type SchoolPools } from "@/lib/school";
 import type { MidweekSection, MidweekSlot } from "@prisma/client";
 import { addPart, deletePart, movePart, savePart, saveWeekHeader, type SchoolState } from "./actions";
 
@@ -178,8 +178,8 @@ export function PartCard({
 
   const slots = PART_KINDS[kind].slots;
 
-  // A student is helped by one of the same gender, so each of the pair narrows
-  // the other's list as soon as one of them is picked.
+  // A student is helped by one of the same gender or a member of the same
+  // family, so each of the pair narrows the other's list once one is picked.
   const [pair, setPair] = useState({
     STUDENT: part.values.STUDENT ?? suggested?.STUDENT?.value ?? "",
     ASSISTANT: part.values.ASSISTANT ?? suggested?.ASSISTANT?.value ?? "",
@@ -188,8 +188,7 @@ export function PartCard({
     const base = poolFor(pools, kind, slot, section);
     if (kind !== "STUDENT" || (slot !== "STUDENT" && slot !== "ASSISTANT")) return base;
     const other = slot === "STUDENT" ? pair.ASSISTANT : pair.STUDENT;
-    const gender = other ? pools.gender[other] : undefined;
-    return gender ? base.filter((option) => pools.gender[option.value] === gender) : base;
+    return other ? base.filter((option) => canPair(pools, option.value, other)) : base;
   };
 
   return (

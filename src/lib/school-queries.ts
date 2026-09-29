@@ -346,6 +346,48 @@ export async function approvedReaders() {
 }
 
 /**
+ * The families of the congregation, as far as the school needs them: a brother
+ * and a sister of the same family may handle a student assignment together
+ * (S-38 par. 12). Held as one congregation setting, like the approved readers,
+ * so it needs no table of its own. Members are picker values ("p:<id>" or
+ * "s:<id>"), so a family can hold publishers and students of the school alike.
+ */
+export const FAMILIES_KEY = "school:families";
+
+export type Family = { id: string; name: string; members: string[] };
+
+export async function loadFamilies(): Promise<Family[]> {
+  const row = await prisma.congregationSetting.findUnique({ where: { key: FAMILIES_KEY } });
+  if (!row) return [];
+  try {
+    const parsed: unknown = JSON.parse(row.value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((f): f is Family =>
+        Boolean(f) && typeof f.id === "string" && typeof f.name === "string" && Array.isArray(f.members))
+      .map((f) => ({ id: f.id, name: f.name, members: f.members.filter((m): m is string => typeof m === "string") }));
+  } catch {
+    return [];
+  }
+}
+
+export async function writeFamilies(families: Family[]) {
+  const value = JSON.stringify(families);
+  await prisma.congregationSetting.upsert({
+    where: { key: FAMILIES_KEY },
+    update: { value },
+    create: { key: FAMILIES_KEY, value },
+  });
+}
+
+/** Each member's family, keyed by picker value. */
+export function familyIndex(families: Family[]): Record<string, string> {
+  const index: Record<string, string> = {};
+  for (const family of families) for (const member of family.members) index[member] = family.id;
+  return index;
+}
+
+/**
  * Publishers under restrictions that have not been lifted are not eligible for
  * a part. Only the ids travel: the standing behind them is elders-only and is
  * never shown on a school page.
@@ -362,7 +404,7 @@ export async function restrictedPublisherIds(): Promise<Set<string>> {
  * Fills the picker pools from the two rolls and the approved-reader list.
  */
 export async function loadPools(): Promise<SchoolPools> {
-  const [publishers, students, readers, restricted] = await Promise.all([
+  const [publishers, students, readers, restricted, families] = await Promise.all([
     prisma.publisher.findMany({
       where: { status: { in: ROLL } },
       select: { id: true, firstName: true, lastName: true, gender: true, appointment: true },
@@ -375,6 +417,7 @@ export async function loadPools(): Promise<SchoolPools> {
     }),
     approvedReaderIds(),
     restrictedPublisherIds(),
+    loadFamilies(),
   ]);
 
   const eligible = publishers.filter((p) => !restricted.has(p.id));
@@ -407,6 +450,7 @@ export async function loadPools(): Promise<SchoolPools> {
     conductor: appointed.map(publisher),
     reader: eligible.filter((p) => readers.has(p.id)).map(publisher),
     gender,
+    family: familyIndex(families),
   };
 }
 

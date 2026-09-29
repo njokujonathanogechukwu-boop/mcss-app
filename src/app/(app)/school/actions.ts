@@ -16,7 +16,8 @@ import { assignmentFacts, WEEK_MS } from "@/lib/rotation";
 import { WorkbookError, readWorkbook, readWorkbookEntries, toPreview, type WorkbookEntries, type WorkbookPreview } from "@/lib/workbook";
 import { PastScheduleError, readPastSchedule, slotsForRole, type PastSchedule, type PastWeek } from "@/lib/past-schedule";
 import {
-  APPROVED_READERS_KEY, approvedReaderIds, matchName, personIndex, restrictedPublisherIds, type PersonMatch,
+  APPROVED_READERS_KEY, FAMILIES_KEY, approvedReaderIds, familyIndex, loadFamilies, matchName, personIndex,
+  restrictedPublisherIds, writeFamilies, type PersonMatch,
 } from "@/lib/school-queries";
 import {
   addWeekSchema, fieldErrors, historyFixSchema, partSchema, periodSchema, periodSettingsSchema,
@@ -446,8 +447,9 @@ export async function savePart(_prev: SchoolState, formData: FormData): Promise<
     }
   }
 
-  // A student is helped by one of the same gender: a brother helps a brother,
-  // a sister helps a sister. The pickers narrow themselves the same way.
+  // A student is helped by one of the same gender — a brother helps a brother,
+  // a sister helps a sister — or by a member of the student's own family
+  // (S-38 par. 12). The pickers narrow themselves the same way.
   if (parsed.data.kind === "STUDENT") {
     const studentSlot = assignments.find((a) => a.slot === "STUDENT");
     const assistantSlot = assignments.find((a) => a.slot === "ASSISTANT");
@@ -458,13 +460,20 @@ export async function savePart(_prev: SchoolState, formData: FormData): Promise<
           : a.studentId
             ? studentById.get(a.studentId)?.gender
             : undefined;
+      const refOf = (a: { publisherId: string | null; studentId: string | null }) =>
+        a.publisherId ? personRef("publisher", a.publisherId) : personRef("student", a.studentId!);
       const studentGender = genderOf(studentSlot);
       if (studentGender && studentGender !== genderOf(assistantSlot)) {
-        return {
-          errors: {
-            [slotField("ASSISTANT")]: "A student is assisted by one of the same gender: a brother helps a brother, a sister helps a sister.",
-          },
-        };
+        const family = familyIndex(await loadFamilies());
+        const shared = family[refOf(studentSlot)];
+        if (!shared || shared !== family[refOf(assistantSlot)]) {
+          return {
+            errors: {
+              [slotField("ASSISTANT")]:
+                "A student is assisted by one of the same gender, or by a member of the student's own family. Record the family under School → Families first.",
+            },
+          };
+        }
       }
     }
   }
@@ -860,6 +869,119 @@ export async function removeApprovedReader(_prev: SchoolState, formData: FormDat
 
   revalidateSchool();
   return { ok: `${displayName(publisher)} is off the list. Schedules already printed keep his name.` };
+}
+
+// ------------------------------------------------------------------ families
+
+/** The display name behind a picker value, from whichever roll it points at. */
+async function nameOfRef(ref: string): Promise<string | null> {
+  const person = parsePersonRef(ref);
+  if (!person) return null;
+  const row = person.kind === "publisher"
+    ? await prisma.publisher.findUnique({ where: { id: person.id }, select: { firstName: true, lastName: true } })
+    : await prisma.schoolStudent.findUnique({ where: { id: person.id }, select: { firstName: true, lastName: true } });
+  return row ? displayName(row) : null;
+}
+
+/**
+ * Records a family: the people who may handle a student assignment together
+ * whatever their gender (S-38 par. 12). One person belongs to one family.
+ */
+export async function createFamily(_prev: SchoolState, formData: FormData): Promise<SchoolState> {
+  const auth = await guard("school:write");
+  if (!auth.ok) return { error: auth.error };
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return { errors: { name: "Name the family, for instance by its surname." } };
+  const members = [...new Set(formData.getAll("member").map(String).filter((m) => parsePersonRef(m)))];
+  if (members.length < 2) return { errors: { member: "Choose at least two members of the family." } };
+
+  const families = await loadFamilies();
+  for (const member of members) {
+    const already = families.find((f) => f.members.includes(member));
+    if (already) {
+      return { errors: { member: `${(await nameOfRef(member)) ?? "One of them"} is already in the ${already.name} family.` } };
+    }
+    if (!(await nameOfRef(member))) return { errors: { member: "One of those names is no longer on the roll." } };
+  }
+
+  families.push({ id: crypto.randomUUID(), name, members });
+  await writeFamilies(families);
+  await recordAudit(
+    auth.session.userId, "created", "CongregationSetting", FAMILIES_KEY,
+    `Recorded the ${name} family with ${members.length} members for the school`,
+  );
+
+  revalidateSchool();
+  return { ok: `The ${name} family is recorded. Its members may now be paired on a student assignment.` };
+}
+
+export async function addFamilyMember(_prev: SchoolState, formData: FormData): Promise<SchoolState> {
+  const auth = await guard("school:write");
+  if (!auth.ok) return { error: auth.error };
+
+  const id = String(formData.get("familyId") ?? "");
+  const member = String(formData.get("member") ?? "");
+  if (!parsePersonRef(member)) return { errors: { member: "Choose who to add." } };
+
+  const families = await loadFamilies();
+  const family = families.find((f) => f.id === id);
+  if (!family) return { error: "That family is no longer on file." };
+  const already = families.find((f) => f.members.includes(member));
+  const name = await nameOfRef(member);
+  if (!name) return { errors: { member: "That name is no longer on the roll." } };
+  if (already) return { errors: { member: `${name} is already in the ${already.name} family.` } };
+
+  family.members.push(member);
+  await writeFamilies(families);
+  await recordAudit(
+    auth.session.userId, "updated", "CongregationSetting", FAMILIES_KEY,
+    `Added ${name} to the ${family.name} family`,
+  );
+
+  revalidateSchool();
+  return { ok: `${name} added to the ${family.name} family.` };
+}
+
+export async function removeFamilyMember(_prev: SchoolState, formData: FormData): Promise<SchoolState> {
+  const auth = await guard("school:write");
+  if (!auth.ok) return { error: auth.error };
+
+  const id = String(formData.get("familyId") ?? "");
+  const member = String(formData.get("member") ?? "");
+  const families = await loadFamilies();
+  const family = families.find((f) => f.id === id);
+  if (!family) return { error: "That family is no longer on file." };
+
+  family.members = family.members.filter((m) => m !== member);
+  await writeFamilies(families);
+  const name = (await nameOfRef(member)) ?? "That name";
+  await recordAudit(
+    auth.session.userId, "updated", "CongregationSetting", FAMILIES_KEY,
+    `Took ${name} out of the ${family.name} family`,
+  );
+
+  revalidateSchool();
+  return { ok: `${name} taken out of the ${family.name} family.` };
+}
+
+export async function deleteFamily(_prev: SchoolState, formData: FormData): Promise<SchoolState> {
+  const auth = await guard("school:write");
+  if (!auth.ok) return { error: auth.error };
+
+  const id = String(formData.get("familyId") ?? "");
+  const families = await loadFamilies();
+  const family = families.find((f) => f.id === id);
+  if (!family) return { error: "That family is no longer on file." };
+
+  await writeFamilies(families.filter((f) => f.id !== id));
+  await recordAudit(
+    auth.session.userId, "deleted", "CongregationSetting", FAMILIES_KEY,
+    `Removed the ${family.name} family from the school's records`,
+  );
+
+  revalidateSchool();
+  return { ok: `The ${family.name} family is removed. Assignments already on the schedules stay as they are.` };
 }
 
 // ----------------------------------------------------------------- documents
