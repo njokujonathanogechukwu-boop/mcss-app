@@ -30,7 +30,19 @@ function describe(record: GroupReportRecord): string {
   return parts.join(" · ");
 }
 
-function Recorded({ row }: { row: GroupMonthRow }) {
+function ChangeButton({ onChange }: { onChange: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onChange}
+      className="mt-2 rounded border border-rule-strong bg-surface px-3 py-1.5 text-xs font-medium text-ink hover:bg-paper"
+    >
+      Change this report
+    </button>
+  );
+}
+
+function Recorded({ row, onChange }: { row: GroupMonthRow; onChange?: () => void }) {
   if (!row.record) {
     return (
       <p className="border-t border-rule bg-paper px-4 py-3 text-xs text-ink-soft">
@@ -42,10 +54,13 @@ function Recorded({ row }: { row: GroupMonthRow }) {
     <div className="border-t border-rule bg-paper px-4 py-3">
       <p className="text-xs text-ink-soft">{describe(row.record)}</p>
       <p className="mt-1 text-xxs text-ink-faint">
-        {row.record.fromLink
-          ? "Sent through this group's link."
-          : "Entered by the secretary — it cannot be changed here."}
+        {!row.record.fromLink
+          ? "Entered by the secretary — it cannot be changed here."
+          : onChange
+            ? "Sent through this group's link. You can change it until the secretary sends the month to the branch."
+            : "Sent through this group's link."}
       </p>
+      {onChange && <ChangeButton onChange={onChange} />}
     </div>
   );
 }
@@ -256,6 +271,8 @@ export function GroupReportList({
   const [open, setOpen] = useState<string | null>(null);
   const [sentOutcomes, setSentOutcomes] = useState<Record<string, ReportOutcome>>({});
   const [revision, setRevision] = useState(0);
+  /** The row whose report sent through this link is being corrected. */
+  const [changing, setChanging] = useState<string | null>(null);
 
   // The ones still owed come first, so the month reads as a to-do list.
   const owed = (row: GroupMonthRow) =>
@@ -282,6 +299,13 @@ export function GroupReportList({
           const isOpen = open === row.id;
           const canSend = owed(row);
           const done = row.id in sentOutcomes;
+          // Sent through this link, now or before, and the month still open.
+          const canChange = editing && (done || Boolean(row.record?.fromLink && !row.noted));
+          const formOpen = isOpen && (changing === row.id || (!done && canSend));
+          const startChange = () => {
+            setChanging(row.id);
+            setRevision((n) => n + 1);
+          };
           const outcome = done ? sentOutcomes[row.id] : row.record?.outcome;
           const marker =
             outcome === "SHARED"
@@ -297,6 +321,7 @@ export function GroupReportList({
                 type="button"
                 onClick={() => {
                   setOpen(isOpen ? null : row.id);
+                  setChanging(null);
                   setRevision((n) => n + 1);
                 }}
                 aria-expanded={isOpen}
@@ -317,25 +342,31 @@ export function GroupReportList({
                   </span>
                 </span>
                 <span className="text-xs text-ink-faint">
-                  {done ? "Sent" : isOpen ? "Close" : canSend ? "Send" : row.record ? "View" : ""}
+                  {isOpen ? "Close" : done ? "Sent" : canSend ? "Send" : canChange ? "View or change" : row.record ? "View" : ""}
                 </span>
               </button>
-              {isOpen && done && (
-                <p className="border-t border-rule bg-pine-light px-4 py-3 text-xs text-pine-dark">
-                  Recorded — thank you. Close this and carry on with the next publisher.
-                </p>
-              )}
-              {isOpen && !done && canSend && (
+              {formOpen && (
                 <PublisherReport
                   key={`${row.id}-${revision}`}
                   row={row}
                   token={token}
                   year={year}
                   month={month}
-                  onSent={(sent) => setSentOutcomes((m) => ({ ...m, [row.id]: sent }))}
+                  onSent={(sent) => {
+                    setSentOutcomes((m) => ({ ...m, [row.id]: sent }));
+                    setChanging(null);
+                  }}
                 />
               )}
-              {isOpen && !done && !canSend && <Recorded row={row} />}
+              {isOpen && !formOpen && done && (
+                <div className="border-t border-rule bg-pine-light px-4 py-3 text-xs text-pine-dark">
+                  <p>Recorded — thank you. Close this and carry on with the next publisher.</p>
+                  {canChange && <ChangeButton onChange={startChange} />}
+                </div>
+              )}
+              {isOpen && !formOpen && !done && (
+                <Recorded row={row} onChange={canChange ? startChange : undefined} />
+              )}
             </li>
           );
         })}
@@ -344,8 +375,9 @@ export function GroupReportList({
       {editing ? (
         <p className="text-xs text-ink-soft">
           Send one at a time — each is recorded as soon as you press the button, so nothing is lost
-          if you close the page. A report the secretary has already entered is shown for you to
-          check but cannot be changed here.
+          if you close the page. A report you sent can be changed here until the secretary sends
+          the month to the branch; one the secretary entered himself is shown for you to check but
+          cannot be changed here.
         </p>
       ) : (
         <p className="text-xs text-ink-soft">

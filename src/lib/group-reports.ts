@@ -240,16 +240,20 @@ export async function saveGroupReport(
     };
   }
 
+  // A report sent through this link can be corrected through it until the month
+  // goes to the branch (checked above). One the secretary entered stays his:
+  // the link never overwrites it.
   const existing = await prisma.serviceReport.findUnique({
     where: { publisherId_year_month: { publisherId: publisher.id, year, month } },
-    select: { outcome: true },
+    select: { outcome: true, source: true },
   });
-  if (existing && existing.outcome !== "NO_REPORT") {
+  if (existing && existing.outcome !== "NO_REPORT" && existing.source !== "FORM") {
     return {
       ok: false,
-      error: `${displayName(publisher)} already has a report on file for ${monthLabel(year, month)}, so it was left as it is.`,
+      error: `${displayName(publisher)}'s report for ${monthLabel(year, month)} was entered by the secretary, so it was left as it is. Please tell him if it needs changing.`,
     };
   }
+  const changed = Boolean(existing && existing.source === "FORM" && existing.outcome !== "NO_REPORT");
 
   const shared = input.outcome === "SHARED";
   const pioneerStatusUsed =
@@ -281,7 +285,7 @@ export async function saveGroupReport(
     "group-report",
     "ServiceReport",
     publisher.id,
-    `${groupTitle(group)} sent the ${monthLabel(year, month)} report for ${name} ` +
+    `${groupTitle(group)} ${changed ? "changed" : "sent"} the ${monthLabel(year, month)} report for ${name} ` +
       `through the group's own link: ` +
       `${input.outcome === "SHARED" ? "shared" : input.outcome === "DID_NOT_PREACH" ? "did not preach" : "no report"}` +
       (shared && input.hours ? `, ${input.hours} hours` : "") +
@@ -289,5 +293,10 @@ export async function saveGroupReport(
       ".",
   );
 
-  return { ok: true, message: `Thank you — ${name} is recorded for ${monthLabel(year, month)}.` };
+  return {
+    ok: true,
+    message: changed
+      ? `Thank you — ${name}'s report for ${monthLabel(year, month)} is changed.`
+      : `Thank you — ${name} is recorded for ${monthLabel(year, month)}.`,
+  };
 }

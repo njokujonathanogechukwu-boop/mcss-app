@@ -15,7 +15,7 @@ export type GroupReportState = {
  * One publisher's month, sent by his group's overseer through the group's own
  * link. There is no session to check — the token in the URL is the authority,
  * so every write goes back through `saveGroupReport`, which re-reads the group
- * and refuses anything already on file.
+ * and refuses to overwrite a report the secretary entered.
  */
 export async function submitGroupReport(
   token: string,
