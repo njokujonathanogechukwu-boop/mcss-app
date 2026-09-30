@@ -4,8 +4,8 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
 import { REPORT_OUTCOMES, type ReportOutcome } from "@/lib/format";
-import { monthLabel } from "@/lib/service-year";
-import { closeMonth, reopenMonth, isClosed } from "@/lib/report-periods";
+import { monthLabel, calendarMonth } from "@/lib/service-year";
+import { closeMonth, reopenMonth, isClosed, setCollectingMonth } from "@/lib/report-periods";
 
 export type ReportsState = { error?: string; ok?: string; warnings?: string[] };
 
@@ -216,4 +216,47 @@ export async function reopenReportingMonth(
   revalidatePath("/dashboard");
 
   return { ok: `${monthLabel(year, month)} reopened.` };
+}
+
+/**
+ * Point the group links at a different month. The overseers' links can only
+ * ever send the month being collected, so this is what opens a month to them
+ * before the calendar would and what closes it again once it is done. A month
+ * that has not happened yet, or that has already gone to the branch, cannot be
+ * collected.
+ */
+export async function setCollectingMonthAction(
+  _prev: CloseState,
+  formData: FormData,
+): Promise<CloseState> {
+  const auth = await guard("report:write");
+  if (!auth.ok) return { error: auth.error };
+
+  const [yStr, mStr] = String(formData.get("period") ?? "").split("-");
+  const year = Number(yStr);
+  const month = Number(mStr);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    return { error: "That reporting month is not valid." };
+  }
+
+  const now = calendarMonth();
+  if (year * 12 + month > now.year * 12 + now.month) {
+    return { error: `${monthLabel(year, month)} has not happened yet.` };
+  }
+  if (await isClosed(year, month)) {
+    return { error: `${monthLabel(year, month)} has already been submitted to the branch.` };
+  }
+
+  await setCollectingMonth(year, month);
+  await recordAudit(
+    auth.session.userId,
+    "updated",
+    "CongregationSetting",
+    "collectingMonth",
+    `The group links are collecting ${monthLabel(year, month)}.`,
+  );
+  revalidatePath("/reports");
+  revalidatePath("/dashboard");
+
+  return { ok: `The group links are collecting ${monthLabel(year, month)}.` };
 }

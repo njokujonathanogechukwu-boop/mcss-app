@@ -4,8 +4,8 @@ import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { recordAudit } from "@/lib/auth";
 import { displayName, type ReportOutcome } from "@/lib/format";
-import { isClosed } from "@/lib/report-periods";
-import { monthLabel, reportingMonth } from "@/lib/service-year";
+import { isClosed, collectingMonth } from "@/lib/report-periods";
+import { monthLabel } from "@/lib/service-year";
 import { requestOrigin } from "@/lib/self-service";
 
 /**
@@ -75,7 +75,7 @@ export async function groupReportLink(groupId: string): Promise<string | null> {
   ]);
   const token = tokens.get(groupId);
   if (!origin || !token) return null;
-  const { year, month } = reportingMonth();
+  const { year, month } = await collectingMonth();
   return `${origin}/group/${token}?period=${year}-${month}`;
 }
 
@@ -89,7 +89,7 @@ export async function rotateGroupToken(groupId: string): Promise<string | null> 
   await prisma.serviceGroup.update({ where: { id: groupId }, data: { reportToken: token } });
   const origin = await requestOrigin();
   if (!origin) return null;
-  const { year, month } = reportingMonth();
+  const { year, month } = await collectingMonth();
   return `${origin}/group/${token}?period=${year}-${month}`;
 }
 
@@ -117,8 +117,8 @@ export type GroupMonthRow = {
  * The months the group's page offers: the one being collected now and the year
  * behind it, so an overseer can read back over the whole service year.
  */
-export function reviewMonths(span = 13) {
-  const { year, month } = reportingMonth();
+export async function reviewMonths(span = 13) {
+  const { year, month } = await collectingMonth();
   const out: { year: number; month: number; label: string }[] = [];
   for (let i = 0; i < span; i++) {
     const d = new Date(Date.UTC(year, month - 1 - i, 1));
@@ -222,7 +222,7 @@ export async function saveGroupReport(
 
   // An earlier month is on the group's page to be read, not rewritten — once
   // the secretary has taken a month forward, only he can change it.
-  const current = reportingMonth();
+  const current = await collectingMonth();
   if (year * 12 + month < current.year * 12 + current.month) {
     return {
       ok: false,

@@ -22,6 +22,11 @@ function calendarParts(now: Date): { year: number; month: number } {
   return { year, month };
 }
 
+/** The month the congregation is living in right now — the one reports can be collected for at the latest. */
+export function calendarMonth(now = new Date()): { year: number; month: number } {
+  return calendarParts(now);
+}
+
 export const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",

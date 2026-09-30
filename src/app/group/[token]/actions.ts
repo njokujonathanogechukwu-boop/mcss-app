@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { REPORT_OUTCOMES, type ReportOutcome } from "@/lib/format";
-import { reportingMonth } from "@/lib/service-year";
+import { collectingMonth } from "@/lib/report-periods";
 import { saveGroupReport } from "@/lib/group-reports";
 
 export type GroupReportState = {
@@ -31,7 +31,7 @@ export async function submitGroupReport(
     return { error: "That reporting month is not valid.", publisherId };
   }
 
-  const current = reportingMonth();
+  const current = await collectingMonth();
   if (year * 12 + month > current.year * 12 + current.month) {
     return { error: "That month is not being collected yet.", publisherId };
   }

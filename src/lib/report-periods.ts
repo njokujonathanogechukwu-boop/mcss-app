@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
+import { calendarMonth, reportingMonth } from "@/lib/service-year";
 
 /**
  * Closing a month records that the congregation's report went to the branch
@@ -53,6 +54,31 @@ export async function getPeriod(year: number, month: number): Promise<Period | n
 
 export async function isClosed(year: number, month: number): Promise<boolean> {
   return (await getPeriod(year, month)) !== null;
+}
+
+const COLLECTING_KEY = "collectingMonth";
+
+/**
+ * The month the group links are collecting for. Until the secretary chooses
+ * otherwise it is the month just ended, which is what the congregation is
+ * normally chasing. It is a setting rather than a rule because the links must
+ * follow the congregation's own pace: some months are sent to the branch early
+ * and the next month opens before the calendar says so.
+ */
+export async function collectingMonth(): Promise<{ year: number; month: number }> {
+  const row = await prisma.congregationSetting.findUnique({ where: { key: COLLECTING_KEY } });
+  const match = /^(\d{4})-(\d{1,2})$/.exec(row?.value ?? "");
+  const month = match ? Number(match[2]) : 0;
+  if (match && month >= 1 && month <= 12) return { year: Number(match[1]), month };
+  return reportingMonth();
+}
+
+export async function setCollectingMonth(year: number, month: number): Promise<void> {
+  await prisma.congregationSetting.upsert({
+    where: { key: COLLECTING_KEY },
+    update: { value: `${year}-${month}` },
+    create: { key: COLLECTING_KEY, value: `${year}-${month}` },
+  });
 }
 
 export type LateReport = S1Row & {
@@ -205,6 +231,18 @@ export async function closeMonth(
     create: { year, month, submittedById, onTimeIds, lateKeys, note: note ?? null },
     update: { submittedAt: new Date(), submittedById, onTimeIds, lateKeys, note: note ?? null },
   });
+
+  // Closing the month the group links are collecting moves them on by one, so
+  // an overseer's link is never left pointing at a month that has gone to the
+  // branch. Never ahead of the month the congregation is living in, though.
+  const collecting = await collectingMonth();
+  if (collecting.year === year && collecting.month === month) {
+    const next = new Date(Date.UTC(year, month, 1));
+    const now = calendarMonth();
+    if (next.getUTCFullYear() * 12 + next.getUTCMonth() + 1 <= now.year * 12 + now.month) {
+      await setCollectingMonth(next.getUTCFullYear(), next.getUTCMonth() + 1);
+    }
+  }
 
   return { onTimeCount: onTimeIds.length, lateCount: lateKeys.length };
 }

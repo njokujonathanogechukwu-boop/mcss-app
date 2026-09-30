@@ -4,15 +4,16 @@ import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import {
   reportingMonth, monthLabel, currentServiceYear, serviceYearMonths,
-  serviceYearLabel, serviceYearOptions, serviceYearOf,
+  serviceYearLabel, serviceYearOptions, serviceYearOf, calendarMonth,
 } from "@/lib/service-year";
 import { displayName, formatDate } from "@/lib/format";
 import { auxCovers } from "@/lib/auxiliary";
 import { PageHeader, Section, EmptyState } from "@/components/shell";
 import { Button } from "@/components/ui";
 import { ReportSheet, type SheetRow } from "./report-sheet";
-import { getPeriod, outstandingLateReports } from "@/lib/report-periods";
+import { getPeriod, outstandingLateReports, collectingMonth } from "@/lib/report-periods";
 import { CloseMonthButton, ReopenMonthButton } from "./close-month";
+import { CollectingMonthForm } from "./collecting-month";
 
 export const dynamic = "force-dynamic";
 
@@ -90,13 +91,30 @@ export default async function ReportsPage({
   const noReport = rows.filter((r) => r.existing?.outcome === "NO_REPORT").length;
   const outstanding = rows.length - rows.filter((r) => r.existing).length;
   const isOpenMonth = year === fallback.year && month === fallback.month;
-  const [period, outstandingLate] = await Promise.all([getPeriod(year, month), outstandingLateReports()]);
+  const [period, outstandingLate, collecting, closedPeriods] = await Promise.all([
+    getPeriod(year, month),
+    outstandingLateReports(),
+    collectingMonth(),
+    prisma.reportPeriod.findMany({ select: { year: true, month: true } }),
+  ]);
   const canWrite = can(user.role, "report:write");
   const hasEnded = year * 12 + month <= fallback.year * 12 + fallback.month;
   const periodOptions = [
     ...serviceYearMonths(currentServiceYear()),
     ...serviceYearMonths(currentServiceYear() - 1),
   ];
+
+  // The months a link could still be pointed at: the year behind this one, up
+  // to the month the congregation is living in, minus whatever has gone to the
+  // branch already.
+  const nowMonth = calendarMonth();
+  const closed = new Set(closedPeriods.map((p) => `${p.year}-${p.month}`));
+  const collectingOptions = Array.from({ length: 13 }, (_, i) => {
+    const d = new Date(Date.UTC(nowMonth.year, nowMonth.month - 1 - i, 1));
+    const y = d.getUTCFullYear();
+    const m = d.getUTCMonth() + 1;
+    return { year: y, month: m, label: monthLabel(y, m) };
+  }).filter((o) => !closed.has(`${o.year}-${o.month}`));
 
   return (
     <>
@@ -158,6 +176,19 @@ export default async function ReportsPage({
           </div>
         )}
       </div>
+
+      {canWrite && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded border border-rule bg-surface px-4 py-3">
+          <p className="text-sm text-ink-soft">
+            <span className="font-medium text-ink">
+              The group links are collecting {monthLabel(collecting.year, collecting.month)}.
+            </span>{" "}
+            An overseer can send reports for that month through his group&rsquo;s own link; every
+            earlier month is there for reading only.
+          </p>
+          <CollectingMonthForm current={collecting} options={collectingOptions} />
+        </div>
+      )}
 
       <form method="get" className="mb-6 grid gap-3 rounded border border-rule bg-surface p-4 sm:grid-cols-3">
         <div>

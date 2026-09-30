@@ -5,7 +5,7 @@ import {
   reviewMonths,
 } from "@/lib/group-reports";
 import { isClosed } from "@/lib/report-periods";
-import { monthLabel, reportingMonth } from "@/lib/service-year";
+import { monthLabel } from "@/lib/service-year";
 import { GroupReportList } from "./group-report-list";
 import { MonthPicker } from "./month-picker";
 
@@ -29,7 +29,7 @@ export default async function GroupReportPage({
   const sp = await searchParams;
   const group = await groupByToken(token);
 
-  const months = reviewMonths();
+  const months = await reviewMonths();
   const current = months[0];
   const wanted = months.find((m) => `${m.year}-${m.month}` === sp.period);
   const { year, month } = wanted ?? current;

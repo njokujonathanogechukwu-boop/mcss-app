@@ -3,8 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import {
-  currentServiceYear, serviceYearMonths, serviceYearLabel, serviceYearSpan, reportingMonth, monthLabel, serviceYearOptions, serviceYearOf, dayPart,
+  currentServiceYear, serviceYearMonths, serviceYearLabel, serviceYearSpan, monthLabel, serviceYearOptions, serviceYearOf, dayPart,
 } from "@/lib/service-year";
+import { collectingMonth } from "@/lib/report-periods";
 import { analyse, parsePeriod, periodKey } from "@/lib/analysis";
 import { formatDate, formatTimeRange, displayName } from "@/lib/format";
 import { PageHeader, Section, DataTable, Th, Td, EmptyState, Notice } from "@/components/shell";
@@ -22,7 +23,7 @@ export default async function DashboardPage({
 
   const now = new Date();
   const thisYear = currentServiceYear(now);
-  const collecting = reportingMonth(now);
+  const collecting = await collectingMonth();
 
   // The month being looked at defaults to the one reports are being collected
   // for; the strip follows whichever service year that month falls in.
