@@ -4,6 +4,7 @@ import { displayName } from "@/lib/format";
 import { monthLabel } from "@/lib/service-year";
 import { emailConfigured, sendEmail } from "@/lib/email";
 import { isClosed } from "@/lib/report-periods";
+import { auxCovers } from "@/lib/auxiliary";
 import { ensureGroupTokens } from "@/lib/group-reports";
 import { requestOrigin } from "@/lib/self-service";
 
@@ -26,7 +27,9 @@ export type ReminderGroup = {
   overseer: ReminderPerson | null;
   assistant: ReminderPerson | null;
   members: number;
-  missing: { name: string; noted: boolean }[];
+  missing: MissingReport[];
+  /** Everyone in the group pioneering this month, who reports hours. */
+  pioneers: { name: string; role: string }[];
   message: string;
   /** Recipient addresses for this group: the overseer, else the assistant. */
   emails: string[];
@@ -37,6 +40,41 @@ export type ReminderGroup = {
    */
   link: string | null;
 };
+
+export type MissingReport = {
+  name: string;
+  /** The secretary noted that no report came in. */
+  noted: boolean;
+  /** "Regular pioneer", "Auxiliary pioneer" or "Special pioneer" for this month; null otherwise. */
+  pioneer: string | null;
+  /** A pioneer whose report is in but carries no hours. */
+  hoursOnly: boolean;
+};
+
+/**
+ * Who pioneers in a given month, the way the report sheet reads it: a regular
+ * or special pioneer every month, an auxiliary pioneer in the months an
+ * approval covers (or every month while none is recorded for them).
+ */
+function pioneerRole(
+  p: { pioneerStatus: string; auxApprovals: { startYear: number; startMonth: number; months: number | null }[] },
+  year: number,
+  month: number,
+): string | null {
+  if (p.pioneerStatus === "REGULAR") return "Regular pioneer";
+  if (p.pioneerStatus === "SPECIAL") return "Special pioneer";
+  if (p.auxApprovals.some((a) => auxCovers(a, year, month))) return "Auxiliary pioneer";
+  if (p.pioneerStatus === "AUXILIARY" && p.auxApprovals.length === 0) return "Auxiliary pioneer";
+  return null;
+}
+
+/** One line of the reminder for someone still to report. */
+function missingLine(m: MissingReport): string {
+  if (m.hoursOnly) return `• ${m.name} — ${m.pioneer}: report received, but without hours`;
+  const notes = [m.pioneer ? `${m.pioneer}, report with hours` : null, m.noted ? "no report received" : null]
+    .filter(Boolean);
+  return `• ${m.name}${notes.length ? ` — ${notes.join("; ")}` : ""}`;
+}
 
 export type ReminderDigest = {
   year: number;
@@ -82,6 +120,8 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
         lastName: true,
         groupId: true,
         sinceDate: true,
+        pioneerStatus: true,
+        auxApprovals: { select: { startYear: true, startMonth: true, months: true } },
         group: {
           select: {
             number: true,
@@ -90,7 +130,7 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
             assistant: { select: { firstName: true, lastName: true, gender: true, phone: true, email: true } },
           },
         },
-        reports: { where: { year, month }, select: { outcome: true } },
+        reports: { where: { year, month }, select: { outcome: true, hours: true } },
       },
       orderBy: [{ group: { number: "asc" } }, { lastName: "asc" }, { firstName: "asc" }],
     }),
@@ -107,7 +147,8 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
     overseer: ReminderPerson | null;
     assistant: ReminderPerson | null;
     members: number;
-    missing: { name: string; noted: boolean }[];
+    missing: MissingReport[];
+    pioneers: { name: string; role: string }[];
   };
   const buckets = new Map<string, Bucket>();
 
@@ -124,13 +165,20 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
         assistant: p.group?.assistant ?? null,
         members: 0,
         missing: [],
+        pioneers: [],
       };
       buckets.set(key, bucket);
     }
     bucket.members++;
+    const name = displayName(p);
+    const pioneer = pioneerRole(p, year, month);
+    if (pioneer) bucket.pioneers.push({ name, role: pioneer });
     const report = p.reports[0];
     if (!report || report.outcome === "NO_REPORT") {
-      bucket.missing.push({ name: displayName(p), noted: report?.outcome === "NO_REPORT" });
+      bucket.missing.push({ name, noted: report?.outcome === "NO_REPORT", pioneer, hoursOnly: false });
+    } else if (pioneer && report.outcome === "SHARED" && report.hours == null) {
+      // A pioneer's report is not complete without the hours.
+      bucket.missing.push({ name, noted: false, pioneer, hoursOnly: true });
     }
   }
 
@@ -161,8 +209,16 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
       "",
       `These ${where} have not sent their field service report for ${label}:`,
       "",
-      ...g.missing.map((m) => `• ${m.name}${m.noted ? " (no report received)" : ""}`),
+      ...g.missing.map(missingLine),
       "",
+      ...(g.pioneers.length
+        ? [
+            `The pioneers in the group for ${label}, who report their hours as well:`,
+            "",
+            ...g.pioneers.map((p) => `• ${p.name} — ${p.role}`),
+            "",
+          ]
+        : []),
       ...(closed
         ? [
             `The congregation's report for ${label} has already been submitted to the branch office,`,
@@ -205,6 +261,7 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
       assistant: g.assistant,
       members: g.members,
       missing: g.missing,
+      pioneers: g.pioneers,
       message,
       emails,
       link,
