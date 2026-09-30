@@ -8,6 +8,7 @@ import { emailConfigured } from "@/lib/email";
 import { addressed, gatherReminders, waHref } from "@/lib/reminders";
 import { ReminderCard } from "./reminder-card";
 import { SendNow } from "./send-now";
+import { StatusCard } from "./status-card";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,7 @@ export default async function RemindersPage({
   const month = Number(mStr) || fallback.month;
   const showContact = can(user.role, "publisher:readContact");
 
-  const { label, groups, totalMissing, closed } = await gatherReminders(year, month);
+  const { label, groups, totalMissing, closed, status } = await gatherReminders(year, month);
 
   const cards = groups.map((g) => ({
     key: g.key,
@@ -134,6 +135,10 @@ export default async function RemindersPage({
           WhatsApp and copy are done by you. Email reminders run on the schedule above.
         </p>
       </form>
+
+      <Section title="Status update">
+        <StatusCard message={status} />
+      </Section>
 
       {cards.length === 0 ? (
         <EmptyState

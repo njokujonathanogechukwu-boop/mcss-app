@@ -84,7 +84,35 @@ export type ReminderDigest = {
   closed: boolean;
   groups: ReminderGroup[];
   totalMissing: number;
+  /** Every group with publishers on the roll, reported or not, for the status update. */
+  summary: { title: string; members: number; missing: number }[];
+  /** The status update for the congregation's general group, ready to paste. */
+  status: string;
 };
+
+/**
+ * How far each group has got with the month's reports, one line a group, for
+ * posting in the congregation's general group. Names are left out on purpose:
+ * it goes to everyone, so it says only how many are still to come.
+ */
+export function statusMessage(
+  label: string,
+  summary: { title: string; members: number; missing: number }[],
+): string {
+  const people = (n: number) => `${n} publisher${n === 1 ? "" : "s"}`;
+  const members = summary.reduce((t, g) => t + g.members, 0);
+  const missing = summary.reduce((t, g) => t + g.missing, 0);
+  return [
+    `Field service report status for ${label} (hours, Bible studies and remarks):`,
+    "",
+    ...summary.map((g) =>
+      `${g.title} - ${people(g.members)} - ${g.missing ? `${g.missing} yet to submit` : "All submitted ✅"}`),
+    "",
+    missing
+      ? `Total: ${missing} of ${people(members)} yet to submit.`
+      : `Total: all ${people(members)} submitted ✅ Thank you!`,
+  ].join("\n");
+}
 
 /** How the overseer is addressed in the reminder, without guessing a title. */
 export function addressed(p: ReminderPerson | null | undefined): string | null {
@@ -268,6 +296,10 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
     };
   });
 
+  const summary = [...buckets.values()]
+    .sort((a, b) => ((a.number ?? 9999) - (b.number ?? 9999)) || (a.name?.localeCompare(b.name ?? "") ?? 0))
+    .map((b) => ({ title: b.number ? `Group ${b.number}` : "No group", members: b.members, missing: b.missing.length }));
+
   return {
     year,
     month,
@@ -275,6 +307,8 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
     closed,
     groups,
     totalMissing: groups.reduce((t, g) => t + g.missing.length, 0),
+    summary,
+    status: statusMessage(label, summary),
   };
 }
 
