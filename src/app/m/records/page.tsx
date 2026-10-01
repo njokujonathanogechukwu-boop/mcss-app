@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
-import { reviewPublishers } from "@/lib/completeness";
+import { reviewPublishers, withholdValues } from "@/lib/completeness";
 import { MobileRecordsList } from "./mobile-records-list";
 
 export const dynamic = "force-dynamic";
@@ -56,6 +56,9 @@ export default async function MobileRecordsPage() {
     { includeContact: showContact },
   );
 
+  // Who may fill the gaps but not read the records: the values already on
+  // file never leave the server for them, and only empty fields are offered.
+  const gapsOnly = can(user.role, "records:fix") && !can(user.role, "publisher:write");
   const flags = {
     canEditPublisher: can(user.role, "records:fix"),
     canEditContact: can(user.role, "records:fix") && showContact,
@@ -67,7 +70,7 @@ export default async function MobileRecordsPage() {
 
   return (
     <MobileRecordsList
-      reviews={incomplete}
+      reviews={gapsOnly ? withholdValues(incomplete) : incomplete}
       groups={groups}
       month={thisMonth}
       flags={flags}

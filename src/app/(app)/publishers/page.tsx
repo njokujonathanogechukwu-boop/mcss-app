@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
-import { displayName, formatDate, toDateInput, APPOINTMENT_LABELS, PIONEER_LABELS, STATUS_LABELS, STATUS_TONE, GENDER_LABELS } from "@/lib/format";
+import { displayName, formatDate, toDateInput, APPOINTMENT_LABELS, PIONEER_LABELS, STATUS_LABELS, STATUS_TONE, GENDER_LABELS, REMOVAL_STATUSES, isRemoval } from "@/lib/format";
 import { PageHeader, DataTable, Th, EmptyState } from "@/components/shell";
 import { Button } from "@/components/ui";
 import { currentServiceYear } from "@/lib/service-year";
@@ -18,6 +18,15 @@ export default async function PublishersPage({
 }) {
   const user = await requirePermission("publisher:read");
   const sp = await searchParams;
+  // Removals are the elders' to see; for everyone else those publishers are
+  // left off the list, and the standing filter does not offer them.
+  const seesRemovals = can(user.role, "standing:read");
+  const statusFilter: Prisma.PublisherWhereInput["status"] =
+    sp.status && (seesRemovals || !isRemoval(sp.status))
+      ? (sp.status as Prisma.EnumPublisherStatusFilter["equals"])
+      : seesRemovals
+        ? undefined
+        : { notIn: [...REMOVAL_STATUSES] };
 
   const where: Prisma.PublisherWhereInput = {
     ...(sp.q
@@ -29,7 +38,7 @@ export default async function PublishersPage({
         }
       : {}),
     ...(sp.group ? { groupId: sp.group } : {}),
-    ...(sp.status ? { status: sp.status as Prisma.EnumPublisherStatusFilter["equals"] } : {}),
+    ...(statusFilter ? { status: statusFilter } : {}),
     ...(sp.appointment
       ? { appointment: sp.appointment as Prisma.EnumAppointmentFilter["equals"] }
       : {}),
@@ -64,7 +73,7 @@ export default async function PublishersPage({
       take: 300,
     }),
     prisma.serviceGroup.findMany({ where: { active: true }, orderBy: { number: "asc" } }),
-    prisma.publisher.count(),
+    prisma.publisher.count(seesRemovals ? undefined : { where: { status: { notIn: [...REMOVAL_STATUSES] } } }),
   ]);
 
   const showContact = can(user.role, "publisher:readContact");
@@ -132,7 +141,7 @@ export default async function PublishersPage({
           <label htmlFor="status" className="field-label">Standing</label>
           <select id="status" name="status" defaultValue={sp.status ?? ""} className="field-input">
             <option value="">Any</option>
-            {Object.entries(STATUS_LABELS).map(([v, l]) => (
+            {Object.entries(STATUS_LABELS).filter(([v]) => seesRemovals || !isRemoval(v)).map(([v, l]) => (
               <option key={v} value={v}>{l}</option>
             ))}
           </select>

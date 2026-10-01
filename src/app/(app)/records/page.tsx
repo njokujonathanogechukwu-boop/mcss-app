@@ -2,7 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
-import { reviewPublishers } from "@/lib/completeness";
+import { reviewPublishers, withholdValues } from "@/lib/completeness";
 import { PageHeader, Section, EmptyState } from "@/components/shell";
 import { Button } from "@/components/ui";
 import { ReviewTable } from "./review-table";
@@ -73,6 +73,9 @@ export default async function RecordsPage({
     { includeContact: showContact },
   );
 
+  // Who may fill the gaps but not read the records: the values already on
+  // file never leave the server for them, and only empty fields are offered.
+  const gapsOnly = can(user.role, "records:fix") && !can(user.role, "publisher:write");
   const flags = {
     canEditPublisher: can(user.role, "records:fix"),
     canEditContact: can(user.role, "records:fix") && showContact,
@@ -178,7 +181,7 @@ export default async function RecordsPage({
         />
       ) : (
         <Section title={`${filtered.length} publisher${filtered.length === 1 ? "" : "s"} to review`}>
-          <ReviewTable reviews={filtered} groups={groups} month={thisMonth} flags={flags} />
+          <ReviewTable reviews={gapsOnly ? withholdValues(filtered) : filtered} groups={groups} month={thisMonth} flags={flags} />
         </Section>
       )}
     </>

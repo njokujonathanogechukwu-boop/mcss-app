@@ -57,7 +57,33 @@ export type Review = {
     emergencyContactPhone: string;
   };
   issueCount: number;
+  /**
+   * Set when the values above were withheld from the viewer: which details are
+   * already on file, so the form offers only the empty ones to fill.
+   */
+  filled?: Record<FillableField, boolean>;
 };
+
+export const FILLABLE_FIELDS = [
+  "dateOfBirth", "baptismDate", "phone", "email", "address", "emergencyContactName", "emergencyContactPhone",
+] as const;
+export type FillableField = (typeof FILLABLE_FIELDS)[number];
+
+/**
+ * The reviews as someone who may fill gaps but not read the records sees
+ * them: every value on file is blanked before it leaves the server, and only
+ * which fields are already filled is kept.
+ */
+export function withholdValues(reviews: Review[]): Review[] {
+  return reviews.map((r) => ({
+    ...r,
+    filled: Object.fromEntries(FILLABLE_FIELDS.map((f) => [f, r.values[f] !== ""])) as Record<FillableField, boolean>,
+    values: {
+      dateOfBirth: "", baptismDate: "", isBaptized: r.values.isBaptized,
+      phone: "", email: "", address: "", emergencyContactName: "", emergencyContactPhone: "",
+    },
+  }));
+}
 
 export type ReviewSummary = {
   total: number;

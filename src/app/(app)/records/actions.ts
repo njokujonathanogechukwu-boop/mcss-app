@@ -7,6 +7,7 @@ import { guard, recordAudit } from "@/lib/auth";
 import { displayName } from "@/lib/format";
 import { monthLabel } from "@/lib/service-year";
 import { recordFixSchema, fieldErrors } from "@/lib/validation";
+import { FILLABLE_FIELDS } from "@/lib/completeness";
 
 export type RecordFixState = {
   ok?: boolean;
@@ -60,9 +61,23 @@ export async function saveRecordFix(_prev: RecordFixState, formData: FormData): 
 
   const publisher = await prisma.publisher.findUnique({
     where: { id: input.publisherId },
-    select: { id: true, firstName: true, lastName: true, groupId: true, pioneerStatus: true },
+    select: {
+      id: true, firstName: true, lastName: true, groupId: true, pioneerStatus: true,
+      dateOfBirth: true, baptismDate: true, phone: true, email: true, address: true,
+      emergencyContactName: true, emergencyContactPhone: true,
+    },
   });
   if (!publisher) return { error: "That publisher no longer exists." };
+
+  // Someone who may fill gaps but not read the records is never shown what is
+  // on file, so he can only add a detail that is still missing — never
+  // replace one. The form offers only the empty fields; this holds the line.
+  if (!canPublisher.ok) {
+    for (const field of FILLABLE_FIELDS) {
+      const current = publisher[field];
+      if (current !== null && current !== "") input[field] = undefined;
+    }
+  }
 
   const done: string[] = [];
   const notes: string[] = [];

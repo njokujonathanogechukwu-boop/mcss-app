@@ -5,7 +5,7 @@ import { TextField, TextArea, SelectField, CheckField } from "@/components/field
 import { SubmitButton } from "@/components/ui";
 import { Notice } from "@/components/shell";
 import { saveRecordFix, type RecordFixState } from "./actions";
-import type { Review, ReviewMonth } from "@/lib/completeness";
+import type { FillableField, Review, ReviewMonth } from "@/lib/completeness";
 
 function periodValue(m: ReviewMonth): string {
   return `${m.year}-${String(m.month).padStart(2, "0")}`;
@@ -26,8 +26,13 @@ export function RecordFixForm({
   const [aux, setAux] = useState(false);
   const isPioneer = review.pioneerStatus !== "NONE";
 
-  const showBio = flags.canEditPublisher;
-  const showContact = flags.canEditContact;
+  // With the values withheld, only the details still empty are offered: the
+  // viewer fills gaps without reading what is already on file.
+  const offer = (field: FillableField) => !review.filled || !review.filled[field];
+  const showBio = flags.canEditPublisher && (offer("dateOfBirth") || offer("baptismDate"));
+  const showContact =
+    flags.canEditContact &&
+    (["phone", "email", "address", "emergencyContactName", "emergencyContactPhone"] as const).some(offer);
   const showGroup = flags.canEditGroup;
   const showReport = flags.canEditReport;
 
@@ -48,21 +53,25 @@ export function RecordFixForm({
       {showBio && (
         <fieldset className="grid gap-4 sm:grid-cols-2">
           <legend className="mb-2 w-full border-b border-rule pb-1 font-serif text-sm">Bio-data</legend>
-          <TextField
-            label="Date of birth"
-            name="dateOfBirth"
-            type="date"
-            defaultValue={review.values.dateOfBirth}
-            error={state.errors?.dateOfBirth}
-          />
-          <TextField
-            label="Date of baptism"
-            name="baptismDate"
-            type="date"
-            defaultValue={review.values.baptismDate}
-            hint={review.values.isBaptized ? undefined : "Leave blank for an unbaptized publisher."}
-            error={state.errors?.baptismDate}
-          />
+          {offer("dateOfBirth") && (
+            <TextField
+              label="Date of birth"
+              name="dateOfBirth"
+              type="date"
+              defaultValue={review.values.dateOfBirth}
+              error={state.errors?.dateOfBirth}
+            />
+          )}
+          {offer("baptismDate") && (
+            <TextField
+              label="Date of baptism"
+              name="baptismDate"
+              type="date"
+              defaultValue={review.values.baptismDate}
+              hint={review.values.isBaptized ? undefined : "Leave blank for an unbaptized publisher."}
+              error={state.errors?.baptismDate}
+            />
+          )}
         </fieldset>
       )}
 
@@ -84,43 +93,53 @@ export function RecordFixForm({
         <fieldset className="space-y-4">
           <legend className="mb-2 w-full border-b border-rule pb-1 font-serif text-sm">How to reach them</legend>
           <div className="grid gap-4 sm:grid-cols-2">
-            <TextField
-              label="Phone"
-              name="phone"
-              type="tel"
-              defaultValue={review.values.phone}
-              placeholder="+234…"
-              error={state.errors?.phone}
-            />
-            <TextField
-              label="Email"
-              name="email"
-              type="email"
-              defaultValue={review.values.email}
-              error={state.errors?.email}
-            />
+            {offer("phone") && (
+              <TextField
+                label="Phone"
+                name="phone"
+                type="tel"
+                defaultValue={review.values.phone}
+                placeholder="+234…"
+                error={state.errors?.phone}
+              />
+            )}
+            {offer("email") && (
+              <TextField
+                label="Email"
+                name="email"
+                type="email"
+                defaultValue={review.values.email}
+                error={state.errors?.email}
+              />
+            )}
           </div>
-          <TextArea
-            label="Address"
-            name="address"
-            rows={2}
-            defaultValue={review.values.address}
-            error={state.errors?.address}
-          />
+          {offer("address") && (
+            <TextArea
+              label="Address"
+              name="address"
+              rows={2}
+              defaultValue={review.values.address}
+              error={state.errors?.address}
+            />
+          )}
           <div className="grid gap-4 sm:grid-cols-2">
-            <TextField
-              label="Emergency contact"
-              name="emergencyContactName"
-              defaultValue={review.values.emergencyContactName}
-              error={state.errors?.emergencyContactName}
-            />
-            <TextField
-              label="Emergency contact phone"
-              name="emergencyContactPhone"
-              type="tel"
-              defaultValue={review.values.emergencyContactPhone}
-              error={state.errors?.emergencyContactPhone}
-            />
+            {offer("emergencyContactName") && (
+              <TextField
+                label="Emergency contact"
+                name="emergencyContactName"
+                defaultValue={review.values.emergencyContactName}
+                error={state.errors?.emergencyContactName}
+              />
+            )}
+            {offer("emergencyContactPhone") && (
+              <TextField
+                label="Emergency contact phone"
+                name="emergencyContactPhone"
+                type="tel"
+                defaultValue={review.values.emergencyContactPhone}
+                error={state.errors?.emergencyContactPhone}
+              />
+            )}
           </div>
         </fieldset>
       )}

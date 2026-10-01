@@ -8,7 +8,7 @@ import {
   currentServiceYear, serviceYearMonths, serviceYearLabel, serviceYearOptions,
 } from "@/lib/service-year";
 import {
-  displayName, formatDate, APPOINTMENT_LABELS, PIONEER_LABELS, STATUS_LABELS, reportsHours,
+  displayName, formatDate, APPOINTMENT_LABELS, PIONEER_LABELS, STATUS_LABELS, reportsHours, REMOVAL_STATUSES, isRemoval,
   STANDING_LABELS, STANDING_TONE,
 } from "@/lib/format";
 import { PageHeader, Section, DataTable, Th, Td, Notice, Panel } from "@/components/shell";
@@ -50,6 +50,9 @@ export default async function PublisherPage({
     },
   });
   if (!publisher) notFound();
+  // A removal is the elders' matter: to anyone else the record is not there.
+  const seesRemovals = can(user.role, "standing:read");
+  if (!seesRemovals && isRemoval(publisher.status)) notFound();
   const held = [
     ...publisher.privilegeAssignments.map((a) => `${a.privilege.name} · ${a.role.charAt(0)}${a.role.slice(1).toLowerCase()}`),
     ...publisher.privileges,
@@ -79,6 +82,7 @@ export default async function PublisherPage({
     }),
     // The publishers list's own order, surname then first name.
     prisma.publisher.findMany({
+      where: seesRemovals ? undefined : { status: { notIn: [...REMOVAL_STATUSES] } },
       select: { id: true, firstName: true, lastName: true },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }, { id: "asc" }],
     }),

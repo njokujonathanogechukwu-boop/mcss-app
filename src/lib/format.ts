@@ -95,6 +95,14 @@ export const STANDING_LABELS: Record<string, string> = {
 
 export type BadgeTone = "good" | "warn" | "bad" | "neutral";
 
+/**
+ * A removal is the elders' matter (standing:read). Pages anyone else can open
+ * leave publishers with these statuses out altogether, rather than showing them
+ * without the reason.
+ */
+export const REMOVAL_STATUSES = ["DISFELLOWSHIPPED", "DISASSOCIATED"] as const;
+export const isRemoval = (status: string) => (REMOVAL_STATUSES as readonly string[]).includes(status);
+
 export const STATUS_TONE: Record<string, BadgeTone> = {
   ACTIVE: "good",
   IRREGULAR: "warn",
