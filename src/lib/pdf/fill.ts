@@ -199,6 +199,8 @@ export type S1FillData = {
   congregation: string;
   monthLabel: string;
   activePublishers: number;
+  /** Average weekend meeting attendance for the month; null with none on file. */
+  weekendAverage?: number | null;
   rows: {
     publishers: { reports: number; studies: number };
     auxiliary: { reports: number; studies: number; hours: number };
@@ -223,6 +225,7 @@ export async function fillS1(template: Buffer, data: S1FillData, opts?: FillOpti
   setText(named(/congregation|cong/) , data.congregation);
   setText(named(/month|period/), data.monthLabel);
   setText(named(/active/), data.activePublishers);
+  setText(named(/weekend/), data.weekendAverage ?? "");
   setText(named(/memorial.*attend|attend.*memorial/), data.memorial?.attendance ?? "");
   setText(named(/partaker/), data.memorial?.partakers ?? "");
 

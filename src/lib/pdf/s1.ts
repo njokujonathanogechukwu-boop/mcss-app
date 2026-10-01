@@ -13,6 +13,8 @@ export type S1Summary = S1FillData & {
   lateCount: number;
   closed: boolean;
   closedAt: Date | null;
+  /** Weekend meetings with attendance on file this month, behind the average. */
+  weekendMeetings: number;
 };
 
 /**
@@ -27,13 +29,40 @@ export type S1Summary = S1FillData & {
  * deliberately left out of the congregation's totals.
  */
 export async function congregationSummary(year: number, month: number): Promise<S1Summary> {
-  const [source, activePublishers, memorial] = await Promise.all([
+  const monthStart = new Date(Date.UTC(year, month - 1, 1));
+  const nextMonth = new Date(Date.UTC(year, month, 1));
+  // The six report months ending with this one, as the hub counts active
+  // publishers: everyone who reported at least once in them.
+  const window = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(Date.UTC(year, month - 1 - i, 1));
+    return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 };
+  });
+
+  const [source, reportedRecently, memorial, weekends] = await Promise.all([
     reportsForS1(year, month),
-    prisma.publisher.count({ where: { status: { in: ["ACTIVE", "IRREGULAR"] } } }),
+    // A NO_REPORT row records that no report came, so it is not one. People
+    // who have since left the congregation are no longer counted in it.
+    prisma.serviceReport.findMany({
+      where: {
+        outcome: { in: ["SHARED", "DID_NOT_PREACH"] },
+        OR: window,
+        publisher: { status: { notIn: ["TRANSFERRED_OUT", "DECEASED", "DISFELLOWSHIPPED", "DISASSOCIATED"] } },
+      },
+      select: { publisherId: true },
+      distinct: ["publisherId"],
+    }),
     prisma.memorialRecord.findFirst({
-      where: { year, date: { gte: new Date(Date.UTC(year, month - 1, 1)), lt: new Date(Date.UTC(year, month, 1)) } },
+      where: { year, date: { gte: monthStart, lt: nextMonth } },
+    }),
+    prisma.meetingAttendance.findMany({
+      where: { meetingType: "WEEKEND", date: { gte: monthStart, lt: nextMonth } },
+      select: { inPerson: true, zoom: true },
     }),
   ]);
+  const activePublishers = reportedRecently.length;
+  const weekendAverage = weekends.length
+    ? Math.round(weekends.reduce((t, w) => t + w.inPerson + w.zoom, 0) / weekends.length)
+    : null;
 
   const reports = source.rows;
   const bucket = (status: string) => {
@@ -55,6 +84,8 @@ export async function congregationSummary(year: number, month: number): Promise<
     congregation: "Maitama",
     monthLabel: monthLabel(year, month),
     activePublishers,
+    weekendAverage,
+    weekendMeetings: weekends.length,
     rows: {
       publishers: { reports: publishers.reports, studies: publishers.studies },
       auxiliary,
@@ -100,10 +131,21 @@ async function drawS1(d: S1Summary): Promise<Uint8Array> {
   rule(doc, L, R, y, 1, INK);
   y -= 26;
 
-  text(doc, "Active publishers", L, y, { size: 9 });
+  text(doc, "All active publishers", L, y, { size: 9 });
   textRight(doc, String(d.activePublishers), R, y, { size: 10, bold: true });
   y -= 8;
-  text(doc, "Publishers on file marked active or irregular at the time of this report.", L, y - 2, { size: 7.5, color: SOFT });
+  text(doc, "Everyone in the congregation who reported at least once in the last six months.", L, y - 2, { size: 7.5, color: SOFT });
+  y -= 22;
+  text(doc, "Average weekend meeting attendance", L, y, { size: 9 });
+  textRight(doc, d.weekendAverage == null ? "—" : String(d.weekendAverage), R, y, { size: 10, bold: true });
+  y -= 8;
+  text(
+    doc,
+    d.weekendMeetings
+      ? `Over ${d.weekendMeetings} weekend meeting${d.weekendMeetings === 1 ? "" : "s"} recorded this month, in person and by video.`
+      : "No weekend attendance recorded for this month yet.",
+    L, y - 2, { size: 7.5, color: SOFT },
+  );
   y -= 26;
 
   const c = { label: L, reports: L + 250, studies: L + 350, hours: R };

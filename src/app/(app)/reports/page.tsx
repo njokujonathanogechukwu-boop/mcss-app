@@ -14,6 +14,8 @@ import { ReportSheet, type SheetRow } from "./report-sheet";
 import { getPeriod, outstandingLateReports, collectingMonth } from "@/lib/report-periods";
 import { CloseMonthButton, ReopenMonthButton } from "./close-month";
 import { CollectingMonthForm } from "./collecting-month";
+import { HubFigures } from "./hub-figures";
+import { congregationSummary } from "@/lib/pdf/s1";
 
 export const dynamic = "force-dynamic";
 
@@ -91,11 +93,23 @@ export default async function ReportsPage({
   const noReport = rows.filter((r) => r.existing?.outcome === "NO_REPORT").length;
   const outstanding = rows.length - rows.filter((r) => r.existing).length;
   const isOpenMonth = year === fallback.year && month === fallback.month;
-  const [period, outstandingLate, collecting, closedPeriods] = await Promise.all([
+  const [period, outstandingLate, collecting, closedPeriods, hub, congregationOutstanding] = await Promise.all([
     getPeriod(year, month),
     outstandingLateReports(),
     collectingMonth(),
     prisma.reportPeriod.findMany({ select: { year: true, month: true } }),
+    congregationSummary(year, month),
+    // Across every group, whatever the sheet is filtered to: the hub figures
+    // are the congregation's.
+    sp.group
+      ? prisma.publisher.count({
+          where: {
+            status: { in: ["ACTIVE", "IRREGULAR"] },
+            OR: [{ sinceDate: null }, { sinceDate: { lte: monthEnd } }],
+            reports: { none: { year, month } },
+          },
+        })
+      : Promise.resolve(outstanding),
   ]);
   const canWrite = can(user.role, "report:write");
   const hasEnded = year * 12 + month <= fallback.year * 12 + fallback.month;
@@ -212,6 +226,9 @@ export default async function ReportsPage({
           <Button type="submit" variant="secondary" className="w-full">Show the sheet</Button>
         </div>
       </form>
+
+      {/* The congregation's figures, so the sheet's group filter does not narrow them. */}
+      <HubFigures s={hub} outstanding={congregationOutstanding} />
 
       {rows.length === 0 ? (
         <EmptyState
