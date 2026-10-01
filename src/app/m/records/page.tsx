@@ -57,8 +57,9 @@ export default async function MobileRecordsPage() {
   );
 
   const flags = {
-    canEditPublisher: can(user.role, "publisher:write"),
-    canEditContact: can(user.role, "publisher:write") && showContact,
+    canEditPublisher: can(user.role, "records:fix"),
+    canEditContact: can(user.role, "records:fix") && showContact,
+    canEditGroup: can(user.role, "publisher:write"),
     canEditReport: can(user.role, "report:write"),
   };
 

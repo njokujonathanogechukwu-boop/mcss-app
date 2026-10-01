@@ -5,6 +5,11 @@ export const PERMISSIONS = {
   "publisher:readContact": ["SECRETARY", "COORDINATOR", "ELDER", "SERVANT"],
   "publisher:write": ["SECRETARY", "COORDINATOR"],
   "publisher:delete": ["SECRETARY", "COORDINATOR"],
+  // Filling the gaps the Records check flags — dates of birth and baptism,
+  // contact details — from that page's own form. Wider than publisher:write so
+  // the elders and ministerial servants can help bring the records up to date;
+  // moving a publisher to another group stays with publisher:write.
+  "records:fix": ["SECRETARY", "COORDINATOR", "ELDER", "SERVANT"],
   "group:read": ["SECRETARY", "COORDINATOR", "ELDER", "SERVANT", "VIEWER"],
   "group:write": ["SECRETARY", "COORDINATOR"],
   "report:read": ["SECRETARY", "COORDINATOR", "ELDER", "SERVANT"],
@@ -63,8 +68,8 @@ export const ROLE_LABELS: Record<Role, string> = {
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   SECRETARY: "Full access to every record, including imports and user accounts.",
   COORDINATOR: "Full access to every record, including imports and user accounts.",
-  ELDER: "Reads all records, edits reports, attendance, bookings and elders' items.",
-  SERVANT: "Edits reports, attendance and bookings. No access to elders' items.",
+  ELDER: "Reads all records, edits reports, attendance, bookings and elders' items, and fills the gaps the Records check flags.",
+  SERVANT: "Edits reports, attendance and bookings, and fills the gaps the Records check flags. No access to elders' items.",
   VIEWER: "Reads rosters, attendance and the hall calendar. No contact details.",
   SCHOOL_OVERSEER:
     "Plans the midweek meeting and keeps the school's students. Sees the publisher list only — no reports, contact details or elders' items.",

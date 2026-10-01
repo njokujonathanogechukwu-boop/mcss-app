@@ -28,10 +28,15 @@ function offered(formData: FormData, key: string): string | undefined {
  * of the record.
  */
 export async function saveRecordFix(_prev: RecordFixState, formData: FormData): Promise<RecordFixState> {
+  // Details the records check flags may be filled by anyone who helps keep the
+  // records (records:fix); moving someone to another group is a transfer, and
+  // stays with those who may edit the publisher list itself.
+  const canFix = await guard("records:fix");
   const canPublisher = await guard("publisher:write");
   const canReport = await guard("report:write");
-  const session = canPublisher.ok ? canPublisher.session : canReport.ok ? canReport.session : null;
+  const session = canFix.ok ? canFix.session : canReport.ok ? canReport.session : null;
   if (!session) return { error: "Your account cannot update records." };
+  const canContact = await guard("publisher:readContact");
 
   const parsed = recordFixSchema.safeParse({
     publisherId: String(formData.get("publisherId") ?? ""),
@@ -63,19 +68,21 @@ export async function saveRecordFix(_prev: RecordFixState, formData: FormData): 
   const notes: string[] = [];
 
   // ---- Publisher bio / contact / group
-  if (canPublisher.ok) {
+  if (canFix.ok) {
     const data: Prisma.PublisherUpdateInput = {};
 
     if (input.dateOfBirth !== undefined) data.dateOfBirth = input.dateOfBirth;
     if (input.baptismDate !== undefined) data.baptismDate = input.baptismDate;
-    if (input.phone !== undefined) data.phone = input.phone;
-    if (input.email !== undefined) data.email = input.email;
-    if (input.address !== undefined) data.address = input.address;
-    if (input.emergencyContactName !== undefined) data.emergencyContactName = input.emergencyContactName;
-    if (input.emergencyContactPhone !== undefined) data.emergencyContactPhone = input.emergencyContactPhone;
+    if (canContact.ok) {
+      if (input.phone !== undefined) data.phone = input.phone;
+      if (input.email !== undefined) data.email = input.email;
+      if (input.address !== undefined) data.address = input.address;
+      if (input.emergencyContactName !== undefined) data.emergencyContactName = input.emergencyContactName;
+      if (input.emergencyContactPhone !== undefined) data.emergencyContactPhone = input.emergencyContactPhone;
+    }
 
     let movedToGroupId: string | null = null;
-    if (input.groupId !== undefined && input.groupId !== publisher.groupId) {
+    if (canPublisher.ok && input.groupId !== undefined && input.groupId !== publisher.groupId) {
       data.group = input.groupId ? { connect: { id: input.groupId } } : { disconnect: true };
       movedToGroupId = input.groupId;
     }

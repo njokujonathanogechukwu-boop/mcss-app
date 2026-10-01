@@ -27,7 +27,7 @@ export function MobileRecordsList({
   reviews: Review[];
   groups: { id: string; number: number; name: string }[];
   month: { year: number; month: number; label: string };
-  flags: { canEditPublisher: boolean; canEditContact: boolean; canEditReport: boolean };
+  flags: { canEditPublisher: boolean; canEditContact: boolean; canEditGroup: boolean; canEditReport: boolean };
   summary: { total: number; complete: number };
 }) {
   const [query, setQuery] = useState("");

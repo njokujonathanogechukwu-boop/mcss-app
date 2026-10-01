@@ -20,7 +20,7 @@ export function RecordFixForm({
   review: Review;
   groups: { id: string; number: number; name: string }[];
   month: ReviewMonth;
-  flags: { canEditPublisher: boolean; canEditContact: boolean; canEditReport: boolean };
+  flags: { canEditPublisher: boolean; canEditContact: boolean; canEditGroup: boolean; canEditReport: boolean };
 }) {
   const [state, formAction] = useActionState<RecordFixState, FormData>(saveRecordFix, {});
   const [aux, setAux] = useState(false);
@@ -28,7 +28,7 @@ export function RecordFixForm({
 
   const showBio = flags.canEditPublisher;
   const showContact = flags.canEditContact;
-  const showGroup = flags.canEditPublisher;
+  const showGroup = flags.canEditGroup;
   const showReport = flags.canEditReport;
 
   // Only months with no report on file are offered, so a save from this form

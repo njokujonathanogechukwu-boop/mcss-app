@@ -38,7 +38,7 @@ export function ReviewTable({
   reviews: Review[];
   groups: { id: string; number: number; name: string }[];
   month: { year: number; month: number; label: string };
-  flags: { canEditPublisher: boolean; canEditContact: boolean; canEditReport: boolean };
+  flags: { canEditPublisher: boolean; canEditContact: boolean; canEditGroup: boolean; canEditReport: boolean };
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const [sort, setSort] = useState<Sort>({ key: "issues", dir: "desc" });
