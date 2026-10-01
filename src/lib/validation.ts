@@ -1,10 +1,14 @@
 import { z } from "zod";
+import { normalizePhone } from "@/lib/phone";
 
 const optionalString = z
   .string()
   .trim()
   .transform((v) => (v === "" ? null : v))
   .nullable();
+
+/** An optional phone number, stored in the local form beginning with 0. */
+const optionalPhone = optionalString.transform((v) => normalizePhone(v));
 
 const optionalDate = z
   .string()
@@ -35,11 +39,11 @@ export const publisherSchema = z.object({
   sinceDate: optionalDate,
   sinceKind: z.enum(["MOVED_IN", "STARTED_PUBLISHING"]).nullable(),
   privileges: z.array(z.string().trim().min(1)).default([]),
-  phone: optionalString,
+  phone: optionalPhone,
   email: optionalEmail,
   address: optionalString,
   emergencyContactName: optionalString,
-  emergencyContactPhone: optionalString,
+  emergencyContactPhone: optionalPhone,
   groupId: optionalString,
   notes: optionalString,
 });
@@ -80,11 +84,11 @@ export const recordFixSchema = z.object({
   publisherId: z.string().min(1, "Missing publisher."),
   dateOfBirth: optionalDate.optional(),
   baptismDate: optionalDate.optional(),
-  phone: optionalString.optional(),
+  phone: optionalPhone.optional(),
   email: optionalEmail.optional(),
   address: optionalString.optional(),
   emergencyContactName: optionalString.optional(),
-  emergencyContactPhone: optionalString.optional(),
+  emergencyContactPhone: optionalPhone.optional(),
   groupId: optionalString.optional(),
   reportPeriod: z
     .string()
@@ -126,11 +130,11 @@ export const selfUpdateSchema = z.object({
   dateOfBirth: optionalDate,
   baptismDate: optionalDate,
   isBaptized: checkbox,
-  phone: optionalString,
+  phone: optionalPhone,
   email: optionalEmail,
   address: optionalString,
   emergencyContactName: optionalString,
-  emergencyContactPhone: optionalString,
+  emergencyContactPhone: optionalPhone,
 });
 
 /** Inline row edits on the publishers list: sex and baptism details only. */
@@ -175,7 +179,7 @@ export const bookingSchema = z
     resourceId: z.string().min(1, "Choose which part of the hall is needed"),
     requestingBody: z.string().trim().min(2, "Say who the request is for").max(160),
     contactName: z.string().trim().min(2, "A contact name is required").max(120),
-    contactPhone: optionalString,
+    contactPhone: optionalPhone,
     eventType: z.string().trim().min(2, "Describe the event").max(160),
     startTime: z.string().refine((v) => !Number.isNaN(Date.parse(v)), "Enter a valid start"),
     endTime: z.string().refine((v) => !Number.isNaN(Date.parse(v)), "Enter a valid end"),
@@ -432,9 +436,9 @@ export const schoolStudentSchema = z.object({
   lastName: z.string().trim().min(1, "Last name is required").max(80),
   gender: z.enum(["MALE", "FEMALE"]),
   dateOfBirth: optionalDate,
-  phone: optionalString,
+  phone: optionalPhone,
   guardianName: optionalString,
-  guardianPhone: optionalString,
+  guardianPhone: optionalPhone,
   conductorId: optionalString,
   enrolledAt: optionalDate,
   notes: optionalString,

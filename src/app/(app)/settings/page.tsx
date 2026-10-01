@@ -6,6 +6,7 @@ import { PageHeader, Section, DataTable, Th, Td } from "@/components/shell";
 import { Badge } from "@/components/ui";
 import { NewUserForm, PasswordForm, FormUpload } from "./forms";
 import { SendSignupButton } from "./send-signup";
+import { PhoneCleanup } from "./phone-cleanup";
 import { setUserRole, renameUser, toggleUser, removeForm } from "./actions";
 import { listTemplates, FORM_LABELS } from "@/lib/forms";
 import { Button } from "@/components/ui";
@@ -170,6 +171,13 @@ export default async function SettingsPage() {
           form usually works unchanged. The field check download fills every box with its own
           name; if an export ever puts a figure in the wrong place, that file shows why.
         </p>
+      </Section>
+
+      <Section
+        title="Phone numbers"
+        description="Put every number on file in the form that begins with 0. Download a backup below first if you want a copy of the numbers as they are now."
+      >
+        <PhoneCleanup />
       </Section>
 
       <Section

@@ -1,4 +1,5 @@
 import Papa from "papaparse";
+import { normalizePhone } from "@/lib/phone";
 
 /**
  * Header aliases. Legacy sheets label the same column half a dozen ways,
@@ -207,11 +208,11 @@ export function parseCsv(csv: string): ParseResult {
       pioneerStatus: parsePioneer(get(row, "pioneerStatus")),
       status: parseStatus(get(row, "status")),
       groupLabel: get(row, "group") || null,
-      phone: get(row, "phone") || null,
+      phone: normalizePhone(get(row, "phone")),
       email: get(row, "email") || null,
       address: get(row, "address") || null,
       emergencyContactName: get(row, "emergencyContactName") || null,
-      emergencyContactPhone: get(row, "emergencyContactPhone") || null,
+      emergencyContactPhone: normalizePhone(get(row, "emergencyContactPhone")),
       notes: get(row, "notes") || null,
     });
   }

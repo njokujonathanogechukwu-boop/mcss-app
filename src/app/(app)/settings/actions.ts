@@ -221,3 +221,46 @@ export async function removeForm(formData: FormData) {
   await recordAudit(auth.session.userId, "removed", "FormTemplate", kind, `Removed the uploaded ${kind} form; exports use the built-in layout`);
   revalidatePath("/settings");
 }
+
+// ------------------------------------------------------------ phone numbers
+
+export type PhoneCleanupState = {
+  error?: string;
+  ok?: string;
+  plan?: import("@/lib/phone-cleanup").PhoneCleanup;
+};
+
+/**
+ * Reads every phone number on file against the local form beginning with 0,
+ * and shows what would change. Nothing is written until the secretary
+ * confirms with applyPhoneNumbers, which works the plan out afresh.
+ */
+export async function checkPhoneNumbers(): Promise<PhoneCleanupState> {
+  const auth = await guard("user:manage");
+  if (!auth.ok) return { error: auth.error };
+  const { planPhoneCleanup } = await import("@/lib/phone-cleanup");
+  return { plan: await planPhoneCleanup() };
+}
+
+export async function applyPhoneNumbers(): Promise<PhoneCleanupState> {
+  const auth = await guard("user:manage");
+  if (!auth.ok) return { error: auth.error };
+  const { planPhoneCleanup, applyPhoneCleanup } = await import("@/lib/phone-cleanup");
+  const plan = await planPhoneCleanup();
+  if (plan.changes.length === 0) return { ok: "Every number that can be read already begins with 0.", plan };
+
+  const count = await applyPhoneCleanup(plan.changes);
+  await recordAudit(
+    auth.session.userId, "updated", "Publisher", null,
+    `Rewrote ${count} phone number${count === 1 ? "" : "s"} to begin with 0` +
+      (plan.unreadable.length ? `; ${plan.unreadable.length} could not be read and were left as they were` : ""),
+  );
+
+  revalidatePath("/publishers");
+  revalidatePath("/records");
+  revalidatePath("/settings");
+  return {
+    ok: `${count} phone number${count === 1 ? " now begins" : "s now begin"} with 0.`,
+    plan: await planPhoneCleanup(),
+  };
+}
