@@ -7,6 +7,7 @@ import { Badge, Button } from "@/components/ui";
 import { DecisionForm } from "./decision-form";
 import { DecisionEdit } from "./decision-edit";
 import { setDecisionStatus } from "./actions";
+import { assigneeRoll, assigneesOf, joinNames, loadDecisionExtras } from "@/lib/boe-extras";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,7 @@ const TONE: Record<string, "good" | "warn" | "neutral"> = {
 export default async function BoePage() {
   await requirePermission("boe:read");
 
-  const [open, closed, elders, meetings] = await Promise.all([
+  const [open, closed, roll, meetings, extras] = await Promise.all([
     prisma.boeDecision.findMany({
       where: { status: { in: ["OPEN", "IN_PROGRESS", "DEFERRED"] } },
       include: { assignedTo: true },
@@ -29,21 +30,28 @@ export default async function BoePage() {
       orderBy: { completedAt: "desc" },
       take: 15,
     }),
-    prisma.publisher.findMany({
-      where: { appointment: "ELDER", status: "ACTIVE" },
-      orderBy: { lastName: "asc" },
-      select: { id: true, firstName: true, lastName: true },
-    }),
+    assigneeRoll(),
     prisma.boeDecision.groupBy({
       by: ["meetingDate"],
       _count: { _all: true },
       orderBy: { meetingDate: "desc" },
       take: 24,
     }),
+    loadDecisionExtras(),
   ]);
 
   const overdue = open.filter((d) => d.targetDate && d.targetDate < new Date());
-  const elderOptions = elders.map((e) => ({ id: e.id, label: displayName(e) }));
+  const suggestions = roll.map((r) => r.label);
+  const names = (item: { id: string; assignedTo: { firstName: string; lastName: string } | null }) =>
+    joinNames(assigneesOf(item, extras));
+  // A date with any decision from a joint meeting is listed as one.
+  const jointIds = Object.keys(extras).filter((id) => extras[id].joint);
+  const jointDates = new Set(
+    jointIds.length
+      ? (await prisma.boeDecision.findMany({ where: { id: { in: jointIds } }, select: { meetingDate: true } }))
+          .map((d) => d.meetingDate.toISOString().slice(0, 10))
+      : [],
+  );
 
   return (
     <>
@@ -85,8 +93,9 @@ export default async function BoePage() {
                     </div>
 
                     <p className="mt-2.5 text-xs text-ink-faint">
-                      Decided {formatDate(item.meetingDate)} ·{" "}
-                      {item.assignedTo ? displayName(item.assignedTo) : "Nobody assigned"}
+                      {extras[item.id]?.joint ? "Joint body of elders, " : "Decided "}
+                      {formatDate(item.meetingDate)} ·{" "}
+                      {names(item) || "Nobody assigned"}
                       {item.targetDate ? ` · due ${formatDate(item.targetDate)}` : ""}
                     </p>
                     {item.notes && <p className="mt-1 text-xs text-ink-soft">{item.notes}</p>}
@@ -110,7 +119,10 @@ export default async function BoePage() {
                             </button>
                           </form>
                         ))}
-                      <DecisionEdit item={item} elders={elderOptions} />
+                      <DecisionEdit
+                        item={{ ...item, assignees: assigneesOf(item, extras), joint: extras[item.id]?.joint ?? false }}
+                        suggestions={suggestions}
+                      />
                     </div>
                   </Panel>
                 </li>
@@ -122,7 +134,7 @@ export default async function BoePage() {
 
       <Section title="Record an item">
         <div className="max-w-2xl">
-          <DecisionForm elders={elderOptions} />
+          <DecisionForm suggestions={suggestions} />
         </div>
       </Section>
 
@@ -136,6 +148,9 @@ export default async function BoePage() {
               <li key={m.meetingDate.toISOString()} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
                 <span className="text-ink">
                   {formatDate(m.meetingDate)}
+                  {jointDates.has(m.meetingDate.toISOString().slice(0, 10)) && (
+                    <span className="ml-2"><Badge tone="neutral">Joint</Badge></span>
+                  )}
                   <span className="ml-2 text-xs text-ink-faint">
                     {m._count._all} decision{m._count._all === 1 ? "" : "s"}
                   </span>
@@ -160,7 +175,7 @@ export default async function BoePage() {
                 <span className="text-ink-soft">{item.agendaItem}</span>
                 <span className="flex items-center gap-2.5 text-xs text-ink-faint">
                   <span>
-                    {item.assignedTo ? `${displayName(item.assignedTo)} · ` : ""}
+                    {names(item) ? `${names(item)} · ` : ""}
                     {formatDate(item.completedAt)}
                   </span>
                   <form action={setDecisionStatus}>

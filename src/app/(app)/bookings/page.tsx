@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { assigneesOf, joinNames, loadDecisionExtras } from "@/lib/boe-extras";
 import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { formatTimeRange, formatDate, displayName, BOOKING_LABELS, DECISION_LABELS } from "@/lib/format";
@@ -54,6 +55,7 @@ export default async function BookingsPage() {
         take: 12,
       })
     : null;
+  const decisionExtras = boeItems ? await loadDecisionExtras() : null;
 
   // Only those who decide on bookings choose who the hall emails go to.
   const hallContacts = canDecide ? await readHallContacts() : null;
@@ -131,7 +133,7 @@ export default async function BookingsPage() {
                         <span className={late ? "font-medium text-clay" : ""}>
                           Due {formatDate(item.targetDate)}
                         </span>
-                        {item.assignedTo ? ` · ${displayName(item.assignedTo)}` : " · nobody assigned"}
+                        {decisionExtras && assigneesOf(item, decisionExtras).length ? ` · ${joinNames(assigneesOf(item, decisionExtras))}` : " · nobody assigned"}
                       </p>
                     </div>
                     <Badge tone={late ? "bad" : DECISION_TONE[item.status]}>{DECISION_LABELS[item.status]}</Badge>

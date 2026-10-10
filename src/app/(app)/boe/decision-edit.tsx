@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { TextField, TextArea } from "@/components/fields";
-import { NamePicker } from "@/components/name-picker";
+import { AssigneesField } from "./assignees-field";
 import { SubmitButton, Button } from "@/components/ui";
 import { Notice } from "@/components/shell";
 import { updateDecision, type DecisionState } from "./actions";
@@ -15,7 +15,9 @@ type EditableDecision = {
   status: string;
   meetingDate: Date;
   targetDate: Date | null;
-  assignedToId: string | null;
+  /** Everyone assigned, by name. */
+  assignees: string[];
+  joint: boolean;
 };
 
 /**
@@ -25,10 +27,10 @@ type EditableDecision = {
  */
 export function DecisionEdit({
   item,
-  elders,
+  suggestions,
 }: {
   item: EditableDecision;
-  elders: { id: string; label: string }[];
+  suggestions: string[];
 }) {
   const [state, action] = useActionState<DecisionState, FormData>(updateDecision, {});
   const [open, setOpen] = useState(false);
@@ -69,15 +71,16 @@ export function DecisionEdit({
             error={state.errors?.decision}
           />
         </div>
+        <AssigneesField name="assignees" suggestions={suggestions} defaultNames={item.assignees} />
         <div>
-          <label htmlFor={`assignedToId-${item.id}`} className="field-label">Assigned to</label>
-          <NamePicker
-            id={`assignedToId-${item.id}`}
-            name="assignedToId"
-            defaultValue={item.assignedToId ?? ""}
-            emptyLabel="Not assigned"
-            options={elders.map((e) => ({ value: e.id, label: e.label }))}
-          />
+          <label htmlFor={`meetingKind-${item.id}`} className="field-label">Which meeting</label>
+          <select
+            id={`meetingKind-${item.id}`} name="meetingKind" defaultValue={item.joint ? "JOINT" : "BOE"}
+            className="field-input"
+          >
+            <option value="BOE">Body of elders</option>
+            <option value="JOINT">Joint body of elders</option>
+          </select>
         </div>
         <TextField
           label="Deadline" name="targetDate" type="date"

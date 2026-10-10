@@ -2,7 +2,7 @@
 
 import { useEffect, useActionState, useState } from "react";
 import { TextField, TextArea } from "@/components/fields";
-import { NamePicker } from "@/components/name-picker";
+import { AssigneesField } from "./assignees-field";
 import { SubmitButton, Button } from "@/components/ui";
 import { Notice } from "@/components/shell";
 import { saveMeeting, type DecisionState } from "./actions";
@@ -15,7 +15,7 @@ type Row = { key: number };
  * in the field names (agendaItem.0, agendaItem.1 …) and the action saves
  * them together.
  */
-export function DecisionForm({ elders }: { elders: { id: string; label: string }[] }) {
+export function DecisionForm({ suggestions }: { suggestions: string[] }) {
   const [state, action] = useActionState<DecisionState, FormData>(saveMeeting, {});
   const [rows, setRows] = useState<Row[]>([{ key: 0 }, { key: 1 }, { key: 2 }]);
   const [next, setNext] = useState(3);
@@ -41,6 +41,14 @@ export function DecisionForm({ elders }: { elders: { id: string; label: string }
           label="Date of the meeting" name="meetingDate" type="date" required
           defaultValue={new Date().toISOString().slice(0, 10)} error={state.errors?.meetingDate}
         />
+        <div>
+          <label htmlFor="meetingKind" className="field-label">Which meeting</label>
+          <select id="meetingKind" name="meetingKind" defaultValue="BOE" className="field-input">
+            <option value="BOE">Body of elders</option>
+            <option value="JOINT">Joint body of elders</option>
+          </select>
+          <p className="field-hint">A joint meeting is with the elders of the other congregations at the hall.</p>
+        </div>
       </div>
 
       <div className="space-y-4">
@@ -61,15 +69,7 @@ export function DecisionForm({ elders }: { elders: { id: string; label: string }
                   label="Agenda item" name={`agendaItem.${i}`} placeholder="Kingdom Hall roof repair"
                   error={err("agendaItem")}
                 />
-                <div>
-                  <label htmlFor={`assignedToId.${i}`} className="field-label">Assigned to</label>
-                  <NamePicker
-                    id={`assignedToId.${i}`}
-                    name={`assignedToId.${i}`}
-                    emptyLabel="Not assigned"
-                    options={elders.map((e) => ({ value: e.id, label: e.label }))}
-                  />
-                </div>
+                <AssigneesField name={`assignees.${i}`} suggestions={suggestions} />
                 <div className="sm:col-span-2">
                   <TextArea
                     label="What was decided" name={`decision.${i}`} rows={2}

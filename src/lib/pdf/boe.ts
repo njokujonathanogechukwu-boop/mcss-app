@@ -2,11 +2,14 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { formatDate, displayName, DECISION_LABELS } from "@/lib/format";
 import { newDoc, text, textRight, rule, wrap, INK, SOFT, PINE } from "@/lib/pdf/kit";
+import { assigneesOf, joinNames, loadDecisionExtras } from "@/lib/boe-extras";
 
 export type BoeSummaryItem = {
   agendaItem: string;
   decision: string;
   assignedTo: string | null;
+  /** Reached at a joint meeting with the other congregations at the hall. */
+  joint: boolean;
   targetDate: Date | null;
   status: string;
   completedAt: Date | null;
@@ -15,15 +18,19 @@ export type BoeSummaryItem = {
 
 /** Every decision reached at one meeting of the body of elders, in the order logged. */
 export async function meetingDecisions(date: string): Promise<BoeSummaryItem[]> {
-  const rows = await prisma.boeDecision.findMany({
-    where: { meetingDate: new Date(`${date}T00:00:00.000Z`) },
-    include: { assignedTo: true },
-    orderBy: { createdAt: "asc" },
-  });
+  const [rows, extras] = await Promise.all([
+    prisma.boeDecision.findMany({
+      where: { meetingDate: new Date(`${date}T00:00:00.000Z`) },
+      include: { assignedTo: true },
+      orderBy: { createdAt: "asc" },
+    }),
+    loadDecisionExtras(),
+  ]);
   return rows.map((r) => ({
     agendaItem: r.agendaItem,
     decision: r.decision,
-    assignedTo: r.assignedTo ? displayName(r.assignedTo) : null,
+    assignedTo: joinNames(assigneesOf(r, extras)) || null,
+    joint: extras[r.id]?.joint ?? false,
     targetDate: r.targetDate,
     status: r.status,
     completedAt: r.completedAt,
@@ -53,7 +60,11 @@ export async function drawBoeSummary(date: string, items: BoeSummaryItem[]): Pro
     y = doc.height - 54;
   };
 
-  text(doc, "Body of Elders — Meeting Summary", L, y, { size: 15, bold: true, maxWidth: W });
+  // A date may hold a joint meeting, this body's own, or both.
+  const joint = items.some((i) => i.joint);
+  const own = items.some((i) => !i.joint);
+  const title = joint && !own ? "Joint Body of Elders" : joint ? "Body of Elders and Joint Body of Elders" : "Body of Elders";
+  text(doc, `${title} — Meeting Summary`, L, y, { size: 15, bold: true, maxWidth: W });
   y -= 14;
   text(doc, `Maitama Congregation  ·  Meeting of ${formatDate(new Date(`${date}T00:00:00.000Z`))}`, L, y, {
     size: 8.5,
@@ -87,6 +98,7 @@ export async function drawBoeSummary(date: string, items: BoeSummaryItem[]): Pro
 
     const meta = [
       item.assignedTo ? `Carried out by ${item.assignedTo}` : "Not assigned",
+      joint && own ? (item.joint ? "joint meeting" : "this body's meeting") : null,
       item.targetDate ? `due ${formatDate(item.targetDate)}` : null,
       item.completedAt ? `completed ${formatDate(item.completedAt)}` : null,
     ]

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { assigneesOf, joinNames, loadDecisionExtras } from "@/lib/boe-extras";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/rbac";
@@ -75,6 +76,9 @@ export default async function DashboardPage({
   const counts = new Map(reportsThisYear.map((r) => [`${r.year}-${r.month}`, r._count._all]));
   const reported = activePublishers - missing.length;
   const percent = activePublishers ? Math.round((reported / activePublishers) * 100) : 0;
+
+  // Everyone assigned to the elders' items, by name, for those who see them.
+  const decisionExtras = can(user.role, "boe:read") ? await loadDecisionExtras() : {};
 
   return (
     <>
@@ -280,7 +284,7 @@ export default async function DashboardPage({
                         {overdue && <Badge tone="bad">Overdue</Badge>}
                       </div>
                       <p className="mt-0.5 text-xs text-ink-soft">
-                        {item.assignedTo ? displayName(item.assignedTo) : "Unassigned"}
+                        {joinNames(assigneesOf(item, decisionExtras)) || "Unassigned"}
                         {item.targetDate ? ` · due ${formatDate(item.targetDate)}` : ""}
                       </p>
                     </li>
