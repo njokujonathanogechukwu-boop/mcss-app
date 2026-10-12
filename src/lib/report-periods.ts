@@ -95,12 +95,17 @@ export type LateReport = S1Row & {
  * reports waiting to be added to the next month the secretary closes.
  */
 export async function outstandingLateReports(): Promise<LateReport[]> {
-  const periods = await prisma.reportPeriod.findMany({
-    select: { year: true, month: true, onTimeIds: true, lateKeys: true },
-  });
+  const [periods, cleared] = await Promise.all([
+    prisma.reportPeriod.findMany({
+      select: { year: true, month: true, onTimeIds: true, lateKeys: true },
+    }),
+    clearedLateKeys(),
+  ]);
   if (periods.length === 0) return [];
 
-  const absorbed = new Set<string>();
+  // Absorbed into an earlier submission, or cleared by the secretary: either
+  // way it does not roll into the next month closed.
+  const absorbed = new Set<string>(cleared);
   for (const p of periods) for (const k of p.lateKeys) absorbed.add(k);
   const onTimeByPeriod = new Map(periods.map((p) => [`${p.year}-${p.month}`, new Set(p.onTimeIds)]));
 
@@ -250,4 +255,111 @@ export async function closeMonth(
 /** Undo a close: the month becomes open again and its late reports roll free. */
 export async function reopenMonth(year: number, month: number): Promise<void> {
   await prisma.reportPeriod.deleteMany({ where: { year, month } });
+}
+
+export type LateReportDetail = {
+  key: string;
+  publisherId: string;
+  name: string;
+  group: string | null;
+  year: number;
+  month: number;
+  outcome: string;
+  pioneerStatusUsed: string;
+  bibleStudies: number;
+  hours: number | null;
+  remarks: string | null;
+  /** When the report was last entered — after its month had gone to the branch. */
+  receivedAt: Date;
+};
+
+/**
+ * The late reports behind a count, with whose they are and what they say:
+ * the ones waiting to roll into the next month closed, or, given a closed
+ * month's late keys, the ones it absorbed. Oldest month first.
+ */
+export async function lateReportDetails(
+  which: { publisherId: string; year: number; month: number }[],
+): Promise<LateReportDetail[]> {
+  if (which.length === 0) return [];
+  const rows = await prisma.serviceReport.findMany({
+    where: { OR: which.map((w) => ({ publisherId: w.publisherId, year: w.year, month: w.month })) },
+    select: {
+      publisherId: true, year: true, month: true, outcome: true, pioneerStatusUsed: true,
+      bibleStudies: true, hours: true, remarks: true, updatedAt: true,
+      publisher: { select: { firstName: true, lastName: true, group: { select: { number: true } } } },
+    },
+  });
+  return rows
+    .map((r) => ({
+      key: reportKey(r.publisherId, r.year, r.month),
+      publisherId: r.publisherId,
+      name: `${r.publisher.firstName} ${r.publisher.lastName}`,
+      group: r.publisher.group ? `Group ${r.publisher.group.number}` : null,
+      year: r.year,
+      month: r.month,
+      outcome: r.outcome,
+      pioneerStatusUsed: r.pioneerStatusUsed,
+      bibleStudies: r.bibleStudies,
+      hours: r.hours,
+      remarks: r.remarks,
+      receivedAt: r.updatedAt,
+    }))
+    .sort((a, b) => a.year * 12 + a.month - (b.year * 12 + b.month) || a.name.localeCompare(b.name));
+}
+
+/** A closed month's late keys back into the reports they name. */
+export function parseLateKeys(keys: string[]): { publisherId: string; year: number; month: number }[] {
+  return keys
+    .map((k) => k.split("|"))
+    .filter((parts) => parts.length === 3)
+    .map(([publisherId, y, m]) => ({ publisherId, year: Number(y), month: Number(m) }));
+}
+
+// ------------------------------------------------------- cleared late reports
+
+/**
+ * Late reports the secretary has cleared: dealt with some other way — entered
+ * on the branch's site by hand, say — so they no longer roll into the next
+ * month closed. Held as one congregation setting of report keys, so it needs
+ * no change to the database, and a cleared report can be put back.
+ */
+const CLEARED_LATE_KEY = "reports:clearedLate";
+
+export async function clearedLateKeys(): Promise<string[]> {
+  const row = await prisma.congregationSetting.findUnique({ where: { key: CLEARED_LATE_KEY } });
+  if (!row) return [];
+  try {
+    const parsed: unknown = JSON.parse(row.value);
+    return Array.isArray(parsed) ? parsed.filter((k): k is string => typeof k === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function setLateCleared(keys: string[], cleared: boolean): Promise<void> {
+  const current = new Set(await clearedLateKeys());
+  for (const k of keys) {
+    if (cleared) current.add(k);
+    else current.delete(k);
+  }
+  const value = JSON.stringify([...current]);
+  await prisma.congregationSetting.upsert({
+    where: { key: CLEARED_LATE_KEY },
+    update: { value },
+    create: { key: CLEARED_LATE_KEY, value },
+  });
+}
+
+/**
+ * Cleared late reports still waiting to be counted somewhere: not yet absorbed
+ * by a closed month, so putting one back makes it roll in again.
+ */
+export async function clearedLateReports(): Promise<{ publisherId: string; year: number; month: number }[]> {
+  const [cleared, periods] = await Promise.all([
+    clearedLateKeys(),
+    prisma.reportPeriod.findMany({ select: { lateKeys: true } }),
+  ]);
+  const absorbed = new Set(periods.flatMap((p) => p.lateKeys));
+  return parseLateKeys(cleared.filter((k) => !absorbed.has(k)));
 }

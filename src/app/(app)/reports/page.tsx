@@ -11,7 +11,8 @@ import { auxCovers } from "@/lib/auxiliary";
 import { PageHeader, Section, EmptyState } from "@/components/shell";
 import { Button } from "@/components/ui";
 import { ReportSheet, type SheetRow } from "./report-sheet";
-import { getPeriod, outstandingLateReports, collectingMonth } from "@/lib/report-periods";
+import { getPeriod, outstandingLateReports, collectingMonth, lateReportDetails, parseLateKeys, clearedLateReports } from "@/lib/report-periods";
+import { LateReports } from "./late-reports";
 import { CloseMonthButton, ReopenMonthButton } from "./close-month";
 import { CollectingMonthForm } from "./collecting-month";
 import { HubFigures } from "./hub-figures";
@@ -111,6 +112,12 @@ export default async function ReportsPage({
         })
       : Promise.resolve(outstanding),
   ]);
+  // The late reports behind the count: the ones this month absorbed once it is
+  // closed, or the ones waiting to roll into it while it is open.
+  const [lateDetails, clearedDetails] = await Promise.all([
+    lateReportDetails(period ? parseLateKeys(period.lateKeys) : outstandingLate),
+    period ? Promise.resolve([]) : clearedLateReports().then(lateReportDetails),
+  ]);
   const canWrite = can(user.role, "report:write");
   const hasEnded = year * 12 + month <= fallback.year * 12 + fallback.month;
   const periodOptions = [
@@ -168,14 +175,21 @@ export default async function ReportsPage({
               <span className="font-medium text-pine-dark">Submitted to the branch</span> on{" "}
               {formatDate(period.submittedAt)}. {period.onTimeIds.length} reported on time
               {period.lateKeys.length
-                ? `; ${period.lateKeys.length} late report(s) rolled into this month&rsquo;s figure`
+                ? `; ${period.lateKeys.length} late report(s) rolled into this month’s figure`
                 : ""}
               . Reports you add for {monthLabel(year, month)} now are treated as late and roll into
               the next month you close.
             </p>
             {canWrite && <ReopenMonthButton year={year} month={month} />}
           </div>
-        ) : (
+        ) : null}
+        {period && (
+          <LateReports
+            reports={lateDetails}
+            summary={`View the ${lateDetails.length} late report${lateDetails.length === 1 ? "" : "s"} rolled into ${monthLabel(year, month)}`}
+          />
+        )}
+        {period ? null : (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-ink-soft">
               {isOpenMonth
@@ -188,6 +202,18 @@ export default async function ReportsPage({
             </p>
             {canWrite && hasEnded && <CloseMonthButton year={year} month={month} />}
           </div>
+        )}
+        {!period && (
+          <LateReports
+            reports={lateDetails}
+            cleared={clearedDetails}
+            canClear={canWrite}
+            summary={
+              lateDetails.length
+                ? `View the ${lateDetails.length} late report${lateDetails.length === 1 ? "" : "s"} waiting to roll into the next month you close${clearedDetails.length ? ` · ${clearedDetails.length} cleared` : ""}`
+                : `View the ${clearedDetails.length} cleared late report${clearedDetails.length === 1 ? "" : "s"}`
+            }
+          />
         )}
       </div>
 

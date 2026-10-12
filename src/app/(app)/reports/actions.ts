@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
 import { REPORT_OUTCOMES, type ReportOutcome } from "@/lib/format";
 import { monthLabel, calendarMonth } from "@/lib/service-year";
-import { closeMonth, reopenMonth, isClosed, setCollectingMonth } from "@/lib/report-periods";
+import { closeMonth, reopenMonth, isClosed, setCollectingMonth, outstandingLateReports, setLateCleared } from "@/lib/report-periods";
 
 export type ReportsState = { error?: string; ok?: string; warnings?: string[] };
 
@@ -259,4 +259,29 @@ export async function setCollectingMonthAction(
   revalidatePath("/dashboard");
 
   return { ok: `The group links are collecting ${monthLabel(year, month)}.` };
+}
+
+/**
+ * Marks late reports as cleared — dealt with some other way, so they no longer
+ * roll into the next month closed — or puts cleared ones back. Each submission
+ * carries one or more report keys; "all" clears every late report still
+ * waiting.
+ */
+export async function setLateReportsCleared(formData: FormData) {
+  const auth = await guard("report:write");
+  if (!auth.ok) return;
+
+  const cleared = formData.get("cleared") === "true";
+  let keys = formData.getAll("key").map(String).filter((k) => k.split("|").length === 3);
+  if (formData.get("all") === "true") keys = (await outstandingLateReports()).map((r) => r.key);
+  if (keys.length === 0) return;
+
+  await setLateCleared(keys, cleared);
+  await recordAudit(
+    auth.session.userId, "updated", "ReportPeriod", null,
+    cleared
+      ? `Cleared ${keys.length} late report${keys.length === 1 ? "" : "s"} so ${keys.length === 1 ? "it does" : "they do"} not roll into the next month closed`
+      : `Put ${keys.length} cleared late report${keys.length === 1 ? "" : "s"} back to roll into the next month closed`,
+  );
+  revalidatePath("/reports");
 }
