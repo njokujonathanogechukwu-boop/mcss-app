@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { readSession } from "@/lib/session";
 import { can } from "@/lib/rbac";
-import { buildS21Batch, buildS21Zip, type S21Category } from "@/lib/pdf/s21";
+import { buildS21Batch, buildS21FoldersZip, buildS21Zip, type S21Category } from "@/lib/pdf/s21";
 import { currentServiceYear } from "@/lib/service-year";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,9 @@ export const maxDuration = 60;
 
 /**
  * Every publisher's S-21 as its own card in a ZIP. ?sy= service year,
- * ?group= one group only, ?format=pdf for the old single merged document.
+ * ?group= one group only, ?format=pdf for the old single merged document,
+ * ?layout=groups for a folder per field service group plus one for the
+ * inactive publishers.
  */
 export async function GET(request: Request) {
   const session = await readSession();
@@ -21,6 +23,18 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const sy = Number(url.searchParams.get("sy")) || currentServiceYear();
+
+  if (url.searchParams.get("layout") === "groups") {
+    const { zip, count } = await buildS21FoldersZip(sy);
+    if (count === 0) return new NextResponse("No publishers to print.", { status: 404 });
+    return new NextResponse(Buffer.from(zip), {
+      headers: {
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="S-21_cards_by_group_${sy}.zip"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
   const groupId = url.searchParams.get("group") || null;
   const rawCategory = url.searchParams.get("category");
   const category: S21Category | null =

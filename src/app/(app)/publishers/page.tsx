@@ -91,6 +91,12 @@ export default async function PublishersPage({
                 <a href={`/api/exports/s21/batch?sy=${currentServiceYear()}`}>
                   <Button variant="secondary" size="sm">Every S-21</Button>
                 </a>
+                <a
+                  href={`/api/exports/s21/batch?sy=${currentServiceYear()}&layout=groups`}
+                  title="A folder for each field service group, and one for the inactive publishers"
+                >
+                  <Button variant="secondary" size="sm">S-21s by group</Button>
+                </a>
                 <a href={`/api/exports/s21/batch?sy=${currentServiceYear()}&category=pioneers`}>
                   <Button variant="secondary" size="sm">Pioneers &amp; missionaries</Button>
                 </a>

@@ -116,7 +116,18 @@ export async function buildS21Zip(
 }
 
 /** How many twelve-row tables the uploaded form has: fill that many consecutive service years. */
-async function tableCount(form: Buffer): Promise<number> {
+const tableCounts = new WeakMap<Buffer, Promise<number>>();
+function tableCount(form: Buffer): Promise<number> {
+  // A batch fills the same form for every card, so it is read once.
+  let count = tableCounts.get(form);
+  if (!count) {
+    count = countTables(form);
+    tableCounts.set(form, count);
+  }
+  return count;
+}
+
+async function countTables(form: Buffer): Promise<number> {
   const { collectWidgets, groupRows, pagesOf } = await import("@/lib/pdf/fields");
   const pdf = await PDFDocument.load(form, { ignoreEncryption: true, updateMetadata: false });
   const widgets = collectWidgets(pdf);
@@ -289,4 +300,53 @@ async function drawS21(publisher: PublisherWithGroup, serviceYear: number): Prom
   });
 
   return doc.pdf.save();
+}
+
+/** A folder or file name any computer accepts. */
+function safeName(value: string): string {
+  return value.replace(/[\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Every publisher's S-21 in a ZIP with a folder for each field service group,
+ * the way the cards are filed: the active and irregular publishers in their
+ * group's folder, anyone without a group in "No group", and the inactive
+ * publishers together in a folder of their own.
+ */
+export async function buildS21FoldersZip(serviceYear: number): Promise<{ zip: Uint8Array; count: number }> {
+  const publishers = await prisma.publisher.findMany({
+    where: { status: { in: ["ACTIVE", "IRREGULAR", "INACTIVE"] } },
+    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    select: { id: true, firstName: true, lastName: true, status: true, group: { select: { number: true, name: true } } },
+  });
+  if (publishers.length === 0) return { zip: new Uint8Array(0), count: 0 };
+
+  const template = await getTemplate("S21");
+  const JSZip = (await import("jszip")).default;
+  const zip = new JSZip();
+  const yearTag = serviceYearLabel(serviceYear).replace("/", "-");
+  const used = new Set<string>();
+
+  for (const p of publishers) {
+    const folder =
+      p.status === "INACTIVE"
+        ? "Inactive publishers"
+        : p.group
+          ? safeName(
+              // "Group 9" already says it; a group with its own name keeps both.
+              p.group.name.trim().toLowerCase() === `group ${p.group.number}`
+                ? `Group ${p.group.number}`
+                : `Group ${p.group.number} - ${p.group.name}`,
+            )
+          : "No group";
+    const bytes = await buildS21(p.id, serviceYear, template);
+    const base = `${folder}/${safeName(`${p.firstName} ${p.lastName}`)} - ${yearTag}`;
+    let name = `${base}.pdf`;
+    for (let n = 2; used.has(name); n++) name = `${base} (${n}).pdf`;
+    used.add(name);
+    zip.file(name, bytes);
+  }
+
+  const zipBytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+  return { zip: zipBytes, count: publishers.length };
 }
