@@ -10,6 +10,7 @@ import {
 } from "@/lib/service-year";
 import { PageHeader, Section, EmptyState, DataTable, Th, Td } from "@/components/shell";
 import { Badge, Button } from "@/components/ui";
+import { PioneerStartForm } from "./start-form";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,8 @@ function cellText(c: MonthCell): string {
   switch (c.state) {
     case "ahead":
       return "·";
+    case "before":
+      return "–";
     case "missing":
       return "—";
     case "no-report":
@@ -32,6 +35,8 @@ function cellTitle(c: MonthCell): string {
   switch (c.state) {
     case "ahead":
       return `${c.label}: the month has not ended yet`;
+    case "before":
+      return `${c.label}: before regular pioneer service began, so not counted`;
     case "missing":
       return `${c.label}: no report recorded`;
     case "no-report":
@@ -59,13 +64,14 @@ export default async function PioneerReviewPage({
   const serviceYear = Number.isInteger(parsed) && parsed >= 2000 && parsed <= 2100 ? parsed : fallback;
 
   const { rows } = await pioneerReview(serviceYear);
+  const canWrite = can(user.role, "publisher:write");
 
   const belowPace = rows.filter((r) => r.belowPace);
   const noHours = rows.filter((r) => r.noHours);
   const belowYear = rows.filter((r) => r.meetsYear === false);
   const meetsYear = rows.filter((r) => r.meetsYear === true);
   const meetsFull = rows.filter((r) => r.meetsFullYear === true);
-  const shortOfPace = rows.filter((r) => r.projected !== null && r.projected < FULL_YEAR_GOAL);
+  const shortOfPace = rows.filter((r) => r.projected !== null && r.projected < r.fullTarget);
   const yearComplete = rows[0]?.yearComplete ?? false;
 
   return (
@@ -132,12 +138,12 @@ export default async function PioneerReviewPage({
           <Badge>{rows.length} regular pioneer{rows.length === 1 ? "" : "s"}</Badge>
           {belowPace.length > 0 && <Badge tone="bad">{belowPace.length} below the {MONTHLY_GOAL}-hour average</Badge>}
           {noHours.length > 0 && <Badge tone="bad">{noHours.length} with no hours recorded</Badge>}
-          {yearComplete && meetsYear.length > 0 && <Badge tone="good">{meetsYear.length} reached {YEARLY_GOAL} hours</Badge>}
-          {yearComplete && meetsFull.length > 0 && <Badge tone="good">{meetsFull.length} reached the full {FULL_YEAR_GOAL} hours</Badge>}
-          {yearComplete && belowYear.length > 0 && <Badge tone="bad">{belowYear.length} below {YEARLY_GOAL} — for the service committee</Badge>}
+          {yearComplete && meetsYear.length > 0 && <Badge tone="good">{meetsYear.length} reached the yearly target</Badge>}
+          {yearComplete && meetsFull.length > 0 && <Badge tone="good">{meetsFull.length} reached the full pace</Badge>}
+          {yearComplete && belowYear.length > 0 && <Badge tone="bad">{belowYear.length} below the yearly target — for the service committee</Badge>}
           {!yearComplete && rows.length > 0 && <Badge>{rows[0].endedMonths} of 12 months ended</Badge>}
           {!yearComplete && shortOfPace.length > 0 && (
-            <Badge tone="warn">{shortOfPace.length} projected below {FULL_YEAR_GOAL} at their current pace</Badge>
+            <Badge tone="warn">{shortOfPace.length} projected below the full pace</Badge>
           )}
         </div>
       </Section>
@@ -153,13 +159,14 @@ export default async function PioneerReviewPage({
             <thead>
               <tr>
                 <Th>Pioneer</Th>
+                <Th>Started</Th>
                 <Th align="right">Months counted</Th>
                 <Th align="right">Field hours</Th>
                 <Th align="right">Credit</Th>
                 <Th align="right">Combined</Th>
                 <Th align="right">Monthly average</Th>
                 <Th align="right">Projected total</Th>
-                <Th align="right">A month to {FULL_YEAR_GOAL}</Th>
+                <Th align="right">A month to full pace</Th>
                 <Th>Standing</Th>
               </tr>
             </thead>
@@ -173,6 +180,24 @@ export default async function PioneerReviewPage({
                       </Link>
                       {r.group && <span className="block text-xxs text-ink-faint">{r.group}</span>}
                     </Td>
+                    <Td>
+                      {canWrite ? (
+                        <PioneerStartForm
+                          key={`${r.id}-${r.startedOn ? `${r.startedOn.year}-${r.startedOn.month}` : "none"}`}
+                          publisherId={r.id}
+                          value={r.startedOn ? `${r.startedOn.year}-${String(r.startedOn.month).padStart(2, "0")}` : ""}
+                        />
+                      ) : r.startedOn ? (
+                        <span className="text-xs text-ink-soft">{monthLabel(r.startedOn.year, r.startedOn.month)}</span>
+                      ) : (
+                        <span className="text-xs text-ink-faint">Not recorded</span>
+                      )}
+                      {r.servedMonths < 12 && (
+                        <span className="mt-0.5 block text-xxs text-ink-faint">
+                          {r.servedMonths} months this year · targets {r.yearTarget}/{r.fullTarget}
+                        </span>
+                      )}
+                    </Td>
                     <Td align="right" className="text-ink-soft">
                       {r.countedMonths || "—"}
                     </Td>
@@ -185,7 +210,7 @@ export default async function PioneerReviewPage({
                     <Td
                       align="right"
                       className={
-                        r.projected !== null && r.projected < YEARLY_GOAL
+                        r.projected !== null && r.projected < r.yearTarget
                           ? "font-medium text-clay"
                           : "text-ink-soft"
                       }
@@ -201,35 +226,39 @@ export default async function PioneerReviewPage({
                       {r.neededForFull === null ? "—" : r.neededForFull === 0 ? "reached" : r.neededForFull}
                     </Td>
                     <Td>
-                      {r.noHours ? (
+                      {r.startedOn && r.countedMonths === 0 && !r.noHours ? (
+                        <Badge>Starts {monthLabel(r.startedOn.year, r.startedOn.month)}</Badge>
+                      ) : r.noHours ? (
                         <Badge tone="bad">No hours recorded yet</Badge>
                       ) : r.yearComplete ? (
                         r.meetsYear ? (
-                          <Badge tone="good">Reached {YEARLY_GOAL} hours</Badge>
+                          <Badge tone="good">Reached {r.yearTarget} hours</Badge>
                         ) : (
-                          <Badge tone="bad">Below {YEARLY_GOAL} — for the service committee</Badge>
+                          <Badge tone="bad">Below {r.yearTarget} — for the service committee</Badge>
                         )
                       ) : r.belowPace ? (
                         <Badge tone="bad">Below the {MONTHLY_GOAL}-hour average</Badge>
-                      ) : r.projected !== null && r.projected < YEARLY_GOAL ? (
-                        <Badge tone="warn">Projected below {YEARLY_GOAL}</Badge>
+                      ) : r.projected !== null && r.projected < r.yearTarget ? (
+                        <Badge tone="warn">Projected below {r.yearTarget}</Badge>
                       ) : (
                         <Badge tone="good">On pace</Badge>
                       )}
                       <span className="mt-1 block text-xxs text-ink-soft">
                         {r.yearComplete
                           ? r.meetsYear
-                            ? `May continue as a regular pioneer${r.meetsFullYear ? `, having reached the full ${FULL_YEAR_GOAL} hours` : ""}.`
+                            ? `May continue as a regular pioneer${r.meetsFullYear ? `, having reached the full ${r.fullTarget} hours` : ""}.`
                             : "The committee weighs their circumstances, age and time in full-time service."
-                          : r.noHours
+                          : r.startedOn && r.countedMonths === 0 && !r.noHours
+                            ? `Measured from ${monthLabel(r.startedOn.year, r.startedOn.month)} against ${r.fullTarget} hours for the ${r.servedMonths} months served.`
+                            : r.noHours
                             ? "Meet with the pioneer to understand the circumstances and offer assistance."
                             : [
                                 `Projected ${r.projected} hours by August at the current pace.`,
                                 r.neededForFull === 0
-                                  ? `The full ${FULL_YEAR_GOAL} hours is already reached.`
-                                  : `Needs about ${r.neededForFull} hours a month over the ${r.remainingMonths} month${r.remainingMonths === 1 ? "" : "s"} left to reach ${FULL_YEAR_GOAL}${
+                                  ? `The full ${r.fullTarget} hours is already reached.`
+                                  : `Needs about ${r.neededForFull} hours a month over the ${r.remainingMonths} month${r.remainingMonths === 1 ? "" : "s"} left to reach ${r.fullTarget}${
                                       r.neededPerMonth && r.neededPerMonth > 0
-                                        ? `, or ${r.neededPerMonth} to reach the ${YEARLY_GOAL}-hour floor`
+                                        ? `, or ${r.neededPerMonth} to reach the ${r.yearTarget}-hour floor`
                                         : ""
                                     }.`,
                               ].join(" ")}
@@ -237,7 +266,7 @@ export default async function PioneerReviewPage({
                     </Td>
                   </tr>
                   <tr className="border-t-0">
-                    <Td colSpan={9}>
+                    <Td colSpan={10}>
                       <div className="flex flex-wrap gap-1">
                         {r.months.map((c) => (
                           <span
@@ -245,7 +274,7 @@ export default async function PioneerReviewPage({
                             title={cellTitle(c)}
                             className={
                               "rounded border px-1.5 py-0.5 text-xxs " +
-                              (c.state === "ahead"
+                              (c.state === "ahead" || c.state === "before"
                                 ? "border-rule text-ink-faint"
                                 : c.state === "missing" || c.state === "no-report"
                                   ? "border-clay/40 bg-clay-light text-clay"
@@ -260,7 +289,7 @@ export default async function PioneerReviewPage({
                       </div>
                       <p className="mt-1 text-xxs text-ink-faint">
                         Hours per month, hour credit shown as field hours + credit. — no report
-                        recorded · NR reported no report · 0 shared in no way · · month not ended.
+                        recorded · NR reported no report · 0 shared in no way · · month not ended · – before pioneer service began.
                       </p>
                     </Td>
                   </tr>
@@ -273,12 +302,15 @@ export default async function PioneerReviewPage({
 
       <Section title="How the figures are worked">
         <p className="max-w-[80ch] text-xs leading-relaxed text-ink-soft">
-          The average runs from the month each pioneer first reported hours or credit in this service
-          year to {monthLabel(cutoff.year, cutoff.month)}, so months before they took up pioneer
-          service are not held against them; gaps and months with no report inside that stretch count
+          The average runs from the month each pioneer started — the one recorded under Started, or,
+          where none is recorded, the month they first reported hours or credit in this service year —
+          to {monthLabel(cutoff.year, cutoff.month)}, so months before they took up pioneer service are
+          not held against them. For a pioneer who started during the year, hours from before the start
+          are left out, and the targets are scaled to the months served: {MONTHLY_GOAL} a month for the
+          full pace, and the same share of {YEARLY_GOAL} for continuing; gaps and months with no report inside that stretch count
           as zero. The projected total is what they reach by August if every month left goes at that
-          average, and &ldquo;a month to {FULL_YEAR_GOAL}&rdquo; is what each of those months has to
-          carry to land on the full {FULL_YEAR_GOAL} hours. Special pioneers are not reviewed here —
+          average, and &ldquo;a month to full pace&rdquo; is what each of those months has to carry to
+          land on the full pace — {FULL_YEAR_GOAL} hours for a whole year. Special pioneers are not reviewed here —
           their hour requirement follows their assignment. The review states the figures; the meeting
           with the pioneer and any decision about continuing belong to the service overseer and the
           Congregation Service Committee.

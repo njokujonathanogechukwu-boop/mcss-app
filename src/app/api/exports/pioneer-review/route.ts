@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { readSession } from "@/lib/session";
 import { can } from "@/lib/rbac";
-import { pioneerReview, MONTHLY_GOAL, YEARLY_GOAL, FULL_YEAR_GOAL } from "@/lib/pioneer-review";
+import { pioneerReview, MONTHLY_GOAL } from "@/lib/pioneer-review";
 import {
-  reportingMonth, serviceYearOf, serviceYearLabel, serviceYearMonths,
+  monthLabel, reportingMonth, serviceYearOf, serviceYearLabel, serviceYearMonths,
 } from "@/lib/service-year";
 
 export const dynamic = "force-dynamic";
@@ -33,9 +33,10 @@ export async function GET(request: Request) {
 
   const lines = [
     [
-      "Pioneer", "Group", "Months counted", "Field hours", "Hour credit", "Combined",
-      "Monthly average", "Projected total", `Hours a month to ${FULL_YEAR_GOAL}`,
-      `Hours a month to ${YEARLY_GOAL}`, "Standing", ...months.map((m) => m.label),
+      "Pioneer", "Group", "Started", "Months served this year", "Full-pace target", "Target to continue",
+      "Months counted", "Field hours", "Hour credit", "Combined",
+      "Monthly average", "Projected total", "Hours a month to full pace",
+      "Hours a month to continue", "Standing", ...months.map((m) => m.label),
     ].map(csv).join(","),
   ];
   for (const r of rows) {
@@ -43,17 +44,21 @@ export async function GET(request: Request) {
       ? "No hours recorded yet"
       : r.yearComplete
         ? r.meetsYear
-          ? `Reached ${YEARLY_GOAL} hours - may continue${r.meetsFullYear ? ` (full ${FULL_YEAR_GOAL} reached)` : ""}`
-          : `Below ${YEARLY_GOAL} hours - for the Congregation Service Committee`
+          ? `Reached ${r.yearTarget} hours - may continue${r.meetsFullYear ? ` (full ${r.fullTarget} reached)` : ""}`
+          : `Below ${r.yearTarget} hours - for the Congregation Service Committee`
         : r.belowPace
           ? `Below the ${MONTHLY_GOAL}-hour average - service overseer and group overseer to meet with the pioneer`
-          : r.projected !== null && r.projected < YEARLY_GOAL
-            ? `Projected ${r.projected} hours by August - below ${YEARLY_GOAL}`
+          : r.projected !== null && r.projected < r.yearTarget
+            ? `Projected ${r.projected} hours by August - below ${r.yearTarget}`
             : "On pace";
     lines.push(
       [
         r.name,
         r.group ?? "",
+        r.startedOn ? monthLabel(r.startedOn.year, r.startedOn.month) : "from the reports",
+        r.servedMonths,
+        r.fullTarget,
+        r.yearTarget,
         r.countedMonths || "",
         r.fieldHours,
         r.creditHours,
@@ -66,6 +71,8 @@ export async function GET(request: Request) {
         ...r.months.map((c) =>
           c.state === "ahead"
             ? ""
+            : c.state === "before"
+              ? "before start"
             : c.state === "missing"
               ? "no report recorded"
               : c.state === "no-report"
