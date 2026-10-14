@@ -14,6 +14,8 @@ export type ReportRow = {
   outcome: ReportOutcome | null;
   studies: number | null;
   hours: number | null;
+  /** Hour credit, with its reason in the remarks. */
+  credit: number | null;
   aux: boolean;
   remarks: string | null;
 };
@@ -181,6 +183,22 @@ function ReportForm({ row, month }: { row: ReportRow; month: { year: number; mon
                 />
               </label>
             )}
+            {(row.isPioneer || aux) && (
+              <label className="block">
+                <span className="field-label">Hour credit</span>
+                <input
+                  name="credit"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={744}
+                  defaultValue={row.credit ?? ""}
+                  className="field-input text-center text-lg"
+                  placeholder="0"
+                />
+                <span className="mt-0.5 block text-xxs text-ink-faint">Give the reason in Remarks</span>
+              </label>
+            )}
           </div>
         </div>
       )}
@@ -196,7 +214,7 @@ function ReportForm({ row, month }: { row: ReportRow; month: { year: number; mon
           placeholder={
             outcome === "NO_REPORT" ? "Illness, away, no contact…"
             : outcome === "DID_NOT_PREACH" ? "Illness, caring for family…"
-            : "Notes for this month"
+            : "Notes for this month, or the reason for any hour credit"
           }
         />
       </label>

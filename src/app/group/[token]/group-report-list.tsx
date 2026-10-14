@@ -23,6 +23,7 @@ function describe(record: GroupReportRecord): string {
   if (record.outcome === "SHARED") {
     parts.push(`${record.studies} Bible stud${record.studies === 1 ? "y" : "ies"}`);
     if (record.hours !== null) parts.push(`${record.hours} hours`);
+    if (record.credit) parts.push(`${record.credit} hours credit`);
     if (record.pioneerUsed === "AUXILIARY") parts.push("auxiliary pioneering");
     else if (record.pioneerUsed !== "NONE") parts.push(PIONEER_LABELS[record.pioneerUsed].toLowerCase());
   }
@@ -228,6 +229,22 @@ function PublisherReport({
                 />
               </label>
             )}
+            {(row.isPioneer || aux) && (
+              <label className="block">
+                <span className="field-label">Hour credit</span>
+                <input
+                  name="credit"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={744}
+                  defaultValue={row.record?.credit ?? ""}
+                  className="field-input text-center text-lg"
+                  placeholder="0"
+                />
+                <span className="mt-0.5 block text-xxs text-ink-faint">Give the reason in Remarks</span>
+              </label>
+            )}
           </div>
         </div>
       )}
@@ -242,7 +259,7 @@ function PublisherReport({
           placeholder={
             outcome === "NO_REPORT" ? "Illness, away, no contact…"
             : outcome === "DID_NOT_PREACH" ? "Illness, caring for family…"
-            : "Anything the secretary should know"
+            : "Anything the secretary should know, or the reason for any hour credit"
           }
         />
       </label>

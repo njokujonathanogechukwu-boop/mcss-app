@@ -43,6 +43,7 @@ export async function submitMobileReport(
   const aux = formData.get("aux") === "true";
   const studiesRaw = String(formData.get("studies") ?? "").trim();
   const hoursRaw = String(formData.get("hours") ?? "").trim();
+  const creditRaw = String(formData.get("credit") ?? "").trim();
   const remarks = String(formData.get("remarks") ?? "").trim();
 
   if (outcome === "") {
@@ -63,6 +64,7 @@ export async function submitMobileReport(
 
   let studies = 0;
   let hours: number | null = null;
+  let creditHours: number | null = null;
 
   if (shared) {
     studies = studiesRaw === "" ? 0 : Number(studiesRaw);
@@ -76,12 +78,24 @@ export async function submitMobileReport(
       }
       hours = parsed;
     }
+    // Hour credit goes with the hours, its reason in the remarks.
+    if (pioneerStatusUsed !== "NONE" && creditRaw !== "") {
+      const parsed = Number(creditRaw);
+      if (!Number.isInteger(parsed) || parsed < 0 || parsed > 744) {
+        return { error: "Hour credit must be a whole number between 0 and 744.", publisherId };
+      }
+      creditHours = parsed || null;
+      if (creditHours && !remarks) {
+        return { error: "Give the reason for the hour credit in Remarks.", publisherId };
+      }
+    }
   }
 
   const data = {
     outcome,
     bibleStudies: studies,
     hours,
+    creditHours,
     pioneerStatusUsed: pioneerStatusUsed as "NONE" | "AUXILIARY" | "REGULAR" | "SPECIAL",
     remarks: remarks || null,
     source: "MANUAL" as const,

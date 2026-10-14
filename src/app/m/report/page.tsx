@@ -19,7 +19,7 @@ export default async function MobileReportPage() {
       group: { select: { number: true, name: true } },
       reports: {
         where: { year: rm.year, month: rm.month },
-        select: { outcome: true, bibleStudies: true, hours: true, pioneerStatusUsed: true, remarks: true },
+        select: { outcome: true, bibleStudies: true, hours: true, creditHours: true, pioneerStatusUsed: true, remarks: true },
       },
     },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
@@ -35,6 +35,7 @@ export default async function MobileReportPage() {
       outcome: r ? r.outcome : null,
       studies: r ? r.bibleStudies : null,
       hours: r ? r.hours : null,
+      credit: r ? r.creditHours : null,
       aux: r ? r.pioneerStatusUsed === "AUXILIARY" : false,
       remarks: r ? r.remarks : null,
     };

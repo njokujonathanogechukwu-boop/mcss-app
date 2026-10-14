@@ -44,6 +44,7 @@ export async function submitGroupReport(
   const aux = formData.get("aux") === "true";
   const studiesRaw = String(formData.get("studies") ?? "").trim();
   const hoursRaw = String(formData.get("hours") ?? "").trim();
+  const creditRaw = String(formData.get("credit") ?? "").trim();
   const remarks = String(formData.get("remarks") ?? "").trim().slice(0, 120);
 
   let studies = 0;
@@ -63,10 +64,23 @@ export async function submitGroupReport(
     hours = parsed;
   }
 
+  let credit: number | null = null;
+  if (creditRaw !== "") {
+    const parsed = Number(creditRaw);
+    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 744) {
+      return { error: "Hour credit must be a whole number between 0 and 744.", publisherId };
+    }
+    credit = parsed || null;
+  }
+  if (credit && !remarks) {
+    return { error: "Give the reason for the hour credit in Remarks.", publisherId };
+  }
+
   const result = await saveGroupReport(token, publisherId, year, month, {
     outcome: rawOutcome as ReportOutcome,
     studies,
     hours,
+    credit,
     aux,
     remarks: remarks || null,
   });

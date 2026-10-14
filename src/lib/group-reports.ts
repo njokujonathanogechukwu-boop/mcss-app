@@ -98,6 +98,8 @@ export type GroupReportRecord = {
   outcome: ReportOutcome;
   studies: number;
   hours: number | null;
+  /** Hour credit, with its reason in the remarks. */
+  credit: number | null;
   pioneerUsed: string;
   remarks: string | null;
   /** True when it came through a group link rather than from the secretary. */
@@ -154,6 +156,7 @@ export async function groupMonthRows(
           outcome: true,
           bibleStudies: true,
           hours: true,
+          creditHours: true,
           pioneerStatusUsed: true,
           remarks: true,
           source: true,
@@ -177,6 +180,7 @@ export async function groupMonthRows(
               outcome: r.outcome,
               studies: r.bibleStudies,
               hours: r.hours,
+              credit: r.creditHours,
               pioneerUsed: r.pioneerStatusUsed,
               remarks: r.remarks,
               fromLink: r.source === "FORM",
@@ -190,6 +194,7 @@ export type GroupReportInput = {
   outcome: ReportOutcome;
   studies: number;
   hours: number | null;
+  credit: number | null;
   aux: boolean;
   remarks: string | null;
 };
@@ -267,6 +272,7 @@ export async function saveGroupReport(
     outcome: input.outcome,
     bibleStudies: shared ? input.studies : 0,
     hours: shared && pioneerStatusUsed !== "NONE" ? input.hours : null,
+    creditHours: shared && pioneerStatusUsed !== "NONE" && input.credit ? input.credit : null,
     pioneerStatusUsed: pioneerStatusUsed as "NONE" | "AUXILIARY" | "REGULAR" | "SPECIAL",
     remarks: input.remarks,
     source: "FORM" as const,
@@ -289,6 +295,7 @@ export async function saveGroupReport(
       `through the group's own link: ` +
       `${input.outcome === "SHARED" ? "shared" : input.outcome === "DID_NOT_PREACH" ? "did not preach" : "no report"}` +
       (shared && input.hours ? `, ${input.hours} hours` : "") +
+      (shared && input.credit && pioneerStatusUsed !== "NONE" ? `, ${input.credit} hours credit` : "") +
       (shared ? `, ${input.studies} Bible studies` : "") +
       ".",
   );
