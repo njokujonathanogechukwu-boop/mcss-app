@@ -158,7 +158,7 @@ async function s21FillData(publisher: PublisherWithGroup, serviceYear: number, f
         const r = byKey.get(`${m.year}-${m.month}`);
         if (!r) return null;
         if (r.hours) totalHours += r.hours;
-        return { shared: r.outcome === "SHARED", studies: r.bibleStudies, aux: r.pioneerStatusUsed === "AUXILIARY", hours: r.hours, remarks: r.remarks };
+        return { shared: r.outcome === "SHARED", studies: r.bibleStudies, aux: r.pioneerStatusUsed === "AUXILIARY", hours: r.hours, remarks: cardRemarks(r) };
       }),
       totalHours,
     });
@@ -254,7 +254,7 @@ async function drawS21(publisher: PublisherWithGroup, serviceYear: number): Prom
       text(doc, "not reported", cols[1].x, y, { size: 8, color: SOFT });
     } else if (r.outcome === "NO_REPORT") {
       text(doc, "no report", cols[1].x, y, { size: 8, color: SOFT });
-      if (r.remarks) text(doc, r.remarks, cols[5].x, y, { size: 8, maxWidth: cols[5].w });
+      if (cardRemarks(r)) text(doc, cardRemarks(r)!, cols[5].x, y, { size: 8, maxWidth: cols[5].w });
     } else {
       monthsReported++;
       const shared = r.outcome === "SHARED";
@@ -269,7 +269,7 @@ async function drawS21(publisher: PublisherWithGroup, serviceYear: number): Prom
       } else {
         textRight(doc, "—", cols[4].x + cols[4].w, y, { size: 8.5, color: SOFT });
       }
-      if (r.remarks) text(doc, r.remarks, cols[5].x, y, { size: 8, maxWidth: cols[5].w });
+      if (cardRemarks(r)) text(doc, cardRemarks(r)!, cols[5].x, y, { size: 8, maxWidth: cols[5].w });
     }
 
     y -= 6;
@@ -300,6 +300,16 @@ async function drawS21(publisher: PublisherWithGroup, serviceYear: number): Prom
   });
 
   return doc.pdf.save();
+}
+
+/**
+ * A month's remarks on the card, with any hour credit noted first: the card's
+ * hours column carries the field hours, and the credit and its reason are
+ * written in the remarks.
+ */
+function cardRemarks(r: { creditHours: number | null; remarks: string | null }): string | null {
+  const credit = r.creditHours ? `Credit ${r.creditHours} hrs` : null;
+  return [credit, r.remarks].filter(Boolean).join(": ") || null;
 }
 
 /** A folder or file name any computer accepts. */

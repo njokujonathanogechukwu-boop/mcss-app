@@ -51,6 +51,7 @@ export async function saveMonthlyReports(
     const rawOutcome = String(formData.get(`outcome.${id}`) ?? "").trim();
     const studiesRaw = String(formData.get(`studies.${id}`) ?? "").trim();
     const hoursRaw = String(formData.get(`hours.${id}`) ?? "").trim();
+    const creditRaw = String(formData.get(`credit.${id}`) ?? "").trim();
     const aux = formData.get(`aux.${id}`) === "true";
     const remarks = String(formData.get(`remarks.${id}`) ?? "").trim();
 
@@ -76,6 +77,8 @@ export async function saveMonthlyReports(
 
     let studies = 0;
     let hours: number | null = null;
+    let creditHours: number | null = null;
+    const who = `${publisher.firstName} ${publisher.lastName}`;
 
     if (shared) {
       studies = studiesRaw === "" ? 0 : Number(studiesRaw);
@@ -98,12 +101,29 @@ export async function saveMonthlyReports(
           hours = parsed;
         }
       }
+
+      // Hour credit counts toward a pioneer's goal, so it goes with the hours;
+      // the reason for it is written in the remarks.
+      if (creditRaw !== "") {
+        const parsed = Number(creditRaw);
+        if (!Number.isInteger(parsed) || parsed < 0 || parsed > 744) {
+          warnings.push(`${who}: hour credit must be between 0 and 744.`);
+          continue;
+        }
+        if (pioneerStatusUsed === "NONE") {
+          warnings.push(`${who}: hour credit was ignored. It applies to pioneers only.`);
+        } else if (parsed > 0) {
+          creditHours = parsed;
+          if (!remarks) warnings.push(`${who}: hour credit saved — add the reason for it in Remarks.`);
+        }
+      }
     }
 
     const data = {
       outcome,
       bibleStudies: studies,
       hours,
+      creditHours,
       pioneerStatusUsed: pioneerStatusUsed as "NONE" | "AUXILIARY" | "REGULAR" | "SPECIAL",
       remarks: remarks || null,
       source: "MANUAL" as const,

@@ -82,6 +82,7 @@ export default async function ReportsPage({
               outcome: existing.outcome,
               bibleStudies: existing.bibleStudies,
               hours: existing.hours,
+              creditHours: existing.creditHours,
               pioneerStatusUsed: existing.pioneerStatusUsed,
               remarks: existing.remarks,
             }

@@ -18,6 +18,8 @@ export type SheetRow = {
     outcome: ReportOutcome;
     bibleStudies: number;
     hours: number | null;
+    /** Hour credit, with its reason in the remarks. */
+    creditHours: number | null;
     pioneerStatusUsed: string;
     remarks: string | null;
   } | null;
@@ -68,6 +70,7 @@ export function ReportSheet({
             <Th align="center">Bible studies</Th>
             <Th align="center">Auxiliary</Th>
             <Th align="center">Hours</Th>
+            <Th align="center">Credit</Th>
             <Th>Remarks</Th>
           </tr>
         </thead>
@@ -85,6 +88,11 @@ export function ReportSheet({
           publisher is removed.
         </p>
       </div>
+      <p className="mt-1 text-xs text-ink-faint">
+        Credit is hour credit for a pioneer — for a theocratic assignment such as construction or
+        disaster relief — with its reason written in Remarks. It counts toward the pioneer&rsquo;s goal in
+        the pioneer review and is noted on the S-21; it is not added to the hours on the S-1.
+      </p>
     </form>
   );
 }
@@ -93,6 +101,7 @@ function Row({ row }: { row: SheetRow }) {
   const isPioneer = row.pioneerForMonth;
   const [outcome, setOutcome] = useState<ReportOutcome | "">(row.existing?.outcome ?? "");
   const [aux, setAux] = useState(row.existing?.pioneerStatusUsed === "AUXILIARY");
+  const [credit, setCredit] = useState(Boolean(row.existing?.creditHours));
   const shared = outcome === "SHARED";
   const hoursEnabled = shared && (isPioneer || aux);
 
@@ -171,6 +180,21 @@ function Row({ row }: { row: SheetRow }) {
         />
       </Td>
 
+      <Td align="center">
+        <input
+          type="number"
+          name={`credit.${row.id}`}
+          min={0}
+          max={744}
+          defaultValue={row.existing?.creditHours ?? ""}
+          disabled={!hoursEnabled}
+          onChange={(e) => setCredit(e.target.value !== "" && Number(e.target.value) > 0)}
+          aria-label={`${row.name} hour credit`}
+          title={hoursEnabled ? "Hour credit — give the reason in Remarks" : "Hour credit applies to pioneers only"}
+          className="w-16 rounded border border-rule-strong bg-surface px-2 py-1 text-center text-sm disabled:bg-paper disabled:text-ink-faint"
+        />
+      </Td>
+
       <Td>
         <input
           type="text"
@@ -178,7 +202,8 @@ function Row({ row }: { row: SheetRow }) {
           defaultValue={row.existing?.remarks ?? ""}
           maxLength={120}
           placeholder={
-            outcome === "NO_REPORT" ? "Why no report came in"
+            credit ? "Reason for the hour credit"
+            : outcome === "NO_REPORT" ? "Why no report came in"
             : outcome === "DID_NOT_PREACH" ? "Reason (optional)"
             : undefined
           }
