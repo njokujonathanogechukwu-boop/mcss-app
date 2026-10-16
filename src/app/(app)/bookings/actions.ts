@@ -137,6 +137,94 @@ export async function decideBooking(
   return { ok: `Request ${decision.toLowerCase()}.` };
 }
 
+/**
+ * Changes a booking that is pending or already approved: the part of the hall,
+ * who it is for, the event, the contact, the times and the setting up, with a
+ * note for the record. An approved booking may only move to a time and room
+ * no other approved booking holds, and when its time or room changes the
+ * operating committee's week-ahead and day-before emails go out again with
+ * the new details.
+ */
+export async function updateBooking(
+  _prev: BookingState,
+  formData: FormData,
+): Promise<BookingState> {
+  const auth = await guard("booking:decide");
+  if (!auth.ok) return { error: auth.error };
+
+  const id = String(formData.get("id") ?? "");
+  const parsed = bookingSchema.safeParse({
+    resourceId: formData.get("resourceId"),
+    requestingBody: formData.get("requestingBody"),
+    contactName: formData.get("contactName"),
+    contactPhone: formData.get("contactPhone") ?? "",
+    eventType: formData.get("eventType"),
+    startTime: formData.get("startTime"),
+    endTime: formData.get("endTime"),
+    setupRequirements: formData.get("setupRequirements") ?? "",
+  });
+  if (!parsed.success) return { errors: fieldErrors(parsed.error) };
+  const note = String(formData.get("decisionNote") ?? "").trim().slice(0, 200) || null;
+
+  const booking = await prisma.hallBooking.findUnique({ where: { id } });
+  if (!booking) return { error: "That booking no longer exists." };
+  if (booking.status !== "APPROVED" && booking.status !== "PENDING") {
+    return { error: "A declined or cancelled booking cannot be changed. Make a new request instead." };
+  }
+
+  const start = new Date(parsed.data.startTime);
+  const end = new Date(parsed.data.endTime);
+  const moved =
+    booking.resourceId !== parsed.data.resourceId ||
+    booking.startTime.getTime() !== start.getTime() ||
+    booking.endTime.getTime() !== end.getTime();
+
+  // The same line approval holds: two approved bookings never share a room
+  // and a time.
+  if (booking.status === "APPROVED" && moved) {
+    const clashes = await findClashes(parsed.data.resourceId, start, end, booking.id);
+    if (clashes.length > 0) {
+      return {
+        error: "That time is already taken by another approved booking, so the change was not saved.",
+        clashes: clashes.map(
+          (c) => `${c.requestingBody} — ${c.eventType}, ${formatTimeRange(c.startTime, c.endTime)}`,
+        ),
+      };
+    }
+  }
+
+  await prisma.hallBooking.update({
+    where: { id },
+    data: {
+      resourceId: parsed.data.resourceId,
+      requestingBody: parsed.data.requestingBody,
+      contactName: parsed.data.contactName,
+      contactPhone: parsed.data.contactPhone,
+      eventType: parsed.data.eventType,
+      startTime: start,
+      endTime: end,
+      setupRequirements: parsed.data.setupRequirements,
+      decisionNote: note,
+      // A new time or room is news to the committee: its notices are sent again.
+      ...(moved ? { weekReminderSentAt: null, dayReminderSentAt: null } : {}),
+    },
+  });
+
+  await recordAudit(
+    auth.session.userId, "updated", "HallBooking", id,
+    `Changed the booking for ${parsed.data.requestingBody} — ${parsed.data.eventType}` +
+      (moved ? `, now ${formatTimeRange(start, end)}` : ""),
+  );
+
+  revalidatePath("/bookings");
+  revalidatePath("/dashboard");
+  return {
+    ok: moved && booking.status === "APPROVED"
+      ? "Booking changed. The operating committee's reminders will go out again with the new time."
+      : "Booking changed.",
+  };
+}
+
 /** Who on the operating committee the hall emails go to. */
 export async function saveHallCommittee(
   _prev: BookingState,

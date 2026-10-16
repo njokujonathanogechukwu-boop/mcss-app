@@ -10,6 +10,7 @@ import { PageHeader, Section, EmptyState, Panel } from "@/components/shell";
 import { Badge } from "@/components/ui";
 import { BookingForm } from "./booking-form";
 import { DecisionForm } from "./decision-form";
+import { BookingEdit, type EditableBooking } from "./booking-edit";
 import { HallCommittee } from "./hall-committee";
 
 export const dynamic = "force-dynamic";
@@ -93,6 +94,7 @@ export default async function BookingsPage() {
                 <Panel className="p-4">
                   <BookingBody booking={b} />
                   {canDecide && <DecisionForm id={b.id} />}
+                  {canDecide && <BookingEdit booking={editable(b)} resources={resources} />}
                 </Panel>
               </li>
             ))}
@@ -108,6 +110,7 @@ export default async function BookingsPage() {
             {upcoming.map((b) => (
               <li key={b.id} className="px-4 py-3">
                 <BookingBody booking={b} />
+                {canDecide && <BookingEdit booking={editable(b)} resources={resources} />}
               </li>
             ))}
           </ul>
@@ -174,6 +177,24 @@ export default async function BookingsPage() {
       )}
     </>
   );
+}
+
+/**
+ * A booking as the edit form takes it. Times go back into the datetime-local
+ * fields the way a request writes them: the request's wall-clock time is kept
+ * as UTC on the server, so it is read back in UTC.
+ */
+function editable(b: {
+  id: string; status: string; resourceId: string; requestingBody: string; contactName: string;
+  contactPhone: string | null; eventType: string; startTime: Date; endTime: Date;
+  setupRequirements: string | null; decisionNote: string | null;
+}): EditableBooking {
+  return {
+    id: b.id, status: b.status, resourceId: b.resourceId, requestingBody: b.requestingBody,
+    contactName: b.contactName, contactPhone: b.contactPhone, eventType: b.eventType,
+    start: b.startTime.toISOString().slice(0, 16), end: b.endTime.toISOString().slice(0, 16),
+    setupRequirements: b.setupRequirements, decisionNote: b.decisionNote,
+  };
 }
 
 function BookingBody({
