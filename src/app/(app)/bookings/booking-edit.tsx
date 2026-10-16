@@ -1,7 +1,8 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
-import { TextField, TextArea, SelectField } from "@/components/fields";
+import { TextField, TextArea } from "@/components/fields";
+import { HallChoice } from "./hall-choice";
 import { Button, SubmitButton } from "@/components/ui";
 import { Notice } from "@/components/shell";
 import { decideBooking, updateBooking, type BookingState } from "./actions";
@@ -9,7 +10,8 @@ import { decideBooking, updateBooking, type BookingState } from "./actions";
 export type EditableBooking = {
   id: string;
   status: string;
-  resourceId: string;
+  /** Every part of the hall the event uses. */
+  resourceIds: string[];
   requestingBody: string;
   contactName: string;
   contactPhone: string | null;
@@ -35,7 +37,6 @@ export function BookingEdit({
   const [state, action] = useActionState<BookingState, FormData>(updateBooking, {});
   const [cancelState, cancel] = useActionState<BookingState, FormData>(decideBooking, {});
   const [open, setOpen] = useState(false);
-  const [resourceId, setResourceId] = useState(booking.resourceId);
 
   useEffect(() => {
     if (state.ok) setOpen(false);
@@ -69,10 +70,9 @@ export function BookingEdit({
           </Notice>
         )}
 
-        <SelectField
-          label="Which part of the hall" name="resourceId" value={resourceId}
-          onChange={(e) => setResourceId(e.target.value)} error={state.errors?.resourceId}
-          options={resources.map((r) => ({ value: r.id, label: r.name }))}
+        <HallChoice
+          resources={resources} defaultIds={booking.resourceIds} error={state.errors?.resourceId}
+          idPrefix={`edit-${booking.id}`}
         />
         <div className="grid gap-3 sm:grid-cols-2">
           <TextField

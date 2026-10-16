@@ -1,4 +1,5 @@
 import "server-only";
+import { loadBookingLinks, mergeEvents } from "@/lib/bookings";
 
 import { prisma } from "@/lib/prisma";
 import { emailConfigured, sendEmail } from "@/lib/email";
@@ -167,6 +168,8 @@ export type HallBookingLine = {
   endTime: Date;
   setupRequirements: string | null;
   resource: { name: string };
+  /** Every booking behind the line: more than one for an event using both halls. */
+  ids?: string[];
 };
 
 const BOOKING_SELECT = {
@@ -218,7 +221,8 @@ export async function bookingsOnDay(
   unreminded: ReminderStamp | null = "weekReminderSentAt",
 ): Promise<HallBookingLine[]> {
   const rows = await approvedBetween(dayKey, dayKey, unreminded);
-  return rows.filter((b) => lagosDayKey(b.startTime) === dayKey);
+  // An event using both halls is listed once, with both named.
+  return mergeEvents(rows.filter((b) => lagosDayKey(b.startTime) === dayKey), await loadBookingLinks());
 }
 
 /** Every approved booking in one calendar month, reminded about or not. */
@@ -226,7 +230,7 @@ export async function bookingsInMonth(year: number, month: number): Promise<Hall
   const key = `${year}-${pad(month)}`;
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const rows = await approvedBetween(`${key}-01`, `${key}-${pad(lastDay)}`, null);
-  return rows.filter((b) => monthKeyOf(lagosDayKey(b.startTime)) === key);
+  return mergeEvents(rows.filter((b) => monthKeyOf(lagosDayKey(b.startTime)) === key), await loadBookingLinks());
 }
 
 function greeting(recipients: HallRecipient[]): string {
@@ -387,7 +391,7 @@ async function sendBookingNotice(
   // day rather than the booking being forgotten.
   const sentAt = new Date();
   await prisma.hallBooking.updateMany({
-    where: { id: { in: bookings.map((b) => b.id) } },
+    where: { id: { in: bookings.flatMap((b) => b.ids ?? [b.id]) } },
     data:
       notice.stamp === "weekReminderSentAt"
         ? { weekReminderSentAt: sentAt }

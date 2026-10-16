@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui";
 import { BookingForm } from "./booking-form";
 import { DecisionForm } from "./decision-form";
 import { BookingEdit, type EditableBooking } from "./booking-edit";
+import { loadBookingLinks, mergeEvents } from "@/lib/bookings";
 import { HallCommittee } from "./hall-committee";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +28,7 @@ export default async function BookingsPage() {
   const user = await requirePermission("booking:read");
   const canDecide = can(user.role, "booking:decide");
 
-  const [pending, upcoming, past, resources] = await Promise.all([
+  const [pendingRows, upcomingRows, pastRows, resources, links] = await Promise.all([
     prisma.hallBooking.findMany({
       where: { status: "PENDING" },
       include: { resource: true },
@@ -45,7 +46,12 @@ export default async function BookingsPage() {
       take: 12,
     }),
     prisma.hallResource.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
+    loadBookingLinks(),
   ]);
+  // An event using both halls is a booking a hall: each list shows it once.
+  const pending = mergeEvents(pendingRows, links);
+  const upcoming = mergeEvents(upcomingRows, links);
+  const past = mergeEvents(pastRows, links);
 
   // Only the elders see their own items, so for everyone else the section is absent.
   const boeItems = can(user.role, "boe:read")
@@ -185,12 +191,12 @@ export default async function BookingsPage() {
  * as UTC on the server, so it is read back in UTC.
  */
 function editable(b: {
-  id: string; status: string; resourceId: string; requestingBody: string; contactName: string;
+  id: string; status: string; resourceIds: string[]; requestingBody: string; contactName: string;
   contactPhone: string | null; eventType: string; startTime: Date; endTime: Date;
   setupRequirements: string | null; decisionNote: string | null;
 }): EditableBooking {
   return {
-    id: b.id, status: b.status, resourceId: b.resourceId, requestingBody: b.requestingBody,
+    id: b.id, status: b.status, resourceIds: b.resourceIds, requestingBody: b.requestingBody,
     contactName: b.contactName, contactPhone: b.contactPhone, eventType: b.eventType,
     start: b.startTime.toISOString().slice(0, 16), end: b.endTime.toISOString().slice(0, 16),
     setupRequirements: b.setupRequirements, decisionNote: b.decisionNote,

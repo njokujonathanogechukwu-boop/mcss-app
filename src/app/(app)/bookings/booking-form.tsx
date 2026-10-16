@@ -1,7 +1,8 @@
 "use client";
 
 import { useActionState } from "react";
-import { TextField, TextArea, SelectField } from "@/components/fields";
+import { TextField, TextArea } from "@/components/fields";
+import { HallChoice } from "./hall-choice";
 import { SubmitButton } from "@/components/ui";
 import { Notice } from "@/components/shell";
 import { requestBooking, type BookingState } from "./actions";
@@ -29,11 +30,7 @@ export function BookingForm({
         </Notice>
       )}
 
-      <SelectField
-        label="Which part of the hall" name="resourceId" placeholder="Choose one"
-        error={state.errors?.resourceId}
-        options={resources.map((r) => ({ value: r.id, label: r.name }))}
-      />
+      <HallChoice resources={resources} error={state.errors?.resourceId} idPrefix="request" />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <TextField

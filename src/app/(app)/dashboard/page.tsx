@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { loadBookingLinks, mergeEvents } from "@/lib/bookings";
 import { assigneesOf, joinNames, loadDecisionExtras } from "@/lib/boe-extras";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
@@ -37,7 +38,7 @@ export default async function DashboardPage({
   const monthAnalysis = await analyse(period, period);
   const t = monthAnalysis.totals;
 
-  const [activePublishers, reportsThisYear, missing, pendingBookings, openItems, upcoming] =
+  const [activePublishers, reportsThisYear, missing, pendingIds, openItems, upcomingRows] =
     await Promise.all([
       prisma.publisher.count({ where: { status: { in: ["ACTIVE", "IRREGULAR"] } } }),
       prisma.serviceReport.groupBy({
@@ -55,8 +56,8 @@ export default async function DashboardPage({
         take: 40,
       }),
       can(user.role, "booking:decide")
-        ? prisma.hallBooking.count({ where: { status: "PENDING" } })
-        : Promise.resolve(0),
+        ? prisma.hallBooking.findMany({ where: { status: "PENDING" }, select: { id: true } })
+        : Promise.resolve([]),
       can(user.role, "boe:read")
         ? prisma.boeDecision.findMany({
             where: { status: { in: ["OPEN", "IN_PROGRESS"] } },
@@ -72,6 +73,11 @@ export default async function DashboardPage({
         take: 5,
       }),
     ]);
+
+  // An event using both halls shows once, and is counted once.
+  const bookingLinks = await loadBookingLinks();
+  const upcoming = mergeEvents(upcomingRows, bookingLinks);
+  const pendingBookings = new Set(pendingIds.map((b) => bookingLinks[b.id] ?? b.id)).size;
 
   const counts = new Map(reportsThisYear.map((r) => [`${r.year}-${r.month}`, r._count._all]));
   const reported = activePublishers - missing.length;
