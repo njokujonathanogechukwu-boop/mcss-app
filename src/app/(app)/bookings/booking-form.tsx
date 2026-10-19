@@ -43,7 +43,10 @@ export function BookingForm({
           placeholder="Circuit overseer's visit" error={state.errors?.eventType}
         />
         <TextField label="Contact name" name="contactName" required error={state.errors?.contactName} />
-        <TextField label="Contact phone" name="contactPhone" type="tel" placeholder="+234…" />
+        <TextField
+          label="Contact phone" name="contactPhone" type="tel" required placeholder="0803…"
+          error={state.errors?.contactPhone} hint="Given in the hall reminders, so the committee can call."
+        />
         <TextField
           label="Starts" name="startTime" type="datetime-local" required error={state.errors?.startTime}
         />

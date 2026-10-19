@@ -179,7 +179,8 @@ export const bookingSchema = z
     resourceId: z.string().min(1, "Choose which part of the hall is needed"),
     requestingBody: z.string().trim().min(2, "Say who the request is for").max(160),
     contactName: z.string().trim().min(2, "A contact name is required").max(120),
-    contactPhone: optionalPhone,
+    // The operating committee's reminders give this number to call.
+    contactPhone: optionalPhone.refine((v) => v !== null, "A contact phone is needed for the hall reminders"),
     eventType: z.string().trim().min(2, "Describe the event").max(160),
     startTime: z.string().refine((v) => !Number.isNaN(Date.parse(v)), "Enter a valid start"),
     endTime: z.string().refine((v) => !Number.isNaN(Date.parse(v)), "Enter a valid end"),

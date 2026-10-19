@@ -245,7 +245,10 @@ function bookingLines(b: HallBookingLine): string[] {
     `• ${b.eventType} — ${b.requestingBody}`,
     `  ${formatTimeRange(b.startTime, b.endTime)}`,
     `  ${b.resource.name}`,
-    `  Contact: ${b.contactName}${b.contactPhone ? ` (${b.contactPhone})` : ""}`,
+    // Who to call about the booking, each on its own line so the number can
+    // be tapped in a phone's mail app.
+    `  Contact person: ${b.contactName}`,
+    `  Phone: ${b.contactPhone ?? "not given — ask the secretary"}`,
   ];
   if (b.setupRequirements) lines.push(`  Setting up: ${b.setupRequirements}`);
   return lines;

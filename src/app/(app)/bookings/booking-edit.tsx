@@ -88,7 +88,8 @@ export function BookingEdit({
             error={state.errors?.contactName}
           />
           <TextField
-            label="Contact phone" name="contactPhone" type="tel" defaultValue={booking.contactPhone ?? ""}
+            label="Contact phone" name="contactPhone" type="tel" required defaultValue={booking.contactPhone ?? ""}
+            error={state.errors?.contactPhone}
           />
           <TextField
             label="Starts" name="startTime" type="datetime-local" required defaultValue={booking.start}
