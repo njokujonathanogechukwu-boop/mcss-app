@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useState } from "react";
 import { TextField, TextArea } from "@/components/fields";
 import { HallChoice } from "./hall-choice";
+import { LetterField } from "./letter-field";
 import { Button, SubmitButton } from "@/components/ui";
 import { Notice } from "@/components/shell";
 import { decideBooking, updateBooking, type BookingState } from "./actions";
@@ -21,6 +22,8 @@ export type EditableBooking = {
   end: string;
   setupRequirements: string | null;
   decisionNote: string | null;
+  /** The request letter attached to the event, if any. */
+  letter: { fileName: string; href: string } | null;
 };
 
 /**
@@ -107,6 +110,8 @@ export function BookingEdit({
           label="Note for the record" name="decisionNote" defaultValue={booking.decisionNote ?? ""}
           placeholder="Why it changed (optional)"
         />
+
+        <LetterField current={booking.letter} error={state.errors?.letter} />
 
         <div className="flex flex-wrap items-center gap-2">
           <SubmitButton size="sm" pendingLabel="Saving…">Save changes</SubmitButton>

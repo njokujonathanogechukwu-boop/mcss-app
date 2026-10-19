@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
 import { bookingSchema, hallCommitteeSchema, fieldErrors } from "@/lib/validation";
 import { eventIds, findClashes, loadBookingLinks, setBookingGroup } from "@/lib/bookings";
+import { checkLetter, eventKeyOf, moveLetter, removeLetter, saveLetter } from "@/lib/booking-letters";
 import { formatTimeRange } from "@/lib/format";
 import {
   HALL_MAIL_LABELS,
@@ -40,6 +41,17 @@ function bookingFields(formData: FormData, resourceId: string) {
   });
 }
 
+/** The request letter posted with a form, checked; null when none was attached. */
+function postedLetter(formData: FormData):
+  | { ok: true; file: File; mimeType: string }
+  | { ok: false; error: string }
+  | null {
+  const file = formData.get("letter");
+  if (!(file instanceof File) || file.size === 0) return null;
+  const checked = checkLetter(file);
+  return checked.ok ? { ok: true, file, mimeType: checked.mimeType } : checked;
+}
+
 const clashLine = (c: { requestingBody: string; eventType: string; startTime: Date; endTime: Date }) =>
   `${c.requestingBody} — ${c.eventType}, ${formatTimeRange(c.startTime, c.endTime)}`;
 
@@ -62,6 +74,10 @@ export async function requestBooking(
   const parsed = bookingFields(formData, resourceIds[0]);
   if (!parsed.success) return { errors: fieldErrors(parsed.error) };
 
+  // The request letter, when one is attached, is checked before anything is saved.
+  const letter = postedLetter(formData);
+  if (letter && !letter.ok) return { errors: { letter: letter.error } };
+
   const start = new Date(parsed.data.startTime);
   const end = new Date(parsed.data.endTime);
 
@@ -79,6 +95,8 @@ export async function requestBooking(
     ),
   );
   if (created.length > 1) await setBookingGroup(created.map((c) => c.id));
+  // The event is known by its first booking, linked or alone.
+  if (letter?.ok) await saveLetter(created[0].id, letter.file, letter.mimeType);
 
   await recordAudit(
     auth.session.userId, "requested", "HallBooking", created[0].id,
@@ -179,8 +197,12 @@ export async function updateBooking(
   const parsed = bookingFields(formData, resourceIds[0]);
   if (!parsed.success) return { errors: fieldErrors(parsed.error) };
   const note = String(formData.get("decisionNote") ?? "").trim().slice(0, 200) || null;
+  const letter = postedLetter(formData);
+  if (letter && !letter.ok) return { errors: { letter: letter.error } };
 
-  const ids = eventIds(id, await loadBookingLinks());
+  const links = await loadBookingLinks();
+  const oldKey = eventKeyOf(id, links);
+  const ids = eventIds(id, links);
   const bookings = await prisma.hallBooking.findMany({ where: { id: { in: ids } } });
   if (bookings.length === 0) return { error: "That booking no longer exists." };
   const status = bookings[0].status;
@@ -247,6 +269,12 @@ export async function updateBooking(
   // Kept and added bookings stay one event; a part taken off it stands alone.
   const remaining = written.slice(0, keep.length + add.length).map((w) => w.id);
   await setBookingGroup(remaining, drop.map((b) => b.id));
+
+  // The letter follows the event, which is now known by its first booking.
+  const newKey = remaining[0];
+  await moveLetter(oldKey, newKey);
+  if (letter?.ok) await saveLetter(newKey, letter.file, letter.mimeType);
+  else if (formData.get("removeLetter") === "true") await removeLetter(newKey);
 
   await recordAudit(
     auth.session.userId, "updated", "HallBooking", id,

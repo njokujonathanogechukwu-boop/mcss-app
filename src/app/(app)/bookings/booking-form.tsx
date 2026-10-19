@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { TextField, TextArea } from "@/components/fields";
 import { HallChoice } from "./hall-choice";
+import { LetterField } from "./letter-field";
 import { SubmitButton } from "@/components/ui";
 import { Notice } from "@/components/shell";
 import { requestBooking, type BookingState } from "./actions";
@@ -59,6 +60,8 @@ export function BookingForm({
         label="Setting up" name="setupRequirements" rows={2}
         hint="Chairs, sound, platform arrangement, anything the attendants should know."
       />
+
+      <LetterField error={state.errors?.letter} />
 
       <SubmitButton pendingLabel="Sending…">Send request</SubmitButton>
     </form>

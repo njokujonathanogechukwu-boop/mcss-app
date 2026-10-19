@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/school/login", "/api/health", "/api/cron", "/my", "/group/", "/set-password", "/forgot-password"];
+// /hall-letter/ checks its own signed link, or a session, itself.
+const PUBLIC_PATHS = ["/login", "/school/login", "/api/health", "/api/cron", "/my", "/group/", "/set-password", "/forgot-password", "/hall-letter/"];
 
 /**
  * Presence check only. The cookie's signature is verified in `readSession`,

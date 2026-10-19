@@ -12,6 +12,7 @@ import { BookingForm } from "./booking-form";
 import { DecisionForm } from "./decision-form";
 import { BookingEdit, type EditableBooking } from "./booking-edit";
 import { loadBookingLinks, mergeEvents } from "@/lib/bookings";
+import { eventKeyOf, letterIndex, letterPath, type LetterInfo } from "@/lib/booking-letters";
 import { HallCommittee } from "./hall-committee";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +29,7 @@ export default async function BookingsPage() {
   const user = await requirePermission("booking:read");
   const canDecide = can(user.role, "booking:decide");
 
-  const [pendingRows, upcomingRows, pastRows, resources, links] = await Promise.all([
+  const [pendingRows, upcomingRows, pastRows, resources, links, letters] = await Promise.all([
     prisma.hallBooking.findMany({
       where: { status: "PENDING" },
       include: { resource: true },
@@ -47,7 +48,14 @@ export default async function BookingsPage() {
     }),
     prisma.hallResource.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
     loadBookingLinks(),
+    letterIndex(),
   ]);
+  // The request letter attached to an event, with the address that opens it.
+  const letterOf = (b: { ids: string[] }): { fileName: string; href: string } | null => {
+    const key = eventKeyOf(b.ids[0], links);
+    const info: LetterInfo | undefined = letters[key];
+    return info ? { fileName: info.fileName, href: letterPath(key) } : null;
+  };
   // An event using both halls is a booking a hall: each list shows it once.
   const pending = mergeEvents(pendingRows, links);
   const upcoming = mergeEvents(upcomingRows, links);
@@ -98,9 +106,9 @@ export default async function BookingsPage() {
             {pending.map((b) => (
               <li key={b.id}>
                 <Panel className="p-4">
-                  <BookingBody booking={b} />
+                  <BookingBody booking={b} letter={letterOf(b)} />
                   {canDecide && <DecisionForm id={b.id} />}
-                  {canDecide && <BookingEdit booking={editable(b)} resources={resources} />}
+                  {canDecide && <BookingEdit booking={{ ...editable(b), letter: letterOf(b) }} resources={resources} />}
                 </Panel>
               </li>
             ))}
@@ -115,8 +123,8 @@ export default async function BookingsPage() {
           <ul className="divide-y divide-rule rounded border border-rule bg-surface">
             {upcoming.map((b) => (
               <li key={b.id} className="px-4 py-3">
-                <BookingBody booking={b} />
-                {canDecide && <BookingEdit booking={editable(b)} resources={resources} />}
+                <BookingBody booking={b} letter={letterOf(b)} />
+                {canDecide && <BookingEdit booking={{ ...editable(b), letter: letterOf(b) }} resources={resources} />}
               </li>
             ))}
           </ul>
@@ -194,7 +202,7 @@ function editable(b: {
   id: string; status: string; resourceIds: string[]; requestingBody: string; contactName: string;
   contactPhone: string | null; eventType: string; startTime: Date; endTime: Date;
   setupRequirements: string | null; decisionNote: string | null;
-}): EditableBooking {
+}): Omit<EditableBooking, "letter"> {
   return {
     id: b.id, status: b.status, resourceIds: b.resourceIds, requestingBody: b.requestingBody,
     contactName: b.contactName, contactPhone: b.contactPhone, eventType: b.eventType,
@@ -205,7 +213,9 @@ function editable(b: {
 
 function BookingBody({
   booking,
+  letter,
 }: {
+  letter?: { fileName: string; href: string } | null;
   booking: {
     eventType: string;
     requestingBody: string;
@@ -237,6 +247,14 @@ function BookingBody({
       {booking.setupRequirements && (
         <p className="mt-2 rounded border border-rule bg-paper px-3 py-1.5 text-xs text-ink-soft">
           Setting up: {booking.setupRequirements}
+        </p>
+      )}
+      {letter && (
+        <p className="mt-1.5 text-xs text-ink-soft">
+          Request letter:{" "}
+          <a href={letter.href} target="_blank" rel="noopener" className="text-pine hover:underline">
+            {letter.fileName}
+          </a>
         </p>
       )}
       {booking.decisionNote && (

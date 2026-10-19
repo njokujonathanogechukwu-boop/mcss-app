@@ -1,4 +1,6 @@
 import "server-only";
+import { eventKeyOf, letterIndex, letterPath } from "@/lib/booking-letters";
+import { requestOrigin } from "@/lib/self-service";
 import { loadBookingLinks, mergeEvents } from "@/lib/bookings";
 
 import { prisma } from "@/lib/prisma";
@@ -170,7 +172,33 @@ export type HallBookingLine = {
   resource: { name: string };
   /** Every booking behind the line: more than one for an event using both halls. */
   ids?: string[];
+  /** Where the request letter opens, when one is attached. */
+  letterUrl?: string | null;
 };
+
+/**
+ * Adds the address of each event's request letter, so the committee can open
+ * it from the email. The link is signed and opens that letter only.
+ */
+async function withLetters<T extends { id: string; ids?: string[] }>(rows: T[], links: Record<string, string>) {
+  const letters = await letterIndex();
+  if (Object.keys(letters).length === 0) return rows;
+  // The production address Vercel gives the project, so a link from the daily
+  // job never points at a deployment's own protected address.
+  const production = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  let origin: string | null = production ? `https://${production}` : null;
+  if (!origin) {
+    try {
+      origin = await requestOrigin();
+    } catch {
+      origin = null;
+    }
+  }
+  return rows.map((row) => {
+    const key = eventKeyOf((row.ids ?? [row.id])[0], links);
+    return letters[key] ? { ...row, letterUrl: `${origin ?? ""}${letterPath(key)}` } : row;
+  });
+}
 
 const BOOKING_SELECT = {
   id: true,
@@ -222,7 +250,8 @@ export async function bookingsOnDay(
 ): Promise<HallBookingLine[]> {
   const rows = await approvedBetween(dayKey, dayKey, unreminded);
   // An event using both halls is listed once, with both named.
-  return mergeEvents(rows.filter((b) => lagosDayKey(b.startTime) === dayKey), await loadBookingLinks());
+  const links = await loadBookingLinks();
+  return withLetters(mergeEvents(rows.filter((b) => lagosDayKey(b.startTime) === dayKey), links), links);
 }
 
 /** Every approved booking in one calendar month, reminded about or not. */
@@ -230,7 +259,8 @@ export async function bookingsInMonth(year: number, month: number): Promise<Hall
   const key = `${year}-${pad(month)}`;
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const rows = await approvedBetween(`${key}-01`, `${key}-${pad(lastDay)}`, null);
-  return mergeEvents(rows.filter((b) => monthKeyOf(lagosDayKey(b.startTime)) === key), await loadBookingLinks());
+  const links = await loadBookingLinks();
+  return withLetters(mergeEvents(rows.filter((b) => monthKeyOf(lagosDayKey(b.startTime)) === key), links), links);
 }
 
 function greeting(recipients: HallRecipient[]): string {
@@ -251,6 +281,7 @@ function bookingLines(b: HallBookingLine): string[] {
     `  Phone: ${b.contactPhone ?? "not given — ask the secretary"}`,
   ];
   if (b.setupRequirements) lines.push(`  Setting up: ${b.setupRequirements}`);
+  if (b.letterUrl) lines.push(`  Request letter: ${b.letterUrl}`);
   return lines;
 }
 
