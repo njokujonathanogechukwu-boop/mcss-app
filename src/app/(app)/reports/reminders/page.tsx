@@ -28,11 +28,14 @@ export default async function RemindersPage({
 
   const { label, groups, totalMissing, closed, status } = await gatherReminders(year, month);
 
+  const inactiveCount = groups.reduce((t, g) => t + g.inactive.length, 0);
+
   const cards = groups.map((g) => ({
     key: g.key,
     title: g.title,
     meta: [
-      `${g.missing.length} of ${g.members} yet to report`,
+      g.missing.length ? `${g.missing.length} of ${g.members} yet to report` : `All ${g.members} reported`,
+      g.inactive.length ? `${g.inactive.length} inactive to encourage` : null,
       g.who ? `Overseer: ${g.who}` : "No overseer on file",
       g.assistant ? `Assistant: ${addressed(g.assistant)}` : null,
     ]
@@ -56,7 +59,7 @@ export default async function RemindersPage({
     <>
       <PageHeader
         title="Reminders for the field service overseers"
-        description={`${totalMissing} publisher${totalMissing === 1 ? "" : "s"} still to report for ${label}, across ${groups.length} group${groups.length === 1 ? "" : "s"}.`}
+        description={`${totalMissing} publisher${totalMissing === 1 ? "" : "s"} still to report for ${label}, across ${groups.filter((g) => g.missing.length).length} group${groups.filter((g) => g.missing.length).length === 1 ? "" : "s"}${inactiveCount ? `; ${inactiveCount} inactive publisher${inactiveCount === 1 ? "" : "s"} for the overseers to encourage` : ""}.`}
         back={{ href: "/reports", label: "Report sheet" }}
       />
 

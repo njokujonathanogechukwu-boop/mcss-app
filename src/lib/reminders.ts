@@ -30,6 +30,8 @@ export type ReminderGroup = {
   missing: MissingReport[];
   /** Everyone in the group pioneering this month, who reports hours. */
   pioneers: { name: string; role: string }[];
+  /** Inactive publishers in the group, for the overseer to reach out to. */
+  inactive: InactivePublisher[];
   message: string;
   /** Recipient addresses for this group: the overseer, else the assistant. */
   emails: string[];
@@ -39,6 +41,12 @@ export type ReminderGroup = {
    * then, so the reminder asks for the reports directly instead.
    */
   link: string | null;
+};
+
+export type InactivePublisher = {
+  name: string;
+  /** The last month they reported, as "March 2026"; null when none is on file. */
+  lastReported: string | null;
 };
 
 export type MissingReport = {
@@ -138,7 +146,7 @@ export function waHref(phone: string | null | undefined, message: string): strin
 export async function gatherReminders(year: number, month: number): Promise<ReminderDigest> {
   const label = monthLabel(year, month);
 
-  const [closed, publishers] = await Promise.all([
+  const [closed, publishers, inactivePublishers] = await Promise.all([
     isClosed(year, month),
     prisma.publisher.findMany({
       where: { status: { in: ["ACTIVE", "IRREGULAR"] } },
@@ -162,6 +170,31 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
       },
       orderBy: [{ group: { number: "asc" } }, { lastName: "asc" }, { firstName: "asc" }],
     }),
+    // Inactive publishers are not asked for a report, but their overseer is
+    // asked to reach out to them, with the last month they reported.
+    prisma.publisher.findMany({
+      where: { status: "INACTIVE" },
+      select: {
+        firstName: true,
+        lastName: true,
+        groupId: true,
+        group: {
+          select: {
+            number: true,
+            name: true,
+            overseer: { select: { firstName: true, lastName: true, gender: true, phone: true, email: true } },
+            assistant: { select: { firstName: true, lastName: true, gender: true, phone: true, email: true } },
+          },
+        },
+        reports: {
+          where: { outcome: { in: ["SHARED", "DID_NOT_PREACH"] } },
+          select: { year: true, month: true },
+          orderBy: [{ year: "desc" }, { month: "desc" }],
+          take: 1,
+        },
+      },
+      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    }),
   ]);
 
   // A publisher recorded as moving in or starting after the month asked about
@@ -177,11 +210,13 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
     members: number;
     missing: MissingReport[];
     pioneers: { name: string; role: string }[];
+    inactive: InactivePublisher[];
   };
   const buckets = new Map<string, Bucket>();
-
-  for (const p of publishers) {
-    if (p.sinceDate && p.sinceDate > monthEnd) continue;
+  const bucketFor = (p: {
+    groupId: string | null;
+    group: { number: number; name: string; overseer: ReminderPerson | null; assistant: ReminderPerson | null } | null;
+  }): Bucket => {
     const key = p.groupId ?? "none";
     let bucket = buckets.get(key);
     if (!bucket) {
@@ -194,9 +229,16 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
         members: 0,
         missing: [],
         pioneers: [],
+        inactive: [],
       };
       buckets.set(key, bucket);
     }
+    return bucket;
+  };
+
+  for (const p of publishers) {
+    if (p.sinceDate && p.sinceDate > monthEnd) continue;
+    const bucket = bucketFor(p);
     bucket.members++;
     const name = displayName(p);
     const pioneer = pioneerRole(p, year, month);
@@ -210,8 +252,18 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
     }
   }
 
+  for (const p of inactivePublishers) {
+    const last = p.reports[0];
+    bucketFor(p).inactive.push({
+      name: displayName(p),
+      lastReported: last ? monthLabel(last.year, last.month) : null,
+    });
+  }
+
+  // A group is written to when reports are outstanding, or when it has
+  // inactive publishers its overseer is asked to encourage.
   const outstanding = [...buckets.values()]
-    .filter((b) => b.missing.length > 0)
+    .filter((b) => b.missing.length > 0 || b.inactive.length > 0)
     .sort((a, b) => ((a.number ?? 9999) - (b.number ?? 9999)) || (a.name?.localeCompare(b.name ?? "") ?? 0));
 
   // One pass for every group, so the reminders page and the scheduled email do
@@ -226,8 +278,10 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
   ]);
 
   const groups: ReminderGroup[] = outstanding.map((g) => {
-    const title = g.number ? `Group ${g.number}${g.name ? ` — ${g.name}` : ""}` : "No group";
-    const where = g.number ? `Group ${g.number}${g.name ? ` — ${g.name}` : ""}` : "publishers with no group";
+    // A group named only by its number ("Group 9") is not called "Group 9 — Group 9".
+    const named = g.name && g.name.trim().toLowerCase() !== `group ${g.number}` ? ` — ${g.name}` : "";
+    const title = g.number ? `Group ${g.number}${named}` : "No group";
+    const where = g.number ? `Group ${g.number}${named}` : "publishers with no group";
     const who = addressed(g.overseer);
     const token = g.id ? tokens.get(g.id) : undefined;
     const link = origin && token ? `${origin}/group/${token}?period=${year}-${month}` : null;
@@ -235,10 +289,9 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
     const message = [
       who ? `Good day ${who},` : "Good day,",
       "",
-      `These ${where} have not sent their field service report for ${label}:`,
-      "",
-      ...g.missing.map(missingLine),
-      "",
+      ...(g.missing.length
+        ? [`These ${where} have not sent their field service report for ${label}:`, "", ...g.missing.map(missingLine), ""]
+        : [`Everyone in ${where} has sent their field service report for ${label}. Thank you.`, ""]),
       ...(g.pioneers.length
         ? [
             `The pioneers in the group for ${label}, who report their hours as well:`,
@@ -247,7 +300,9 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
             "",
           ]
         : []),
-      ...(closed
+      ...(g.missing.length === 0
+        ? []
+        : closed
         ? [
             `The congregation's report for ${label} has already been submitted to the branch office,`,
             "so anything that comes now is added to the next month's figure. Kindly remind them to",
@@ -269,6 +324,19 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
                 ]
               : []),
           ]),
+      ...(g.inactive.length
+        ? [
+            // After the report lines a blank line parts them; the all-reported line has its own.
+            ...(g.missing.length ? [""] : []),
+            `${g.inactive.length === 1 ? "This publisher" : "These publishers"} in the group ${g.inactive.length === 1 ? "is" : "are"} inactive at present:`,
+            "",
+            ...g.inactive.map((p) => `• ${p.name}${p.lastReported ? ` — last reported ${p.lastReported}` : ""}`),
+            "",
+            "Please make a point of reaching out to them this month. A warm call or visit, a kind word",
+            "or an invitation to the meeting can do much to encourage them, and to let them know they",
+            "are loved and missed. Kindly let the elders know of any who would welcome further help.",
+          ]
+        : []),
       "",
       "Thank you for your help.",
     ].join("\n");
@@ -290,6 +358,7 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
       members: g.members,
       missing: g.missing,
       pioneers: g.pioneers,
+      inactive: g.inactive,
       message,
       emails,
       link,
@@ -297,6 +366,7 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
   });
 
   const summary = [...buckets.values()]
+    .filter((b) => b.members > 0)
     .sort((a, b) => ((a.number ?? 9999) - (b.number ?? 9999)) || (a.name?.localeCompare(b.name ?? "") ?? 0))
     .map((b) => ({ title: b.number ? `Group ${b.number}` : "No group", members: b.members, missing: b.missing.length }));
 
