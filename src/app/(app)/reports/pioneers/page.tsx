@@ -11,6 +11,10 @@ import {
 import { PageHeader, Section, EmptyState, DataTable, Th, Td } from "@/components/shell";
 import { Badge, Button } from "@/components/ui";
 import { PioneerStartForm } from "./start-form";
+import { RealignButton } from "./realign-button";
+import { prisma } from "@/lib/prisma";
+import { loadPioneerStarts } from "@/lib/pioneer-review";
+import { planRealignment } from "@/lib/pioneer-status";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +70,24 @@ export default async function PioneerReviewPage({
   const { rows } = await pioneerReview(serviceYear);
   const canWrite = can(user.role, "publisher:write");
 
+  // Reports still standing where today's status put them rather than where the
+  // recorded start does, and pioneers whose start falls after this year.
+  const [plan, starts] = await Promise.all([planRealignment(), loadPioneerStarts()]);
+  const names = new Map(
+    (await prisma.publisher.findMany({
+      where: { id: { in: [...new Set([...plan.map((p) => p.publisherId), ...Object.keys(starts)])] } },
+      select: { id: true, firstName: true, lastName: true, pioneerStatus: true, status: true },
+    })).map((p) => [p.id, p]),
+  );
+  const yearEnd = serviceYear * 12 + 8;
+  const startingLater = Object.entries(starts)
+    .filter(([id, st]) => {
+      const p = names.get(id);
+      return p && p.pioneerStatus === "REGULAR" && (p.status === "ACTIVE" || p.status === "IRREGULAR") && st.year * 12 + st.month > yearEnd;
+    })
+    .map(([id, st]) => `${names.get(id)!.firstName} ${names.get(id)!.lastName} (from ${monthLabel(st.year, st.month)})`);
+  const LINE: Record<string, string> = { NONE: "publisher", AUXILIARY: "auxiliary pioneer", REGULAR: "regular pioneer", SPECIAL: "special pioneer" };
+
   const belowPace = rows.filter((r) => r.belowPace);
   const noHours = rows.filter((r) => r.noHours);
   const belowYear = rows.filter((r) => r.meetsYear === false);
@@ -108,6 +130,37 @@ export default async function PioneerReviewPage({
           covers all twelve months.
         </p>
       </form>
+
+      {plan.length > 0 && (
+        <div className="mb-6 rounded border border-clay/30 bg-clay-light px-4 py-3 text-sm text-clay">
+          <p className="font-medium">
+            {plan.length} report{plan.length === 1 ? " does" : "s do"} not match the recorded start of regular pioneer service:
+          </p>
+          <ul className="mt-1 list-inside list-disc text-xs">
+            {plan.map((c) => {
+              const p = names.get(c.publisherId);
+              return (
+                <li key={c.id}>
+                  {p ? `${p.firstName} ${p.lastName}` : "A publisher"} · {monthLabel(c.year, c.month)}: counted as{" "}
+                  {LINE[c.from] ?? c.from}, should be {LINE[c.to]}
+                </li>
+              );
+            })}
+          </ul>
+          <p className="mt-1.5 text-xs">
+            Correcting moves each report to the right line of the S-1; the figures stay as they are. A month
+            already submitted may then differ from what the branch has.
+          </p>
+          {canWrite && <div className="mt-2"><RealignButton count={plan.length} /></div>}
+        </div>
+      )}
+
+      {startingLater.length > 0 && (
+        <p className="mb-6 rounded border border-rule bg-surface px-4 py-3 text-sm text-ink-soft">
+          Not in this service year, as their regular pioneer service starts after August {serviceYear}:{" "}
+          {startingLater.join(", ")}. Choose {serviceYearLabel(serviceYear + 1)} above to review them.
+        </p>
+      )}
 
       <Section
         title="What the review looks for"

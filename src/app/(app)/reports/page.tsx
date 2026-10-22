@@ -15,7 +15,7 @@ import {
   getPeriod, outstandingLateReports, collectingMonth, lateReportDetails, parseLateKeys, clearedLateReports,
   lockedReportKeys, reportKey,
 } from "@/lib/report-periods";
-import { statusFacts, statusForMonth } from "@/lib/pioneer-status";
+import { planRealignment, statusFacts, statusForMonth } from "@/lib/pioneer-status";
 import { LateReports } from "./late-reports";
 import { CloseMonthButton, ReopenMonthButton } from "./close-month";
 import { CollectingMonthForm } from "./collecting-month";
@@ -58,7 +58,14 @@ export default async function ReportsPage({
 
   // Each row stands as the publisher did in this month, not as they do today,
   // and a report the branch already has is shown locked.
-  const [facts, locked] = await Promise.all([statusFacts(publishers.map((p) => p.id)), lockedReportKeys()]);
+  const [facts, locked, realign] = await Promise.all([
+    statusFacts(publishers.map((p) => p.id)),
+    lockedReportKeys(),
+    planRealignment(),
+  ]);
+  // Reports of this month saved under today's standing that a recorded start
+  // of regular pioneer service puts on another line of the S-1.
+  const misplaced = realign.filter((c) => c.year === year && c.month === month);
 
   // A publisher recorded as moving in or starting after this month was not on
   // the roll yet, so no report is expected of them for it.
@@ -263,6 +270,14 @@ export default async function ReportsPage({
       </form>
 
       {/* The congregation's figures, so the sheet's group filter does not narrow them. */}
+      {misplaced.length > 0 && (
+        <div className="mb-3 rounded border border-clay/30 bg-clay-light px-4 py-3 text-sm text-clay">
+          {misplaced.length} report{misplaced.length === 1 ? " for this month is" : "s for this month are"} on the
+          wrong line of the S-1: saved under the publisher's standing today, though their regular pioneer
+          service began later.{" "}
+          <Link href="/reports/pioneers" className="font-medium underline">Correct them on the pioneer review</Link>.
+        </div>
+      )}
       <HubFigures s={hub} outstanding={congregationOutstanding} />
 
       {rows.length === 0 ? (

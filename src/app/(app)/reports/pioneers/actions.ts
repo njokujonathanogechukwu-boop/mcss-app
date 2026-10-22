@@ -6,7 +6,7 @@ import { guard, recordAudit } from "@/lib/auth";
 import { displayName } from "@/lib/format";
 import { monthLabel } from "@/lib/service-year";
 import { setPioneerStart } from "@/lib/pioneer-review";
-import { realignPioneerReports } from "@/lib/pioneer-status";
+import { applyRealignment, planRealignment, realignPioneerReports } from "@/lib/pioneer-status";
 
 export type StartState = { error?: string; ok?: string };
 
@@ -62,4 +62,27 @@ export async function savePioneerStart(_prev: StartState, formData: FormData): P
           .join(", ")}).`
       : "Saved.",
   };
+}
+
+/**
+ * Moves every report that does not yet stand where its publisher's recorded
+ * start of regular pioneer service puts it — for starts recorded before the
+ * reports were moved on saving, or reports entered since under the old rule.
+ */
+export async function applyRecordedStarts(_prev: StartState, _formData: FormData): Promise<StartState> {
+  const auth = await guard("publisher:write");
+  if (!auth.ok) return { error: auth.error };
+
+  const plan = await planRealignment();
+  if (plan.length === 0) return { ok: "Every report already matches the recorded starts." };
+  const moved = await applyRealignment(plan);
+
+  await recordAudit(
+    auth.session.userId, "updated", "ServiceReport", null,
+    `Moved ${moved} report${moved === 1 ? "" : "s"} to the standing the recorded starts of regular pioneer service give them`,
+  );
+
+  revalidatePath("/reports/pioneers");
+  revalidatePath("/reports");
+  return { ok: `${moved} report${moved === 1 ? "" : "s"} corrected.` };
 }

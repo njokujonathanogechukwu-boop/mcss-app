@@ -86,30 +86,64 @@ export async function statusFacts(publisherIds: string[]): Promise<Map<string, S
  * including in months already submitted, whose figure on the branch's site
  * may then need the same correction. Returns how many reports moved.
  */
-export async function realignPioneerReports(publisherId: string): Promise<{ moved: number; months: string[] }> {
-  const facts = (await statusFacts([publisherId])).get(publisherId);
-  if (!facts?.regularStart) return { moved: 0, months: [] };
-  const reports = await prisma.serviceReport.findMany({
-    where: { publisherId, outcome: { in: ["SHARED", "DID_NOT_PREACH"] } },
-    select: { id: true, year: true, month: true, hours: true, pioneerStatusUsed: true },
-  });
-  const changes: { id: string; to: MonthStatus; year: number; month: number }[] = [];
+export type Realignment = {
+  id: string;
+  publisherId: string;
+  year: number;
+  month: number;
+  from: string;
+  to: MonthStatus;
+};
+
+/**
+ * The reports that do not yet stand where their publisher's recorded start of
+ * regular pioneer service puts them, without changing anything: for one
+ * publisher, or for everyone with a start on record.
+ */
+export async function planRealignment(publisherIds?: string[]): Promise<Realignment[]> {
+  const starts = await loadPioneerStarts();
+  const ids = (publisherIds ?? Object.keys(starts)).filter((id) => starts[id]);
+  if (ids.length === 0) return [];
+  const [facts, reports] = await Promise.all([
+    statusFacts(ids),
+    prisma.serviceReport.findMany({
+      where: { publisherId: { in: ids }, outcome: { in: ["SHARED", "DID_NOT_PREACH"] } },
+      select: { id: true, publisherId: true, year: true, month: true, hours: true, pioneerStatusUsed: true },
+    }),
+  ]);
+  const plan: Realignment[] = [];
   for (const r of reports) {
-    const base = statusForMonth(facts, r.year, r.month);
+    const f = facts.get(r.publisherId);
+    if (!f?.regularStart) continue;
+    const base = statusForMonth(f, r.year, r.month);
     let to: MonthStatus = r.pioneerStatusUsed as MonthStatus;
     if (base === "REGULAR" || base === "SPECIAL") to = base;
     else if (r.pioneerStatusUsed === "REGULAR" || r.pioneerStatusUsed === "SPECIAL") {
       to = base === "AUXILIARY" || r.hours !== null ? "AUXILIARY" : "NONE";
     }
-    if (to !== r.pioneerStatusUsed) changes.push({ id: r.id, to, year: r.year, month: r.month });
+    if (to !== r.pioneerStatusUsed) {
+      plan.push({ id: r.id, publisherId: r.publisherId, year: r.year, month: r.month, from: r.pioneerStatusUsed, to });
+    }
   }
-  if (changes.length) {
+  return plan.sort((x, y) => x.year * 12 + x.month - (y.year * 12 + y.month));
+}
+
+/** Writes a plan in one transaction. */
+export async function applyRealignment(plan: Realignment[]): Promise<number> {
+  if (plan.length) {
     await prisma.$transaction(
-      changes.map((c) => prisma.serviceReport.update({ where: { id: c.id }, data: { pioneerStatusUsed: c.to } })),
+      plan.map((c) => prisma.serviceReport.update({ where: { id: c.id }, data: { pioneerStatusUsed: c.to } })),
     );
   }
-  return {
-    moved: changes.length,
-    months: changes.sort((a, b) => a.year * 12 + a.month - (b.year * 12 + b.month)).map((c) => `${c.year}-${c.month}`),
-  };
+  return plan.length;
+}
+
+/**
+ * Puts one publisher's reports in step with their recorded start of regular
+ * pioneer service. Returns how many reports moved, and their months.
+ */
+export async function realignPioneerReports(publisherId: string): Promise<{ moved: number; months: string[] }> {
+  const plan = await planRealignment([publisherId]);
+  await applyRealignment(plan);
+  return { moved: plan.length, months: plan.map((c) => `${c.year}-${c.month}`) };
 }
