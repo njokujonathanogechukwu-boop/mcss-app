@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { reportingMonth, monthLabel } from "@/lib/service-year";
+import { statusFacts, statusForMonth } from "@/lib/pioneer-status";
+import { lockedReportKeys, reportKey } from "@/lib/report-periods";
 import { MobileReportList, type ReportRow } from "./mobile-report-list";
 
 export const dynamic = "force-dynamic";
@@ -8,6 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function MobileReportPage() {
   await requirePermission("report:write");
   const rm = reportingMonth();
+  const { year, month } = rm;
 
   const publishers = await prisma.publisher.findMany({
     where: { status: { in: ["ACTIVE", "IRREGULAR"] } },
@@ -24,6 +27,8 @@ export default async function MobileReportPage() {
     },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
   });
+  // Each publisher stands as they did in this month; a submitted report is locked.
+  const [facts, locked] = await Promise.all([statusFacts(publishers.map((p) => p.id)), lockedReportKeys()]);
 
   const rows: ReportRow[] = publishers.map((p) => {
     const r = p.reports[0];
@@ -31,12 +36,18 @@ export default async function MobileReportPage() {
       id: p.id,
       name: `${p.firstName} ${p.lastName}`,
       group: p.group ? `${p.group.number} — ${p.group.name}` : null,
-      isPioneer: p.pioneerStatus !== "NONE",
+      isPioneer: (() => {
+        const status = statusForMonth(facts.get(p.id)!, year, month);
+        const nowFullTime = p.pioneerStatus === "REGULAR" || p.pioneerStatus === "SPECIAL";
+        const stored = r?.pioneerStatusUsed;
+        return status === "REGULAR" || status === "SPECIAL" || ((stored === "REGULAR" || stored === "SPECIAL") && !nowFullTime);
+      })(),
+      locked: locked.has(reportKey(p.id, year, month)),
       outcome: r ? r.outcome : null,
       studies: r ? r.bibleStudies : null,
       hours: r ? r.hours : null,
       credit: r ? r.creditHours : null,
-      aux: r ? r.pioneerStatusUsed === "AUXILIARY" : false,
+      aux: r ? r.pioneerStatusUsed === "AUXILIARY" : statusForMonth(facts.get(p.id)!, year, month) === "AUXILIARY",
       remarks: r ? r.remarks : null,
     };
   });

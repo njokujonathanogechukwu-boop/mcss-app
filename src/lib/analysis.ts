@@ -212,6 +212,11 @@ export async function analyse(from: Period, to: Period, groupId?: string | null)
 
   // ---- by publisher
   const perPublisher = new Map<string, PublisherRow>();
+  // The standing shown is the one their latest report in the range was made
+  // under, not today's: someone who has just become a regular pioneer was not
+  // one for the months being analysed.
+  const latestAt = new Map<string, number>();
+  const standingOf = (used: string) => (used === "REGULAR" ? "RP" : used === "SPECIAL" ? "SP" : "P");
   for (const r of reports) {
     const pub = publisherById.get(r.publisherId);
     if (!pub) continue;
@@ -225,6 +230,11 @@ export async function analyse(from: Period, to: Period, groupId?: string | null)
         hours: 0, studies: 0, auxMonths: 0,
       };
       perPublisher.set(pub.id, row);
+    }
+    const at = r.year * 12 + r.month;
+    if (r.outcome !== "NO_REPORT" && at > (latestAt.get(pub.id) ?? -1)) {
+      latestAt.set(pub.id, at);
+      row.standing = standingOf(r.pioneerStatusUsed);
     }
     if (r.outcome === "NO_REPORT") {
       row.monthsNoReport++;

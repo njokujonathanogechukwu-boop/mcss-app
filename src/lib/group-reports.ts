@@ -2,6 +2,7 @@ import "server-only";
 
 import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
+import { statusFacts, statusForMonth, statusToStore } from "@/lib/pioneer-status";
 import { recordAudit } from "@/lib/auth";
 import { displayName, type ReportOutcome } from "@/lib/format";
 import { isClosed, collectingMonth } from "@/lib/report-periods";
@@ -109,7 +110,10 @@ export type GroupReportRecord = {
 export type GroupMonthRow = {
   id: string;
   name: string;
+  /** A regular or special pioneer in the month on screen — not necessarily today. */
   isPioneer: boolean;
+  /** Whether the auxiliary choice starts on: the report says so, or an approval covers the month. */
+  auxDefault: boolean;
   record: GroupReportRecord | null;
   /** True when the only thing on file is a noted "no report". */
   noted: boolean;
@@ -166,14 +170,20 @@ export async function groupMonthRows(
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
   });
 
+  // Each publisher stands as they did in this month, not as they do today.
+  const facts = await statusFacts(publishers.map((p) => p.id));
   return publishers
     .filter((p) => !p.sinceDate || p.sinceDate <= monthEnd)
     .map((p) => {
       const r = p.reports[0];
+      const status = statusForMonth(facts.get(p.id)!, year, month);
+      const nowFullTime = p.pioneerStatus === "REGULAR" || p.pioneerStatus === "SPECIAL";
+      const storedFullTime = r?.pioneerStatusUsed === "REGULAR" || r?.pioneerStatusUsed === "SPECIAL";
       return {
         id: p.id,
         name: displayName(p),
-        isPioneer: p.pioneerStatus !== "NONE",
+        isPioneer: status === "REGULAR" || status === "SPECIAL" || (storedFullTime && !nowFullTime),
+        auxDefault: r ? r.pioneerStatusUsed === "AUXILIARY" : status === "AUXILIARY",
         noted: r?.outcome === "NO_REPORT",
         record: r
           ? {
@@ -250,7 +260,7 @@ export async function saveGroupReport(
   // the link never overwrites it.
   const existing = await prisma.serviceReport.findUnique({
     where: { publisherId_year_month: { publisherId: publisher.id, year, month } },
-    select: { outcome: true, source: true },
+    select: { outcome: true, source: true, pioneerStatusUsed: true },
   });
   if (existing && existing.outcome !== "NO_REPORT" && existing.source !== "FORM") {
     return {
@@ -261,12 +271,11 @@ export async function saveGroupReport(
   const changed = Boolean(existing && existing.source === "FORM" && existing.outcome !== "NO_REPORT");
 
   const shared = input.outcome === "SHARED";
-  const pioneerStatusUsed =
-    input.aux && shared
-      ? "AUXILIARY"
-      : publisher.pioneerStatus === "NONE"
-        ? "NONE"
-        : publisher.pioneerStatus;
+  // The standing for this month, not today's.
+  const pioneerStatusUsed = statusToStore(
+    (await statusFacts([publisher.id])).get(publisher.id)!, year, month,
+    { shared, auxTicked: input.aux, existing: existing?.pioneerStatusUsed ?? null },
+  );
 
   const data = {
     outcome: input.outcome,

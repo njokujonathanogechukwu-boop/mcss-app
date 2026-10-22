@@ -4,7 +4,8 @@ import { displayName } from "@/lib/format";
 import { monthLabel } from "@/lib/service-year";
 import { emailConfigured, sendEmail } from "@/lib/email";
 import { isClosed } from "@/lib/report-periods";
-import { auxCovers } from "@/lib/auxiliary";
+import { statusForMonth } from "@/lib/pioneer-status";
+import { loadPioneerStarts } from "@/lib/pioneer-review";
 import { ensureGroupTokens } from "@/lib/group-reports";
 import { requestOrigin } from "@/lib/self-service";
 
@@ -66,13 +67,14 @@ export type MissingReport = {
  */
 function pioneerRole(
   p: { pioneerStatus: string; auxApprovals: { startYear: number; startMonth: number; months: number | null }[] },
+  regularStart: { year: number; month: number } | null,
   year: number,
   month: number,
 ): string | null {
-  if (p.pioneerStatus === "REGULAR") return "Regular pioneer";
-  if (p.pioneerStatus === "SPECIAL") return "Special pioneer";
-  if (p.auxApprovals.some((a) => auxCovers(a, year, month))) return "Auxiliary pioneer";
-  if (p.pioneerStatus === "AUXILIARY" && p.auxApprovals.length === 0) return "Auxiliary pioneer";
+  const status = statusForMonth({ ...p, regularStart }, year, month);
+  if (status === "REGULAR") return "Regular pioneer";
+  if (status === "SPECIAL") return "Special pioneer";
+  if (status === "AUXILIARY") return "Auxiliary pioneer";
   return null;
 }
 
@@ -146,7 +148,7 @@ export function waHref(phone: string | null | undefined, message: string): strin
 export async function gatherReminders(year: number, month: number): Promise<ReminderDigest> {
   const label = monthLabel(year, month);
 
-  const [closed, publishers, inactivePublishers] = await Promise.all([
+  const [closed, publishers, inactivePublishers, starts] = await Promise.all([
     isClosed(year, month),
     prisma.publisher.findMany({
       where: { status: { in: ["ACTIVE", "IRREGULAR"] } },
@@ -195,6 +197,7 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
       },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
+    loadPioneerStarts(),
   ]);
 
   // A publisher recorded as moving in or starting after the month asked about
@@ -241,7 +244,7 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
     const bucket = bucketFor(p);
     bucket.members++;
     const name = displayName(p);
-    const pioneer = pioneerRole(p, year, month);
+    const pioneer = pioneerRole(p, starts[p.id] ?? null, year, month);
     if (pioneer) bucket.pioneers.push({ name, role: pioneer });
     const report = p.reports[0];
     if (!report || report.outcome === "NO_REPORT") {

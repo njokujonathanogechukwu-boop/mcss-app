@@ -363,3 +363,30 @@ export async function clearedLateReports(): Promise<{ publisherId: string; year:
   const absorbed = new Set(periods.flatMap((p) => p.lateKeys));
   return parseLateKeys(cleared.filter((k) => !absorbed.has(k)));
 }
+
+// ------------------------------------------------------------------ the lock
+
+/**
+ * The reports a submitted month carries, which are locked: every report that
+ * was on file when its own month went to the branch, and every late report a
+ * later month absorbed when it went. They are not changed or removed until the
+ * month that counted them is reopened. A report still missing from a closed
+ * month is not locked: entering it is how a late report comes in, and it is
+ * locked in turn once the month that counts it is closed.
+ */
+export async function lockedReportKeys(): Promise<Set<string>> {
+  const periods = await prisma.reportPeriod.findMany({
+    select: { year: true, month: true, onTimeIds: true, lateKeys: true },
+  });
+  const keys = new Set<string>();
+  for (const p of periods) {
+    for (const id of p.onTimeIds) keys.add(reportKey(id, p.year, p.month));
+    for (const k of p.lateKeys) keys.add(k);
+  }
+  return keys;
+}
+
+/** Why a locked report cannot be changed, in the words every form uses. */
+export function lockedMessage(name: string, label: string): string {
+  return `${name}'s ${label} report was submitted to the branch and is locked. Reopen the month to change it.`;
+}

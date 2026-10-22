@@ -132,7 +132,7 @@ function PublisherReport({
     {},
   );
   const [outcome, setOutcome] = useState<ReportOutcome | "">(row.record?.outcome ?? "");
-  const [aux, setAux] = useState(row.record?.pioneerUsed === "AUXILIARY");
+  const [aux, setAux] = useState(row.auxDefault);
   const shared = outcome === "SHARED";
 
   // A save that landed swaps this form for the parent's "recorded" panel; only a

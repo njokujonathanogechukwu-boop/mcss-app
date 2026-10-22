@@ -10,10 +10,12 @@ export type SheetRow = {
   id: string;
   name: string;
   group: string;
-  pioneerStatus: string;
-  /** Counts as a pioneer for the month on screen: an auxiliary only for the
-   * months their approved application covers. */
-  pioneerForMonth: boolean;
+  /** A regular or special pioneer in the month on screen — not necessarily today. */
+  regular: boolean;
+  /** Whether the auxiliary box starts ticked: the report says so, or an approval covers the month. */
+  auxDefault: boolean;
+  /** Counted in a month already submitted to the branch: shown, not changed. */
+  locked: boolean;
   existing: {
     outcome: ReportOutcome;
     bibleStudies: number;
@@ -98,12 +100,43 @@ export function ReportSheet({
 }
 
 function Row({ row }: { row: SheetRow }) {
-  const isPioneer = row.pioneerForMonth;
+  if (row.locked) return <LockedRow row={row} />;
+  return <OpenRow row={row} />;
+}
+
+/**
+ * A report the branch already has. It posts nothing, so a save never touches
+ * it; reopening the month is the way to change it.
+ */
+function LockedRow({ row }: { row: SheetRow }) {
+  const r = row.existing;
+  return (
+    <tr className="bg-paper/40">
+      <Td>
+        <span className="block text-sm text-ink">{row.name}</span>
+        <span className="text-xxs text-ink-faint">
+          {row.group} · <Badge>Submitted · locked</Badge>
+        </span>
+      </Td>
+      <Td align="center" className="text-xs text-ink-soft">{r ? REPORT_OUTCOME_LABELS[r.outcome] : "—"}</Td>
+      <Td align="center" className="text-xs text-ink-soft">{r && r.outcome === "SHARED" ? r.bibleStudies : ""}</Td>
+      <Td align="center" className="text-xxs text-ink-faint">
+        {r?.pioneerStatusUsed === "AUXILIARY" ? "auxiliary" : r?.pioneerStatusUsed === "REGULAR" || r?.pioneerStatusUsed === "SPECIAL" ? "regular" : ""}
+      </Td>
+      <Td align="center" className="text-xs text-ink-soft">{r?.hours ?? ""}</Td>
+      <Td align="center" className="text-xs text-ink-soft">{r?.creditHours ?? ""}</Td>
+      <Td className="text-xs text-ink-soft">{r?.remarks ?? ""}</Td>
+    </tr>
+  );
+}
+
+function OpenRow({ row }: { row: SheetRow }) {
   const [outcome, setOutcome] = useState<ReportOutcome | "">(row.existing?.outcome ?? "");
-  const [aux, setAux] = useState(row.existing?.pioneerStatusUsed === "AUXILIARY");
+  const [aux, setAux] = useState(row.auxDefault);
+  const isPioneer = row.regular || aux;
   const [credit, setCredit] = useState(Boolean(row.existing?.creditHours));
   const shared = outcome === "SHARED";
-  const hoursEnabled = shared && (isPioneer || aux);
+  const hoursEnabled = shared && isPioneer;
 
   return (
     <tr className={outcome ? "" : "bg-paper/50"}>
@@ -150,7 +183,9 @@ function Row({ row }: { row: SheetRow }) {
       </Td>
 
       <Td align="center">
-        {row.pioneerStatus === "NONE" || row.pioneerStatus === "AUXILIARY" ? (
+        {!row.regular ? (
+          <>
+          <input type="hidden" name={`auxOffered.${row.id}`} value="true" />
           <input
             type="checkbox"
             name={`aux.${row.id}`}
@@ -161,6 +196,7 @@ function Row({ row }: { row: SheetRow }) {
             aria-label={`${row.name} served as an auxiliary pioneer`}
             className="h-4 w-4 rounded-sm border-rule-strong text-pine focus:ring-pine"
           />
+          </>
         ) : (
           <span className="text-xxs text-ink-faint">regular</span>
         )}

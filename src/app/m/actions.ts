@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
 import { displayName, REPORT_OUTCOMES, type ReportOutcome } from "@/lib/format";
 import { monthLabel } from "@/lib/service-year";
+import { statusFacts, statusToStore } from "@/lib/pioneer-status";
+import { lockedMessage, lockedReportKeys, reportKey } from "@/lib/report-periods";
 
 export type MobileReportState = { ok?: boolean; error?: string; message?: string; publisherId?: string };
 
@@ -34,6 +36,15 @@ export async function submitMobileReport(
   });
   if (!publisher) return { error: "That publisher no longer exists.", publisherId };
 
+  // A report the branch already has is not changed from here.
+  if ((await lockedReportKeys()).has(reportKey(publisherId, year, month))) {
+    return { error: lockedMessage(displayName(publisher), monthLabel(year, month)), publisherId };
+  }
+  const existingReport = await prisma.serviceReport.findUnique({
+    where: { publisherId_year_month: { publisherId, year, month } },
+    select: { pioneerStatusUsed: true },
+  });
+
   const clearing = formData.get("clear") === "true";
   const outcome = (clearing ? "" : String(formData.get("outcome") ?? "").trim()) as ReportOutcome | "";
   if (outcome !== "" && !REPORT_OUTCOMES.includes(outcome as ReportOutcome)) {
@@ -60,7 +71,11 @@ export async function submitMobileReport(
   }
 
   const shared = outcome === "SHARED";
-  const pioneerStatusUsed = aux && shared ? "AUXILIARY" : publisher.pioneerStatus === "NONE" ? "NONE" : publisher.pioneerStatus;
+  // The standing for this month, not today's.
+  const pioneerStatusUsed = statusToStore(
+    (await statusFacts([publisherId])).get(publisherId)!, year, month,
+    { shared, auxTicked: aux, existing: existingReport?.pioneerStatusUsed ?? null },
+  );
 
   let studies = 0;
   let hours: number | null = null;

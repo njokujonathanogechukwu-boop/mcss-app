@@ -5,7 +5,10 @@ import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
 import { REPORT_OUTCOMES, type ReportOutcome } from "@/lib/format";
 import { monthLabel, calendarMonth } from "@/lib/service-year";
-import { closeMonth, reopenMonth, isClosed, setCollectingMonth, outstandingLateReports, setLateCleared } from "@/lib/report-periods";
+import {
+  closeMonth, reopenMonth, isClosed, setCollectingMonth, outstandingLateReports, setLateCleared, lockedReportKeys, reportKey,
+} from "@/lib/report-periods";
+import { statusFacts, statusToStore } from "@/lib/pioneer-status";
 
 export type ReportsState = { error?: string; ok?: string; warnings?: string[] };
 
@@ -38,6 +41,18 @@ export async function saveMonthlyReports(
   });
   const known = new Map(publishers.map((p) => [p.id, p]));
 
+  // The standing each report belongs to is the one for this month, not today;
+  // and a report the branch already has is locked.
+  const [facts, locked, onFile] = await Promise.all([
+    statusFacts(ids),
+    lockedReportKeys(),
+    prisma.serviceReport.findMany({
+      where: { publisherId: { in: ids }, year, month },
+      select: { publisherId: true, pioneerStatusUsed: true },
+    }),
+  ]);
+  const existingStatus = new Map(onFile.map((r) => [r.publisherId, r.pioneerStatusUsed]));
+
   const warnings: string[] = [];
   const writes: Promise<unknown>[] = [];
   let saved = 0;
@@ -46,13 +61,15 @@ export async function saveMonthlyReports(
   for (const id of ids) {
     const publisher = known.get(id);
     if (!publisher) continue;
+    if (locked.has(reportKey(id, year, month))) continue; // shown read-only; never changed or removed
 
     const touched = formData.get(`touched.${id}`) === "true";
     const rawOutcome = String(formData.get(`outcome.${id}`) ?? "").trim();
     const studiesRaw = String(formData.get(`studies.${id}`) ?? "").trim();
     const hoursRaw = String(formData.get(`hours.${id}`) ?? "").trim();
     const creditRaw = String(formData.get(`credit.${id}`) ?? "").trim();
-    const aux = formData.get(`aux.${id}`) === "true";
+    // The auxiliary box is only on rows where it applies this month.
+    const aux = formData.get(`auxOffered.${id}`) === "true" ? formData.get(`aux.${id}`) === "true" : undefined;
     const remarks = String(formData.get(`remarks.${id}`) ?? "").trim();
 
     if (!REPORT_OUTCOMES.includes(rawOutcome as ReportOutcome)) {
@@ -69,11 +86,11 @@ export async function saveMonthlyReports(
 
     const outcome = rawOutcome as ReportOutcome;
     const shared = outcome === "SHARED";
-    const pioneerStatusUsed = aux && shared
-      ? "AUXILIARY"
-      : publisher.pioneerStatus === "NONE"
-        ? "NONE"
-        : publisher.pioneerStatus;
+    const pioneerStatusUsed = statusToStore(facts.get(id)!, year, month, {
+      shared,
+      auxTicked: aux,
+      existing: existingStatus.get(id) ?? null,
+    });
 
     let studies = 0;
     let hours: number | null = null;

@@ -6,6 +6,7 @@ import { guard, recordAudit } from "@/lib/auth";
 import { displayName } from "@/lib/format";
 import { monthLabel } from "@/lib/service-year";
 import { setPioneerStart } from "@/lib/pioneer-review";
+import { realignPioneerReports } from "@/lib/pioneer-status";
 
 export type StartState = { error?: string; ok?: string };
 
@@ -34,6 +35,9 @@ export async function savePioneerStart(_prev: StartState, formData: FormData): P
   if (!publisher) return { error: "That publisher is no longer on file." };
 
   await setPioneerStart(publisherId, start);
+  // Reports already on file are moved to the S-1 line the start puts them on:
+  // before it auxiliary or publisher, from it regular.
+  const realigned = start ? await realignPioneerReports(publisherId) : { moved: 0, months: [] as string[] };
   await recordAudit(
     auth.session.userId, "updated", "Publisher", publisherId,
     start
@@ -41,6 +45,21 @@ export async function savePioneerStart(_prev: StartState, formData: FormData): P
       : `Cleared the recorded start of ${displayName(publisher)}'s regular pioneer service`,
   );
 
+  if (realigned.moved) {
+    await recordAudit(
+      auth.session.userId, "updated", "ServiceReport", publisherId,
+      `Moved ${realigned.moved} of ${displayName(publisher)}'s reports to the standing their start of regular pioneer service gives them`,
+    );
+  }
+
   revalidatePath("/reports/pioneers");
-  return { ok: start ? "Saved." : "Cleared." };
+  revalidatePath("/reports");
+  if (!start) return { ok: "Cleared." };
+  return {
+    ok: realigned.moved
+      ? `Saved. ${realigned.moved} earlier report${realigned.moved === 1 ? "" : "s"} corrected (${realigned.months
+          .map((k) => { const [y, m] = k.split("-").map(Number); return monthLabel(y, m); })
+          .join(", ")}).`
+      : "Saved.",
+  };
 }

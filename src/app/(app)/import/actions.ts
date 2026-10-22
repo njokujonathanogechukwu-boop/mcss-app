@@ -1,5 +1,7 @@
 "use server";
 
+import { statusFacts, statusToStore } from "@/lib/pioneer-status";
+import { lockedReportKeys, reportKey } from "@/lib/report-periods";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
@@ -309,25 +311,28 @@ export async function commitReportImport(
   const analysis = await analyseReports(csv, options);
   if (!analysis.layout) return { error: "The sheet could no longer be read. Start again." };
 
-  const toWrite = analysis.rows.filter((r) => r.publisherId && (overwrite || !r.existing));
+  // A report the branch already has is never overwritten by an import.
+  const locked = await lockedReportKeys();
+  const toWrite = analysis.rows.filter(
+    (r) => r.publisherId && (overwrite || !r.existing) && !locked.has(reportKey(r.publisherId, r.year, r.month)),
+  );
   if (toWrite.length === 0) {
     return { error: "Nothing to import: every report was either already on file or for a name that is not on file." };
   }
 
-  // Pioneer standing is recorded per report. The sheet does not carry it,
-  // so take the publisher's current standing, with the sheet's AP mark
-  // overriding it for that month. Hours on a non-pioneer month are kept as
-  // written: before November 2023 every publisher reported hours.
-  const publishers = await prisma.publisher.findMany({
-    where: { id: { in: [...new Set(toWrite.map((r) => r.publisherId!))] } },
-    select: { id: true, pioneerStatus: true },
-  });
-  const standing = new Map(publishers.map((p) => [p.id, p.pioneerStatus]));
+  // Pioneer standing is recorded per report. The sheet does not carry it, so
+  // it is the publisher's standing in that month — their start of regular
+  // pioneer service and their auxiliary approvals — with the sheet's AP mark
+  // overriding it. Hours on a non-pioneer month are kept as written: before
+  // November 2023 every publisher reported hours.
+  const facts = await statusFacts([...new Set(toWrite.map((r) => r.publisherId!))]);
 
   await prisma.$transaction(
     toWrite.map((r) => {
-      const current = standing.get(r.publisherId!) ?? "NONE";
-      const pioneerStatusUsed = r.aux ? ("AUXILIARY" as const) : current;
+      const pioneerStatusUsed = statusToStore(facts.get(r.publisherId!)!, r.year, r.month, {
+        shared: r.shared,
+        auxTicked: r.aux ? true : undefined,
+      });
       const data = {
         outcome: r.shared ? ("SHARED" as const) : ("DID_NOT_PREACH" as const),
         bibleStudies: r.shared ? r.studies : 0,
@@ -585,6 +590,8 @@ export async function commitCardImport(
   let skippedMonths = 0;
   let skippedPeople = 0;
 
+  // A report the branch already has is never overwritten by an import.
+  const locked = await lockedReportKeys();
   await prisma.$transaction(async (tx) => {
     const existingByPublisher = new Map<string, Set<string>>();
 
@@ -643,6 +650,10 @@ export async function commitCardImport(
       const onFile = existingByPublisher.get(publisherId)!;
 
       for (const m of r.months) {
+        if (locked.has(reportKey(publisherId, m.year, m.month))) {
+          skippedMonths++;
+          continue;
+        }
         if (onFile.has(`${m.year}|${m.month}`) && !overwrite) {
           skippedMonths++;
           continue;

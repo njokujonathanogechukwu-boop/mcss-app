@@ -6,6 +6,8 @@ import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
 import { displayName } from "@/lib/format";
 import { monthLabel } from "@/lib/service-year";
+import { statusFacts, statusToStore } from "@/lib/pioneer-status";
+import { lockedMessage, lockedReportKeys, reportKey } from "@/lib/report-periods";
 import { recordFixSchema, fieldErrors } from "@/lib/validation";
 import { FILLABLE_FIELDS } from "@/lib/completeness";
 
@@ -129,20 +131,22 @@ export async function saveRecordFix(_prev: RecordFixState, formData: FormData): 
 
     const existing = await prisma.serviceReport.findUnique({
       where: { publisherId_year_month: { publisherId: publisher.id, year, month } },
-      select: { id: true },
+      select: { id: true, pioneerStatusUsed: true },
     });
+    const locked = (await lockedReportKeys()).has(reportKey(publisher.id, year, month));
 
-    if (existing && !marked) {
+    if (locked) {
+      notes.push(lockedMessage(displayName(publisher), monthLabel(year, month)));
+    } else if (existing && !marked) {
       // Someone filled this month in after the form was rendered. Leaving the
       // report alone beats overwriting real figures with an empty submission.
       notes.push(`${monthLabel(year, month)} already has a report on file, so it was left as it is.`);
     } else {
-      const isPioneer = publisher.pioneerStatus !== "NONE";
-      const pioneerStatusUsed = isPioneer
-        ? publisher.pioneerStatus
-        : input.reportAux
-          ? "AUXILIARY"
-          : "NONE";
+      // The standing for that month, not today's.
+      const pioneerStatusUsed = statusToStore(
+        (await statusFacts([publisher.id])).get(publisher.id)!, year, month,
+        { shared: input.reportShared, auxTicked: input.reportAux, existing: existing?.pioneerStatusUsed ?? null },
+      );
 
       const data = {
         outcome: input.reportShared ? ("SHARED" as const) : ("DID_NOT_PREACH" as const),

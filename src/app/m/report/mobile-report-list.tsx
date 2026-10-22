@@ -11,6 +11,8 @@ export type ReportRow = {
   name: string;
   group: string | null;
   isPioneer: boolean;
+  /** Counted in a month already submitted to the branch: shown, not changed. */
+  locked: boolean;
   outcome: ReportOutcome | null;
   studies: number | null;
   hours: number | null;
@@ -324,10 +326,16 @@ export function MobileReportList({
                   </span>
                 </span>
                 <span className="text-xs text-ink-faint">
-                  {isOpen ? "Close" : reported ? "Edit" : row.outcome ? "Change" : "Report"}
+                  {isOpen ? "Close" : row.locked ? "Locked" : reported ? "Edit" : row.outcome ? "Change" : "Report"}
                 </span>
               </button>
-              {isOpen && <ReportForm key={savedFor} row={row} month={month} />}
+              {isOpen && row.locked && (
+                <p className="border-t border-rule bg-paper px-4 py-3 text-xs text-ink-soft">
+                  This report was submitted to the branch and is locked. Reopen the month on the report
+                  sheet to change it.
+                </p>
+              )}
+              {isOpen && !row.locked && <ReportForm key={savedFor} row={row} month={month} />}
             </li>
           );
         })}

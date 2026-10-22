@@ -11,7 +11,11 @@ import { auxCovers } from "@/lib/auxiliary";
 import { PageHeader, Section, EmptyState } from "@/components/shell";
 import { Button } from "@/components/ui";
 import { ReportSheet, type SheetRow } from "./report-sheet";
-import { getPeriod, outstandingLateReports, collectingMonth, lateReportDetails, parseLateKeys, clearedLateReports } from "@/lib/report-periods";
+import {
+  getPeriod, outstandingLateReports, collectingMonth, lateReportDetails, parseLateKeys, clearedLateReports,
+  lockedReportKeys, reportKey,
+} from "@/lib/report-periods";
+import { statusFacts, statusForMonth } from "@/lib/pioneer-status";
 import { LateReports } from "./late-reports";
 import { CloseMonthButton, ReopenMonthButton } from "./close-month";
 import { CollectingMonthForm } from "./collecting-month";
@@ -52,12 +56,9 @@ export default async function ReportsPage({
     }),
   ]);
 
-  const applied = new Set<string>();
-  const covered = new Set<string>();
-  for (const a of approvals) {
-    applied.add(a.publisherId);
-    if (auxCovers(a, year, month)) covered.add(a.publisherId);
-  }
+  // Each row stands as the publisher did in this month, not as they do today,
+  // and a report the branch already has is shown locked.
+  const [facts, locked] = await Promise.all([statusFacts(publishers.map((p) => p.id)), lockedReportKeys()]);
 
   // A publisher recorded as moving in or starting after this month was not on
   // the roll yet, so no report is expected of them for it.
@@ -70,13 +71,20 @@ export default async function ReportsPage({
         id: p.id,
         name: displayName(p),
         group: p.group ? `Group ${p.group.number}` : "No group",
-        pioneerStatus: p.pioneerStatus,
-        pioneerForMonth:
-          p.pioneerStatus === "NONE"
-            ? false
-            : p.pioneerStatus === "AUXILIARY"
-              ? !applied.has(p.id) || covered.has(p.id)
-              : true,
+        ...(() => {
+          const status = statusForMonth(facts.get(p.id)!, year, month);
+          const stored = existing?.pioneerStatusUsed;
+          const nowFullTime = p.pioneerStatus === "REGULAR" || p.pioneerStatus === "SPECIAL";
+          // A report kept as a regular pioneer's for someone no longer pioneering is their history.
+          const regular =
+            status === "REGULAR" || status === "SPECIAL" ||
+            ((stored === "REGULAR" || stored === "SPECIAL") && !nowFullTime);
+          return {
+            regular,
+            auxDefault: existing ? stored === "AUXILIARY" : status === "AUXILIARY",
+          };
+        })(),
+        locked: locked.has(reportKey(p.id, year, month)),
         existing: existing
           ? {
               outcome: existing.outcome,
