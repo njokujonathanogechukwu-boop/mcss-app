@@ -42,11 +42,18 @@ export default async function GroupsPage() {
         title="Service groups"
         description="Each group has an overseer, an assistant and a roster. Moves between groups are recorded on the publisher's record."
         actions={
-          can(user.role, "export:run") ? (
-            <a href="/api/exports/rosters" target="_blank" rel="noopener">
-              <Button variant="secondary" size="sm">Download rosters (Excel)</Button>
-            </a>
-          ) : undefined
+          <>
+            {can(user.role, "publisher:write") && (
+              <Link href="/groups/reshuffle">
+                <Button size="sm">Reshuffle groups</Button>
+              </Link>
+            )}
+            {can(user.role, "export:run") && (
+              <a href="/api/exports/rosters" target="_blank" rel="noopener">
+                <Button variant="secondary" size="sm">Download rosters (Excel)</Button>
+              </a>
+            )}
+          </>
         }
       />
 
