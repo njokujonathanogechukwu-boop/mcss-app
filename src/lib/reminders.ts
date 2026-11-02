@@ -297,6 +297,14 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
       ...(g.missing.length
         ? [`The following publishers have not sent their field service report for ${label}:`, "", ...g.missing.map(missingLine), ""]
         : [`Everyone in ${where} has sent their field service report for ${label}. Thank you.`, ""]),
+      ...(g.pioneers.length
+        ? [
+            `The following are pioneers in the group for ${label}; please collect their hours worked as well:`,
+            "",
+            ...g.pioneers.map((p) => `• ${p.name} — ${p.role}`),
+            "",
+          ]
+        : []),
       ...(g.missing.length === 0
         ? []
         : closed
@@ -323,14 +331,6 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
                 ]
               : []),
           ]),
-      ...(g.pioneers.length
-        ? [
-            `The following are pioneers in the group for ${label}; please collect their hours worked as well:`,
-            "",
-            ...g.pioneers.map((p) => `• ${p.name} — ${p.role}`),
-            "",
-          ]
-        : []),
       ...(g.inactive.length
         ? [
             // After the report lines a blank line parts them; the all-reported line has its own.
