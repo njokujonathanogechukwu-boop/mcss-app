@@ -292,41 +292,38 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
     const message = [
       who ? `Good day ${who},` : "Good day,",
       "",
+      // The wording the secretary chose for the overseers: who is still to
+      // report, how to send it, by when, and then the pioneers' hours.
       ...(g.missing.length
-        ? [`These ${where} have not sent their field service report for ${label}:`, "", ...g.missing.map(missingLine), ""]
+        ? [`The following publishers have not sent their field service report for ${label}:`, "", ...g.missing.map(missingLine), ""]
         : [`Everyone in ${where} has sent their field service report for ${label}. Thank you.`, ""]),
-      ...(g.pioneers.length
-        ? [
-            `The pioneers in the group for ${label}, who report their hours as well:`,
-            "",
-            ...g.pioneers.map((p) => `• ${p.name} — ${p.role}`),
-            "",
-          ]
-        : []),
       ...(g.missing.length === 0
         ? []
         : closed
         ? [
             `The congregation's report for ${label} has already been submitted to the branch office,`,
-            "so anything that comes now is added to the next month's figure. Kindly remind them to",
-            "send it to the secretary.",
+            "so anything that comes now is added to the next month's figure. Kindly collate and send",
+            "it to the secretary.",
+            "",
           ]
         : [
             link
-              ? "Kindly remind them to send it to the secretary — or send it for them here:"
-              : "Kindly remind them to send it to the secretary.",
+              ? "Kindly collate and send it to the secretary — or send it for them here:"
+              : "Kindly collate and send it to the secretary.",
             ...(link ? ["", link] : []),
             "",
-            "The congregation's report goes to the branch office by the 20th of the month, and a report",
-            "that comes after that is added to the following month's report.",
-            ...(link
-              ? [
-                  "",
-                  "This link is for your group only. Please do not forward it, because anyone holding it",
-                  "can send reports for your publishers.",
-                ]
-              : []),
+            "These need to be complete before the 6th of this month, and a report that comes after",
+            "that is added to the following month's report.",
+            "",
           ]),
+      ...(g.pioneers.length
+        ? [
+            `The following are pioneers in the group for ${label}; please collect their hours worked as well:`,
+            "",
+            ...g.pioneers.map((p) => `• ${p.name} — ${p.role}`),
+            "",
+          ]
+        : []),
       ...(g.inactive.length
         ? [
             // After the report lines a blank line parts them; the all-reported line has its own.
@@ -342,7 +339,10 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
         : []),
       "",
       "Thank you for your help.",
-    ].join("\n");
+    ]
+      .join("\n")
+      // Each section ends with a blank line; one is enough between any two.
+      .replace(/\n{3,}/g, "\n\n");
 
     const emails: string[] = [];
     if (g.overseer?.email) emails.push(g.overseer.email);
