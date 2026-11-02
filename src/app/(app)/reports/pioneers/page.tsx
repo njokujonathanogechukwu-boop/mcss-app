@@ -12,6 +12,7 @@ import { PageHeader, Section, EmptyState, DataTable, Th, Td } from "@/components
 import { Badge, Button } from "@/components/ui";
 import { PioneerStartForm } from "./start-form";
 import { RealignButton } from "./realign-button";
+import { EndServiceForm, UndoEndButton } from "./end-form";
 import { prisma } from "@/lib/prisma";
 import { loadPioneerStarts } from "@/lib/pioneer-review";
 import { planRealignment } from "@/lib/pioneer-status";
@@ -23,6 +24,7 @@ function cellText(c: MonthCell): string {
     case "ahead":
       return "·";
     case "before":
+    case "after":
       return "–";
     case "missing":
       return "—";
@@ -41,6 +43,8 @@ function cellTitle(c: MonthCell): string {
       return `${c.label}: the month has not ended yet`;
     case "before":
       return `${c.label}: before regular pioneer service began, so not counted`;
+    case "after":
+      return `${c.label}: after regular pioneer service ended, so not counted`;
     case "missing":
       return `${c.label}: no report recorded`;
     case "no-report":
@@ -234,7 +238,16 @@ export default async function PioneerReviewPage({
                       {r.group && <span className="block text-xxs text-ink-faint">{r.group}</span>}
                     </Td>
                     <Td>
-                      {canWrite ? (
+                      {r.endedOn ? (
+                        <>
+                          <span className="block text-xs text-ink-soft">
+                            {r.startedOn ? `${monthLabel(r.startedOn.year, r.startedOn.month)} – ` : "Until "}
+                            {monthLabel(r.endedOn.year, r.endedOn.month)}
+                          </span>
+                          <Badge>Ended {monthLabel(r.endedOn.year, r.endedOn.month)}</Badge>
+                          {canWrite && <UndoEndButton publisherId={r.id} />}
+                        </>
+                      ) : canWrite ? (
                         <PioneerStartForm
                           key={`${r.id}-${r.startedOn ? `${r.startedOn.year}-${r.startedOn.month}` : "none"}`}
                           publisherId={r.id}
@@ -244,6 +257,13 @@ export default async function PioneerReviewPage({
                         <span className="text-xs text-ink-soft">{monthLabel(r.startedOn.year, r.startedOn.month)}</span>
                       ) : (
                         <span className="text-xs text-ink-faint">Not recorded</span>
+                      )}
+                      {canWrite && !r.endedOn && (
+                        <EndServiceForm
+                          publisherId={r.id}
+                          name={r.name}
+                          defaultMonth={`${cutoff.year}-${String(cutoff.month).padStart(2, "0")}`}
+                        />
                       )}
                       {r.servedMonths < 12 && (
                         <span className="mt-0.5 block text-xxs text-ink-faint">
@@ -279,7 +299,9 @@ export default async function PioneerReviewPage({
                       {r.neededForFull === null ? "—" : r.neededForFull === 0 ? "reached" : r.neededForFull}
                     </Td>
                     <Td>
-                      {r.startedOn && r.countedMonths === 0 && !r.noHours ? (
+                      {r.endedOn && r.yearComplete ? (
+                        <Badge>Served {r.servedMonths} month{r.servedMonths === 1 ? "" : "s"} this year</Badge>
+                      ) : r.startedOn && r.countedMonths === 0 && !r.noHours ? (
                         <Badge>Starts {monthLabel(r.startedOn.year, r.startedOn.month)}</Badge>
                       ) : r.noHours ? (
                         <Badge tone="bad">No hours recorded yet</Badge>
@@ -297,7 +319,9 @@ export default async function PioneerReviewPage({
                         <Badge tone="good">On pace</Badge>
                       )}
                       <span className="mt-1 block text-xxs text-ink-soft">
-                        {r.yearComplete
+                        {r.endedOn && r.yearComplete
+                          ? `Pioneer service ended after ${monthLabel(r.endedOn.year, r.endedOn.month)}: ${r.combined} hours over the ${r.servedMonths} month${r.servedMonths === 1 ? "" : "s"} served this year, against ${r.fullTarget} at the full pace.`
+                          : r.yearComplete
                           ? r.meetsYear
                             ? `May continue as a regular pioneer${r.meetsFullYear ? `, having reached the full ${r.fullTarget} hours` : ""}.`
                             : "The committee weighs their circumstances, age and time in full-time service."
@@ -327,7 +351,7 @@ export default async function PioneerReviewPage({
                             title={cellTitle(c)}
                             className={
                               "rounded border px-1.5 py-0.5 text-xxs " +
-                              (c.state === "ahead" || c.state === "before"
+                              (c.state === "ahead" || c.state === "before" || c.state === "after"
                                 ? "border-rule text-ink-faint"
                                 : c.state === "missing" || c.state === "no-report"
                                   ? "border-clay/40 bg-clay-light text-clay"

@@ -4,8 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { neighbours } from "@/lib/neighbours";
+import { loadPioneerStarts, loadServicePeriods } from "@/lib/pioneer-review";
 import {
-  currentServiceYear, serviceYearMonths, serviceYearLabel, serviceYearOptions,
+  currentServiceYear, serviceYearMonths, serviceYearLabel, serviceYearOptions, monthLabel,
 } from "@/lib/service-year";
 import {
   displayName, formatDate, APPOINTMENT_LABELS, PIONEER_LABELS, STATUS_LABELS, reportsHours, REMOVAL_STATUSES, isRemoval,
@@ -91,6 +92,23 @@ export default async function PublisherPage({
   const nav = neighbours(roll, id, (p) => ({ href: `/publishers/${p.id}${syParam}`, label: displayName(p) }));
 
   const byKey = new Map(reports.map((r) => [`${r.year}-${r.month}`, r]));
+
+  // Pioneer service, past and present, so ending it never wipes it from the record.
+  const [pioneerStarts, servicePeriods] = await Promise.all([loadPioneerStarts(), loadServicePeriods()]);
+  const service = [
+    ...(servicePeriods[id] ?? []).map((p) => ({
+      label: p.kind === "SPECIAL" ? "Special pioneer" : "Regular pioneer",
+      span: `${p.start ? monthLabel(p.start.year, p.start.month) : "Start not recorded"} – ${monthLabel(p.end.year, p.end.month)}`,
+      note: p.reason,
+    })),
+    ...(publisher.pioneerStatus === "REGULAR" || publisher.pioneerStatus === "SPECIAL"
+      ? [{
+          label: publisher.pioneerStatus === "SPECIAL" ? "Special pioneer" : "Regular pioneer",
+          span: `${pioneerStarts[id] ? monthLabel(pioneerStarts[id].year, pioneerStarts[id].month) : "Start not recorded"} – serving now`,
+          note: null as string | null,
+        }]
+      : []),
+  ];
   const showContact = can(user.role, "publisher:readContact");
   const canWrite = can(user.role, "publisher:write");
   const tracksHours = reportsHours(publisher.pioneerStatus);
@@ -165,6 +183,23 @@ export default async function PublisherPage({
               <Badge key={p}>{p}</Badge>
             ))}
           </div>
+        </Section>
+      )}
+
+      {service.length > 0 && (
+        <Section
+          title="Pioneer service"
+          actions={<Link href="/reports/pioneers" className="text-xs text-pine hover:underline">Pioneer review</Link>}
+        >
+          <ul className="divide-y divide-rule rounded border border-rule bg-surface">
+            {service.map((p, i) => (
+              <li key={i} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2.5 text-sm">
+                <span className="font-medium text-ink">{p.label}</span>
+                <span className="text-ink-soft">{p.span}</span>
+                {p.note && <span className="text-xs text-ink-faint">{p.note}</span>}
+              </li>
+            ))}
+          </ul>
         </Section>
       )}
 

@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { auxCovers } from "@/lib/auxiliary";
-import { loadPioneerStarts } from "@/lib/pioneer-review";
+import { loadPioneerStarts, loadServicePeriods, ymIndex, type ServicePeriod } from "@/lib/pioneer-review";
 
 export type MonthStatus = "NONE" | "AUXILIARY" | "REGULAR" | "SPECIAL";
 
@@ -12,6 +12,8 @@ export type StatusFacts = {
   auxApprovals: { startYear: number; startMonth: number; months: number | null }[];
   /** When regular (or special) pioneer service began, as the secretary recorded it. */
   regularStart: { year: number; month: number } | null;
+  /** Earlier pioneer service that has ended, kept so its months stay a pioneer's. */
+  periods?: ServicePeriod[];
 };
 
 /**
@@ -23,6 +25,10 @@ export type StatusFacts = {
  */
 export function statusForMonth(f: StatusFacts, year: number, month: number): MonthStatus {
   const at = year * 12 + (month - 1);
+  // A month inside pioneer service that has since ended is still a pioneer's.
+  for (const p of f.periods ?? []) {
+    if ((p.start === null || at >= ymIndex(p.start)) && at <= ymIndex(p.end)) return p.kind;
+  }
   if (f.pioneerStatus === "REGULAR" || f.pioneerStatus === "SPECIAL") {
     const start = f.regularStart ? f.regularStart.year * 12 + (f.regularStart.month - 1) : null;
     if (start === null || at >= start) return f.pioneerStatus;
@@ -49,7 +55,9 @@ export function statusToStore(
   const pioneeringNow = f.pioneerStatus === "REGULAR" || f.pioneerStatus === "SPECIAL";
   if (
     (opts.existing === "REGULAR" || opts.existing === "SPECIAL") &&
-    base !== "REGULAR" && base !== "SPECIAL" && !pioneeringNow
+    base !== "REGULAR" && base !== "SPECIAL" && !pioneeringNow &&
+    // Kept only where nothing says otherwise: recorded service decides.
+    !f.regularStart && !f.periods?.length
   ) {
     return opts.existing;
   }
@@ -61,7 +69,7 @@ export function statusToStore(
 
 /** The facts for the given publishers, read in one pass. */
 export async function statusFacts(publisherIds: string[]): Promise<Map<string, StatusFacts>> {
-  const [rows, starts] = await Promise.all([
+  const [rows, starts, periods] = await Promise.all([
     prisma.publisher.findMany({
       where: { id: { in: publisherIds } },
       select: {
@@ -71,9 +79,13 @@ export async function statusFacts(publisherIds: string[]): Promise<Map<string, S
       },
     }),
     loadPioneerStarts(),
+    loadServicePeriods(),
   ]);
   return new Map(
-    rows.map((r) => [r.id, { pioneerStatus: r.pioneerStatus, auxApprovals: r.auxApprovals, regularStart: starts[r.id] ?? null }]),
+    rows.map((r) => [
+      r.id,
+      { pioneerStatus: r.pioneerStatus, auxApprovals: r.auxApprovals, regularStart: starts[r.id] ?? null, periods: periods[r.id] ?? [] },
+    ]),
   );
 }
 
@@ -101,8 +113,9 @@ export type Realignment = {
  * publisher, or for everyone with a start on record.
  */
 export async function planRealignment(publisherIds?: string[]): Promise<Realignment[]> {
-  const starts = await loadPioneerStarts();
-  const ids = (publisherIds ?? Object.keys(starts)).filter((id) => starts[id]);
+  const [starts, periods] = await Promise.all([loadPioneerStarts(), loadServicePeriods()]);
+  const ids = (publisherIds ?? [...new Set([...Object.keys(starts), ...Object.keys(periods)])])
+    .filter((id) => starts[id] || periods[id]?.length);
   if (ids.length === 0) return [];
   const [facts, reports] = await Promise.all([
     statusFacts(ids),
@@ -114,7 +127,7 @@ export async function planRealignment(publisherIds?: string[]): Promise<Realignm
   const plan: Realignment[] = [];
   for (const r of reports) {
     const f = facts.get(r.publisherId);
-    if (!f?.regularStart) continue;
+    if (!f || (!f.regularStart && !f.periods?.length)) continue;
     const base = statusForMonth(f, r.year, r.month);
     let to: MonthStatus = r.pioneerStatusUsed as MonthStatus;
     if (base === "REGULAR" || base === "SPECIAL") to = base;

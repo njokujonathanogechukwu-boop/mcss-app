@@ -1,5 +1,8 @@
 "use server";
 
+import { loadPioneerStarts, loadServicePeriods, saveServicePeriods, setPioneerStart } from "@/lib/pioneer-review";
+import { realignPioneerReports } from "@/lib/pioneer-status";
+import { calendarMonth } from "@/lib/service-year";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -65,8 +68,37 @@ export async function updatePublisher(
   const parsed = readPublisher(formData);
   if (!parsed.success) return { errors: fieldErrors(parsed.error) };
 
-  const before = await prisma.publisher.findUnique({ where: { id }, select: { groupId: true } });
+  const before = await prisma.publisher.findUnique({ where: { id }, select: { groupId: true, pioneerStatus: true } });
   const updated = await prisma.publisher.update({ where: { id }, data: parsed.data });
+
+  // A regular pioneer taken off pioneering here keeps their months as one:
+  // the service is recorded as ending with their last report as a pioneer
+  // (or last month), as "End service" on the pioneer review would.
+  const wasFullTime = before?.pioneerStatus === "REGULAR" || before?.pioneerStatus === "SPECIAL";
+  const isFullTime = updated.pioneerStatus === "REGULAR" || updated.pioneerStatus === "SPECIAL";
+  if (before && wasFullTime && !isFullTime) {
+    const lastAsPioneer = await prisma.serviceReport.findFirst({
+      where: { publisherId: id, pioneerStatusUsed: before.pioneerStatus },
+      orderBy: [{ year: "desc" }, { month: "desc" }],
+      select: { year: true, month: true },
+    });
+    const now = calendarMonth();
+    const lastMonth = now.month === 1 ? { year: now.year - 1, month: 12 } : { year: now.year, month: now.month - 1 };
+    const starts = await loadPioneerStarts();
+    const periods = (await loadServicePeriods())[id] ?? [];
+    await saveServicePeriods(id, [
+      ...periods,
+      {
+        kind: before.pioneerStatus as "REGULAR" | "SPECIAL",
+        start: starts[id] ?? null,
+        end: lastAsPioneer ?? lastMonth,
+        reason: "Changed while editing the publisher record",
+        recordedAt: new Date().toISOString(),
+      },
+    ]);
+    await setPioneerStart(id, null);
+    await realignPioneerReports(id);
+  }
 
   // A group change made from the record page is still a transfer and is logged.
   if (before && before.groupId !== updated.groupId) {

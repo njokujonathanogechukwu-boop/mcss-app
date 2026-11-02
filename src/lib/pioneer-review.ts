@@ -61,6 +61,52 @@ export async function setPioneerStart(publisherId: string, start: { year: number
 }
 
 /**
+ * Regular (or special) pioneer service that has ended, kept so the months it
+ * covered stay a pioneer's: on the S-1 for a late report, on the pioneer review
+ * for the year it was served in, and on the publisher's record. One list a
+ * publisher, oldest first; the service still running is the start above.
+ * Held as one congregation setting, so it needs no change to the database.
+ */
+export const SERVICE_PERIODS_KEY = "pioneers:servicePeriods";
+
+export type YearMonth = { year: number; month: number };
+export type ServicePeriod = {
+  kind: "REGULAR" | "SPECIAL";
+  /** The first month served; null when it was never recorded. */
+  start: YearMonth | null;
+  /** The last month served. */
+  end: YearMonth;
+  reason: string | null;
+  /** When it was recorded, as an ISO date. */
+  recordedAt: string;
+};
+
+export async function loadServicePeriods(): Promise<Record<string, ServicePeriod[]>> {
+  const row = await prisma.congregationSetting.findUnique({ where: { key: SERVICE_PERIODS_KEY } });
+  if (!row) return {};
+  try {
+    const parsed = JSON.parse(row.value) as Record<string, ServicePeriod[]>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function saveServicePeriods(publisherId: string, periods: ServicePeriod[]) {
+  const all = await loadServicePeriods();
+  if (periods.length) all[publisherId] = periods;
+  else delete all[publisherId];
+  const value = JSON.stringify(all);
+  await prisma.congregationSetting.upsert({
+    where: { key: SERVICE_PERIODS_KEY },
+    update: { value },
+    create: { key: SERVICE_PERIODS_KEY, value },
+  });
+}
+
+export const ymIndex = (ym: YearMonth) => ym.year * 12 + (ym.month - 1);
+
+/**
  * The year's two targets for months served: the full pace of 50 a month, and
  * the floor for continuing, 560 across twelve months and the same share of it
  * for fewer.
@@ -76,7 +122,7 @@ export type MonthCell = {
    * "ahead" = the month has not ended yet, so nothing is expected for it;
    * "before" = before the recorded start of pioneer service, so not counted.
    */
-  state: "hours" | "did-not-preach" | "no-report" | "missing" | "ahead" | "before";
+  state: "hours" | "did-not-preach" | "no-report" | "missing" | "ahead" | "before" | "after";
   hours: number;
   credit: number;
   combined: number;
@@ -97,6 +143,8 @@ export type PioneerReview = {
   countedMonths: number;
   /** The start recorded by the secretary, or null when it is read from the reports. */
   startedOn: { year: number; month: number } | null;
+  /** The last month served, when the service has ended. */
+  endedOn: { year: number; month: number } | null;
   /** Months of this service year from the start: twelve for a full year. */
   servedMonths: number;
   /** The floor for continuing, scaled to the months served (560 for a full year). */
@@ -133,8 +181,24 @@ export async function pioneerReview(serviceYear: number): Promise<PioneerReviewR
   const cutoffKey = cutoff.year * 12 + cutoff.month;
   const months = serviceYearMonths(serviceYear);
 
+  const firstIdx = months[0].year * 12 + (months[0].month - 1);
+  const lastIdx = months[11].year * 12 + (months[11].month - 1);
+  const periods = await loadServicePeriods();
+  // Pioneer service that ended inside this year, or after it began: the year
+  // still reviews it, over the months it was served.
+  const endedHere = (list: ServicePeriod[] | undefined) =>
+    (list ?? [])
+      .filter((p) => (p.start === null || ymIndex(p.start) <= lastIdx) && ymIndex(p.end) >= firstIdx)
+      .sort((a, b) => ymIndex(b.end) - ymIndex(a.end))[0];
+  const endedIds = Object.keys(periods).filter((id) => endedHere(periods[id]));
+
   const [publishers, starts] = await Promise.all([prisma.publisher.findMany({
-    where: { pioneerStatus: "REGULAR", status: { in: ["ACTIVE", "IRREGULAR"] } },
+    where: {
+      OR: [
+        { pioneerStatus: "REGULAR", status: { in: ["ACTIVE", "IRREGULAR"] } },
+        { id: { in: endedIds }, status: { in: ["ACTIVE", "IRREGULAR", "INACTIVE"] } },
+      ],
+    },
     include: {
       group: { select: { number: true } },
       reports: {
@@ -152,12 +216,23 @@ export async function pioneerReview(serviceYear: number): Promise<PioneerReviewR
   const firstKey = months[0].year * 12 + months[0].month;
   const lastKey = months[11].year * 12 + months[11].month;
 
-  // A pioneer whose recorded start falls after this service year was not one in it.
-  const rows = publishers.filter((p) => {
+  // The service each publisher is reviewed for this year: the one running now,
+  // unless it starts after the year, else the latest that ended in it.
+  const serviceOf = (p: { id: string; pioneerStatus: string }) => {
     const start = starts[p.id];
-    return !start || start.year * 12 + start.month <= lastKey;
-  }).map((p) => {
-    const startedOn = starts[p.id] ?? null;
+    if (p.pioneerStatus === "REGULAR" && (!start || start.year * 12 + start.month <= lastKey)) {
+      return { start: start ?? null, end: null };
+    }
+    const ended = endedHere(periods[p.id]);
+    return ended ? { start: ended.start, end: ended.end } : null;
+  };
+
+  const rows = publishers.filter((p) => serviceOf(p) !== null).map((p) => {
+    const service = serviceOf(p)!;
+    const startedOn = service.start;
+    const endedOn = service.end;
+    // Where in this year's twelve months the service ends: none while it runs.
+    const endIndex = endedOn ? Math.min(11, endedOn.year * 12 + endedOn.month - firstKey) : null;
     // Where in this year's twelve months the recorded service begins: 0 when it
     // began before September.
     const startIndex = startedOn ? Math.max(0, startedOn.year * 12 + startedOn.month - firstKey) : null;
@@ -175,6 +250,9 @@ export async function pioneerReview(serviceYear: number): Promise<PioneerReviewR
       const report = reportByIndex.get(i);
       if (startIndex !== null && i < startIndex) {
         return { short: m.short, label: m.label, state: "before", hours: report?.hours ?? 0, credit: report?.creditHours ?? 0, combined: 0 };
+      }
+      if (endIndex !== null && i > endIndex) {
+        return { short: m.short, label: m.label, state: "after", hours: report?.hours ?? 0, credit: report?.creditHours ?? 0, combined: 0 };
       }
       const hours = report?.hours ?? 0;
       const credit = report?.creditHours ?? 0;
@@ -202,21 +280,23 @@ export async function pioneerReview(serviceYear: number): Promise<PioneerReviewR
       return { short: m.short, label: m.label, state, hours, credit, combined: hours + credit };
     });
 
-    // Hours from before the recorded start — as an auxiliary pioneer, say — are
-    // not regular pioneer hours and are left out of the totals.
-    const counted = cells.filter((c) => c.state !== "before");
+    // Hours from before the recorded start or after the service ended — as an
+    // auxiliary pioneer, say — are not regular pioneer hours and are left out.
+    const counted = cells.filter((c) => c.state !== "before" && c.state !== "after");
     const fieldHours = counted.reduce((s, c) => s + c.hours, 0);
     const creditHours = counted.reduce((s, c) => s + c.credit, 0);
     const combined = fieldHours + creditHours;
     const from = startIndex ?? firstPioneerMonth;
-    const countedMonths = from === null ? 0 : Math.max(0, endedMonths - from);
-    const servedMonths = startIndex === null ? 12 : 12 - startIndex;
+    const lastServed = endIndex === null ? 12 : endIndex + 1;
+    const countedMonths = from === null ? 0 : Math.max(0, Math.min(endedMonths, lastServed) - from);
+    const servedMonths = lastServed - (startIndex ?? 0);
     const { full: fullTarget, floor: yearTarget } = targetsFor(servedMonths);
     const average = countedMonths > 0 ? combined / countedMonths : null;
-    const yearComplete = endedMonths === 12;
+    // Service that has ended is complete for the year once its last month is.
+    const yearComplete = endedMonths === 12 || (endIndex !== null && endedMonths > endIndex);
     // The months still to come that count: none before a recorded start that
-    // has not been reached yet.
-    const remainingMonths = 12 - Math.max(endedMonths, startIndex ?? 0);
+    // has not been reached yet, and none after the service ended.
+    const remainingMonths = Math.max(0, lastServed - Math.max(endedMonths, startIndex ?? 0));
 
     return {
       id: p.id,
@@ -226,6 +306,7 @@ export async function pioneerReview(serviceYear: number): Promise<PioneerReviewR
       endedMonths,
       countedMonths,
       startedOn,
+      endedOn,
       servedMonths,
       yearTarget,
       fullTarget,
