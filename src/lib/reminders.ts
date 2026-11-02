@@ -315,6 +315,13 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
             "These need to be complete before the 6th of this month, and a report that comes after",
             "that is added to the following month's report.",
             "",
+            ...(link
+              ? [
+                  "This link is for your group only. Please do not forward it or share it with anyone,",
+                  "because anyone holding it can send reports for your publishers.",
+                  "",
+                ]
+              : []),
           ]),
       ...(g.pioneers.length
         ? [
