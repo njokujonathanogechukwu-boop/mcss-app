@@ -305,6 +305,18 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
             "",
           ]
         : []),
+      ...(g.inactive.length
+        ? [
+            `${g.inactive.length === 1 ? "This publisher" : "These publishers"} in the group ${g.inactive.length === 1 ? "is" : "are"} inactive at present:`,
+            "",
+            ...g.inactive.map((p) => `• ${p.name}${p.lastReported ? ` — last reported ${p.lastReported}` : ""}`),
+            "",
+            "Please make a point of reaching out to them this month. A warm call or visit, a kind word",
+            "or an invitation to the meeting can do much to encourage them, and to let them know they",
+            "are loved and missed. Kindly let the elders know of any who would welcome further help.",
+            "",
+          ]
+        : []),
       ...(g.missing.length === 0
         ? []
         : closed
@@ -331,19 +343,6 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
                 ]
               : []),
           ]),
-      ...(g.inactive.length
-        ? [
-            // After the report lines a blank line parts them; the all-reported line has its own.
-            ...(g.missing.length ? [""] : []),
-            `${g.inactive.length === 1 ? "This publisher" : "These publishers"} in the group ${g.inactive.length === 1 ? "is" : "are"} inactive at present:`,
-            "",
-            ...g.inactive.map((p) => `• ${p.name}${p.lastReported ? ` — last reported ${p.lastReported}` : ""}`),
-            "",
-            "Please make a point of reaching out to them this month. A warm call or visit, a kind word",
-            "or an invitation to the meeting can do much to encourage them, and to let them know they",
-            "are loved and missed. Kindly let the elders know of any who would welcome further help.",
-          ]
-        : []),
       "",
       "Thank you for your help.",
     ]
