@@ -33,6 +33,8 @@ export type ReminderGroup = {
   pioneers: { name: string; role: string }[];
   /** Inactive publishers in the group, for the overseer to reach out to. */
   inactive: InactivePublisher[];
+  /** Publishers with reports still missing for earlier months of the service year. */
+  earlier: EarlierMissing[];
   message: string;
   /** Recipient addresses for this group: the overseer, else the assistant. */
   emails: string[];
@@ -43,6 +45,30 @@ export type ReminderGroup = {
    */
   link: string | null;
 };
+
+export type EarlierMissing = {
+  name: string;
+  /** The earlier months with no report on file, as "September 2026". */
+  months: string[];
+};
+
+/** The months of the service year before the given one, September first. */
+function earlierMonths(year: number, month: number): { year: number; month: number }[] {
+  const out: { year: number; month: number }[] = [];
+  // The service year starts in September: of this calendar year from
+  // September on, of the one before until August.
+  let y = month >= 9 ? year : year - 1;
+  let m = 9;
+  while (y * 12 + m < year * 12 + month) {
+    out.push({ year: y, month: m });
+    m++;
+    if (m > 12) {
+      m = 1;
+      y++;
+    }
+  }
+  return out;
+}
 
 export type InactivePublisher = {
   name: string;
@@ -168,7 +194,10 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
             assistant: { select: { firstName: true, lastName: true, gender: true, phone: true, email: true } },
           },
         },
-        reports: { where: { year, month }, select: { outcome: true, hours: true } },
+        createdAt: true,
+        // This month's report, and every earlier month of the service year,
+        // so the reminder can list the gaps still to fill.
+        reports: { where: { OR: earlierMonths(year, month).concat([{ year, month }]) }, select: { year: true, month: true, outcome: true, hours: true } },
       },
       orderBy: [{ group: { number: "asc" } }, { lastName: "asc" }, { firstName: "asc" }],
     }),
@@ -214,6 +243,7 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
     missing: MissingReport[];
     pioneers: { name: string; role: string }[];
     inactive: InactivePublisher[];
+    earlier: EarlierMissing[];
   };
   const buckets = new Map<string, Bucket>();
   const bucketFor = (p: {
@@ -233,6 +263,7 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
         missing: [],
         pioneers: [],
         inactive: [],
+        earlier: [],
       };
       buckets.set(key, bucket);
     }
@@ -246,7 +277,17 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
     const name = displayName(p);
     const pioneer = pioneerRole(p, starts[p.id] ?? null, year, month);
     if (pioneer) bucket.pioneers.push({ name, role: pioneer });
-    const report = p.reports[0];
+    const report = p.reports.find((r) => r.year === year && r.month === month);
+    // Earlier months of the service year with no report on file: only those
+    // that ended after the publisher came on the roll and onto the records.
+    const behind = earlierMonths(year, month).filter((m) => {
+      const monthEnd = new Date(Date.UTC(m.year, m.month, 1));
+      if (p.createdAt >= monthEnd) return false;
+      if (p.sinceDate && p.sinceDate >= monthEnd) return false;
+      const r = p.reports.find((x) => x.year === m.year && x.month === m.month);
+      return !r || r.outcome === "NO_REPORT";
+    });
+    if (behind.length) bucket.earlier.push({ name, months: behind.map((m) => monthLabel(m.year, m.month)) });
     if (!report || report.outcome === "NO_REPORT") {
       bucket.missing.push({ name, noted: report?.outcome === "NO_REPORT", pioneer, hoursOnly: false });
     } else if (pioneer && report.outcome === "SHARED" && report.hours == null) {
@@ -266,7 +307,7 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
   // A group is written to when reports are outstanding, or when it has
   // inactive publishers its overseer is asked to encourage.
   const outstanding = [...buckets.values()]
-    .filter((b) => b.missing.length > 0 || b.inactive.length > 0)
+    .filter((b) => b.missing.length > 0 || b.inactive.length > 0 || b.earlier.length > 0)
     .sort((a, b) => ((a.number ?? 9999) - (b.number ?? 9999)) || (a.name?.localeCompare(b.name ?? "") ?? 0));
 
   // One pass for every group, so the reminders page and the scheduled email do
@@ -297,6 +338,15 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
       ...(g.missing.length
         ? [`The following publishers have not sent their field service report for ${label}:`, "", ...g.missing.map(missingLine), ""]
         : [`Everyone in ${where} has sent their field service report for ${label}. Thank you.`, ""]),
+      ...(g.earlier.length
+        ? [
+            "The following publishers also have reports missing for earlier months; kindly collect these",
+            "too and send them to the secretary:",
+            "",
+            ...g.earlier.map((e) => `• ${e.name} — ${e.months.join(", ")}`),
+            "",
+          ]
+        : []),
       ...(g.pioneers.length
         ? [
             `The following are pioneers in the group for ${label}; please collect their hours worked as well:`,
@@ -368,6 +418,7 @@ export async function gatherReminders(year: number, month: number): Promise<Remi
       missing: g.missing,
       pioneers: g.pioneers,
       inactive: g.inactive,
+      earlier: g.earlier,
       message,
       emails,
       link,

@@ -35,6 +35,7 @@ export default async function RemindersPage({
     title: g.title,
     meta: [
       g.missing.length ? `${g.missing.length} of ${g.members} yet to report` : `All ${g.members} reported`,
+      g.earlier.length ? `${g.earlier.length} with earlier months missing` : null,
       g.inactive.length ? `${g.inactive.length} inactive to encourage` : null,
       g.who ? `Overseer: ${g.who}` : "No overseer on file",
       g.assistant ? `Assistant: ${addressed(g.assistant)}` : null,
