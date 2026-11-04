@@ -86,6 +86,8 @@ export function WeekHeaderForm({
         />
       </div>
 
+      {/* No meeting, no chairman or prayers: the pickers go while the box is ticked. */}
+      {!cancelled && (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <NameField
           label="Chairman" name="chairmanId" options={chairmen}
@@ -106,6 +108,7 @@ export function WeekHeaderForm({
           hint={suggestHint(week.closingPrayerId, suggested?.closingPrayerId)}
         />
       </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <TextField
@@ -129,10 +132,18 @@ export function WeekHeaderForm({
           hint="An assembly or convention week, or the Memorial falling on a weekday. The week stays on the schedule and prints as not held."
         />
         {cancelled && (
-          <TextField
-            label="Why there is no meeting" name="cancelledReason"
-            defaultValue={week.cancelledReason ?? ""} placeholder="Circuit assembly"
-          />
+          <>
+            <TextField
+              label="Why there is no meeting" name="cancelledReason"
+              defaultValue={week.cancelledReason ?? ""} placeholder="Circuit assembly"
+            />
+            {!week.cancelled && (
+              <p className="mt-2 rounded border border-wheat/40 bg-wheat-light px-3 py-2 text-xs text-[#7A5E1E]">
+                Saving takes off every name assigned to this week — the chairman, the prayers and
+                everyone on the parts. Untick the box later to fill the week again.
+              </p>
+            )}
+          </>
         )}
       </div>
 

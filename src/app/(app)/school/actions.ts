@@ -246,6 +246,31 @@ export async function saveWeekHeader(_prev: SchoolState, formData: FormData): Pr
     return { errors: { weekOf: "Another week of this schedule already falls on that date." } };
   }
 
+  // No meeting, no one assigned: the chairman, the prayers and every part's
+  // names come off, so nothing prints for the week and the rotation does not
+  // count a session that was never held.
+  if (parsed.data.cancelled) {
+    const [, removed] = await prisma.$transaction([
+      prisma.midweekWeek.update({
+        where: { id },
+        data: { ...parsed.data, chairmanId: null, openingPrayerId: null, closingPrayerId: null },
+      }),
+      prisma.midweekAssignment.deleteMany({ where: { part: { weekId: id } } }),
+    ]);
+    const cleared = removed.count + [week.chairmanId, week.openingPrayerId, week.closingPrayerId].filter(Boolean).length;
+    await recordAudit(
+      auth.session.userId, "updated", "MidweekWeek", id,
+      `Marked the meeting of ${formatDate(parsed.data.weekOf)} as not held` +
+        (cleared ? ` and took off the ${cleared} name${cleared === 1 ? "" : "s"} assigned to it` : ""),
+    );
+    revalidateSchool();
+    return {
+      ok: cleared
+        ? `Saved as no meeting. The ${cleared} name${cleared === 1 ? "" : "s"} assigned to this week ${cleared === 1 ? "was" : "were"} taken off.`
+        : "Saved as no meeting.",
+    };
+  }
+
   const restricted = await restrictedPublisherIds();
   // The pickers post "p:<id>" because the same component serves the parts,
   // where a value may point at either table; the heading columns want the id.
@@ -354,9 +379,12 @@ export async function savePart(_prev: SchoolState, formData: FormData): Promise<
 
   const part = await prisma.midweekPart.findUnique({
     where: { id: partId },
-    select: { position: true, week: { select: { weekOf: true } } },
+    select: { position: true, week: { select: { weekOf: true, cancelled: true } } },
   });
   if (!part) return { error: "That part is no longer on the schedule." };
+  if (part.week.cancelled) {
+    return { error: "There is no meeting this week, so its parts take no names. Untick “No meeting this week” first." };
+  }
 
   const slots = [...PART_KINDS[parsed.data.kind].slots] as MidweekSlot[];
   const assignments: {

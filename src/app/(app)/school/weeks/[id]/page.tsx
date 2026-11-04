@@ -98,7 +98,7 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
       .map((near) => ({ ...entry, other: near.weekOf })),
   );
   const taken = new Set(parts.flatMap((part) => Object.values(part.values)));
-  const suggestions = canWrite
+  const suggestions = canWrite && !week.cancelled
     ? parts
         .flatMap((part) =>
           [...PART_KINDS[part.kind].slots]
@@ -149,7 +149,7 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
   };
   const suggestedParts: Record<string, Record<string, NameOption>> = {};
   const suggestedHeading: Record<string, NameOption> = {};
-  if (canWrite) {
+  if (canWrite && !week.cancelled) {
     for (const part of parts) {
       const picks: Record<string, NameOption> = {};
       for (const slot of PART_KINDS[part.kind].slots) {
@@ -287,7 +287,7 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
             <WeekHeaderForm
               chairmen={chairmen}
               prayers={prayers}
-              suggested={suggestedHeading}
+              suggested={week.cancelled ? undefined : suggestedHeading}
               history={history}
               week={{
                 id: week.id,
@@ -311,6 +311,12 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
             title="The parts"
             description="Each line of the schedule, with everyone assigned to it. Each picker offers only the names the part may be given to, and an empty one already holds a name drawn from the longest waiting — save to keep it, or pick another. As soon as a name is typed, the picker says when they last had something and what it was."
           >
+            {week.cancelled ? (
+              <p className="rounded border border-rule bg-surface px-4 py-4 text-sm text-ink-soft">
+                No meeting is held this week, so its parts take no names. Untick &ldquo;No meeting this
+                week&rdquo; in the heading above and save to fill them.
+              </p>
+            ) : (
             <div className="space-y-4">
               {parts.map((part) => (
                 <PartCard
@@ -325,6 +331,7 @@ export default async function WeekPage({ params }: { params: Promise<{ id: strin
               <SaveWeekButton />
               <AddPartForm weekId={week.id} positions={parts.map((p) => p.position)} />
             </div>
+            )}
           </Section>
 
           <Section
