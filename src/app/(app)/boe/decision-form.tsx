@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useActionState, useState } from "react";
+import { useEffect, useActionState, useRef, useState } from "react";
 import { TextField, TextArea } from "@/components/fields";
 import { AssigneesField } from "./assignees-field";
 import { SubmitButton, Button } from "@/components/ui";
@@ -35,10 +35,13 @@ export function DecisionForm({
   const [rows, setRows] = useState<number[]>(range(START_ROWS));
   const [next, setNext] = useState(START_ROWS);
 
-  // A remembered entry brings back as many rows as it had.
+  // A remembered entry brings back as many rows as it had, and opens the
+  // fold the form sits in so it is not missed.
+  const formRef = useRef<HTMLFormElement>(null);
   const { memory } = memo;
   useEffect(() => {
     if (!memory) return;
+    formRef.current?.closest("details")?.setAttribute("open", "");
     const count = Object.keys(memory).filter((k) => /^agendaItem\.\d+$/.test(k)).length;
     if (count > 0) {
       setRows(range(count));
@@ -73,6 +76,7 @@ export function DecisionForm({
   return (
     <form
       key={memo.formKey}
+      ref={formRef}
       action={action}
       {...memo.formProps}
       className="space-y-5 rounded border border-rule bg-surface p-5"
