@@ -35,7 +35,20 @@ export function DecisionEdit({
   suggestions: string[];
 }) {
   const [state, action] = useActionState<DecisionState, FormData>(updateDecision, {});
-  const memo = useFormMemory(`mcss:boe:edit:${item.id}`, ["id", "status"]);
+  const iso = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : "");
+  const memo = useFormMemory(`mcss:boe:edit:${item.id}`, {
+    ignore: ["id"],
+    initial: {
+      agendaItem: [item.agendaItem],
+      meetingDate: [iso(item.meetingDate)],
+      decision: [item.decision],
+      assignees: item.assignees,
+      meetingKind: [item.joint ? "JOINT" : "BOE"],
+      status: [item.status],
+      targetDate: [iso(item.targetDate)],
+      notes: [item.notes ?? ""],
+    },
+  });
   const [open, setOpen] = useState(false);
 
   const { restore, forget } = memo;
@@ -56,7 +69,6 @@ export function DecisionEdit({
     );
   }
 
-  const iso = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : "");
   const v = (name: string, fallback: string) => memo.value(name, fallback);
 
   const cancel = () => {
@@ -79,7 +91,6 @@ export function DecisionEdit({
         )}
 
         <input type="hidden" name="id" value={item.id} />
-        <input type="hidden" name="status" value={item.status} />
 
         <div className="grid gap-3 sm:grid-cols-2">
           <TextField
@@ -109,6 +120,18 @@ export function DecisionEdit({
             >
               <option value="BOE">Body of elders</option>
               <option value="JOINT">Joint body of elders</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor={`status-${item.id}`} className="field-label">Status</label>
+            <select
+              id={`status-${item.id}`} name="status" defaultValue={v("status", item.status)}
+              className="field-input"
+            >
+              <option value="OPEN">Open</option>
+              <option value="IN_PROGRESS">In progress</option>
+              <option value="DEFERRED">Deferred</option>
+              <option value="COMPLETED">Completed</option>
             </select>
           </div>
           <TextField

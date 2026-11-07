@@ -8,7 +8,6 @@ import { Notice } from "@/components/shell";
 import { useFormMemory } from "@/lib/use-form-memory";
 import { saveMeeting, type DecisionState } from "./actions";
 
-const START_ROWS = 3;
 const range = (n: number) => Array.from({ length: n }, (_, i) => i);
 
 /**
@@ -20,9 +19,19 @@ const range = (n: number) => Array.from({ length: n }, (_, i) => i);
  * What is typed is remembered in this browser until the meeting is saved, so
  * leaving the page, a refresh or a refused save does not lose the entry.
  */
-export function DecisionForm({ suggestions }: { suggestions: string[] }) {
+export function DecisionForm({
+  suggestions,
+  meeting,
+}: {
+  suggestions: string[];
+  /** Set on a meeting's own page: the items added belong to that date. */
+  meeting?: { date: string; joint: boolean };
+}) {
+  const START_ROWS = meeting ? 1 : 3;
   const [state, action] = useActionState<DecisionState, FormData>(saveMeeting, {});
-  const memo = useFormMemory("mcss:boe:meeting", ["meetingDate", "meetingKind"]);
+  const memo = useFormMemory(meeting ? `mcss:boe:meeting:${meeting.date}` : "mcss:boe:meeting", {
+    ignore: ["meetingDate", "meetingKind"],
+  });
   const [rows, setRows] = useState<number[]>(range(START_ROWS));
   const [next, setNext] = useState(START_ROWS);
 
@@ -76,15 +85,16 @@ export function DecisionForm({ suggestions }: { suggestions: string[] }) {
         </p>
       )}
 
+      {meeting && <input type="hidden" name="meetingDate" value={meeting.date} />}
       <div className="grid gap-4 sm:grid-cols-2">
-        <TextField
+        {!meeting && <TextField
           label="Date of the meeting" name="meetingDate" type="date" required
           defaultValue={memo.value("meetingDate", new Date().toISOString().slice(0, 10))}
           error={state.errors?.meetingDate}
-        />
+        />}
         <div>
           <label htmlFor="meetingKind" className="field-label">Which meeting</label>
-          <select id="meetingKind" name="meetingKind" defaultValue={memo.value("meetingKind", "BOE")} className="field-input">
+          <select id="meetingKind" name="meetingKind" defaultValue={memo.value("meetingKind", meeting?.joint ? "JOINT" : "BOE")} className="field-input">
             <option value="BOE">Body of elders</option>
             <option value="JOINT">Joint body of elders</option>
           </select>
@@ -134,7 +144,7 @@ export function DecisionForm({ suggestions }: { suggestions: string[] }) {
 
       <div className="flex flex-wrap items-center gap-3">
         <Button type="button" variant="secondary" size="sm" onClick={addRow}>+ Another decision</Button>
-        <SubmitButton pendingLabel="Saving…">Record the meeting</SubmitButton>
+        <SubmitButton pendingLabel="Saving…">{meeting ? "Add to this meeting" : "Record the meeting"}</SubmitButton>
         <button type="button" onClick={clearAll} className="text-xs text-ink-faint hover:text-clay">
           Clear the form
         </button>

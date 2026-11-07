@@ -79,12 +79,27 @@ export async function drawBoeSummary(date: string, items: BoeSummaryItem[]): Pro
     y -= 20;
   }
 
-  items.forEach((item, n) => {
+  // The joint body's items first, then the congregation's, each numbered from one.
+  const ordered = [...items.filter((i) => i.joint), ...items.filter((i) => !i.joint)];
+  let group: boolean | null = null;
+  let n = 0;
+
+  ordered.forEach((item) => {
+    if (joint && own && item.joint !== group) {
+      group = item.joint;
+      n = 0;
+      ensure(110);
+      text(doc, item.joint ? "JOINT BODY OF ELDERS" : "CONGREGATION BODY OF ELDERS", L, y, {
+        size: 8.5, bold: true, color: PINE,
+      });
+      y -= 18;
+    }
     const decisionLines = wrap(doc.regular, item.decision, 9, W - 10);
     const notesLines = item.notes ? wrap(doc.regular, item.notes, 8, W - 10) : [];
     ensure(70 + decisionLines.length * 12 + notesLines.length * 10);
 
-    text(doc, `${n + 1}.  ${item.agendaItem}`, L, y, { size: 10, bold: true, maxWidth: W - 90 });
+    n += 1;
+    text(doc, `${n}.  ${item.agendaItem}`, L, y, { size: 10, bold: true, maxWidth: W - 90 });
     textRight(doc, DECISION_LABELS[item.status] ?? item.status, R, y, { size: 8, bold: true, color: PINE });
     y -= 7;
     rule(doc, L, R, y, 0.4);
@@ -98,7 +113,6 @@ export async function drawBoeSummary(date: string, items: BoeSummaryItem[]): Pro
 
     const meta = [
       item.assignedTo ? `Carried out by ${item.assignedTo}` : "Not assigned",
-      joint && own ? (item.joint ? "joint meeting" : "this body's meeting") : null,
       item.targetDate ? `due ${formatDate(item.targetDate)}` : null,
       item.completedAt ? `completed ${formatDate(item.completedAt)}` : null,
     ]

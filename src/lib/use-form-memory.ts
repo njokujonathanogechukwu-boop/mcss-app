@@ -14,15 +14,24 @@ export type FormMemory = Record<string, string[]>;
  * whether or not the save went through, so the caller calls `restore()` when
  * it was refused and `forget()` once it was saved.
  *
- * Fields named in `ignore` (hidden ids, a status kept in step elsewhere) are
- * not counted when deciding whether anything worth keeping was typed.
+ * Fields named in `ignore` (hidden ids, a date filled in for you) are not
+ * counted when deciding whether anything worth keeping was typed. A form that
+ * opens already filled in passes `initial`: only a value that differs from it
+ * then counts as a change.
  */
-export function useFormMemory(storageKey: string, ignore: string[] = []) {
+export function useFormMemory(
+  storageKey: string,
+  { ignore = [], initial }: { ignore?: string[]; initial?: FormMemory } = {},
+) {
   const [memory, setMemory] = useState<FormMemory | null>(null);
   const [formKey, setFormKey] = useState(0);
   const latest = useRef<FormMemory | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ignored = useRef(ignore);
+  const baseline = useRef(initial);
+  useEffect(() => {
+    baseline.current = initial;
+  });
 
   // Read after mounting, so the page the server sent and the first render agree.
   useEffect(() => {
@@ -54,9 +63,12 @@ export function useFormMemory(storageKey: string, ignore: string[] = []) {
         if (typeof value !== "string") continue;
         (data[name] ??= []).push(value);
       }
-      const typed = Object.entries(data).some(
-        ([name, values]) => !ignored.current.includes(name) && values.some((v) => v.trim() !== ""),
-      );
+      const filled = (v: string[] | undefined) => (v ?? []).map((x) => x.trim()).filter(Boolean).join("|");
+      const base = baseline.current;
+      const typed = Object.entries(data).some(([name, values]) => {
+        if (ignored.current.includes(name)) return false;
+        return base ? filled(values) !== filled(base[name]) : filled(values) !== "";
+      });
       latest.current = typed ? data : null;
       try {
         if (typed) window.localStorage.setItem(storageKey, JSON.stringify(data));

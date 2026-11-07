@@ -1,10 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { displayName } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
 import { decisionSchema, fieldErrors } from "@/lib/validation";
-import { assigneeRoll, readAssignees, removeDecisionExtras, saveDecisionExtras, type DecisionExtra } from "@/lib/boe-extras";
+import { assigneeRoll, loadDecisionExtras, readAssignees, removeDecisionExtras, saveDecisionExtras, type DecisionExtra } from "@/lib/boe-extras";
 
 export type DecisionState = { error?: string; errors?: Record<string, string>; ok?: string };
 
@@ -74,7 +76,7 @@ export async function saveMeeting(
     `Logged ${items.length} decision${items.length === 1 ? "" : "s"} from the ${joint ? "joint " : ""}meeting of ${meetingDate}`,
   );
 
-  revalidatePath("/boe");
+  revalidatePath("/boe", "layout");
   revalidatePath("/dashboard");
   return { ok: `${items.length} decision${items.length === 1 ? "" : "s"} recorded.` };
 }
@@ -129,7 +131,7 @@ export async function updateDecision(
   await saveDecisionExtras({ [id]: { joint: formData.get("meetingKind") === "JOINT", assignees: assigned.names } });
 
   await recordAudit(auth.session.userId, "updated", "BoeDecision", id, `Amended "${agendaItem}"`);
-  revalidatePath("/boe");
+  revalidatePath("/boe", "layout");
   revalidatePath("/dashboard");
   revalidatePath("/bookings");
   return { ok: "Changes saved." };
@@ -152,7 +154,7 @@ export async function setDecisionStatus(formData: FormData) {
   });
 
   await recordAudit(auth.session.userId, "updated", "BoeDecision", id, `Marked ${status.toLowerCase()}`);
-  revalidatePath("/boe");
+  revalidatePath("/boe", "layout");
   revalidatePath("/dashboard");
 }
 
@@ -172,7 +174,70 @@ export async function deleteDecision(formData: FormData) {
   await removeDecisionExtras([id]);
 
   await recordAudit(auth.session.userId, "deleted", "BoeDecision", id, `Deleted "${item.agendaItem}"`);
-  revalidatePath("/boe");
+  revalidatePath("/boe", "layout");
   revalidatePath("/dashboard");
   revalidatePath("/bookings");
+}
+
+/**
+ * Changes what applies to a whole meeting: its date, and whether it was this
+ * body's own meeting or a joint one. Every decision recorded on the old date
+ * moves with it. When the date changes the page follows to the new one.
+ */
+export async function updateMeeting(
+  _prev: DecisionState,
+  formData: FormData,
+): Promise<DecisionState> {
+  const auth = await guard("boe:write");
+  if (!auth.ok) return { error: auth.error };
+
+  const from = String(formData.get("from") ?? "");
+  const to = String(formData.get("meetingDate") ?? "");
+  const kind = String(formData.get("meetingKind") ?? "KEEP");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return { error: "That meeting could not be found." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(to) || Number.isNaN(Date.parse(to))) {
+    return { errors: { meetingDate: "Enter a valid date" } };
+  }
+
+  const rows = await prisma.boeDecision.findMany({
+    where: { meetingDate: new Date(`${from}T00:00:00.000Z`) },
+    select: { id: true },
+  });
+  if (rows.length === 0) return { error: "No decisions are recorded for that meeting any more." };
+  const ids = rows.map((r) => r.id);
+
+  if (to !== from) {
+    await prisma.boeDecision.updateMany({
+      where: { id: { in: ids } },
+      data: { meetingDate: new Date(`${to}T00:00:00.000Z`) },
+    });
+  }
+  if (kind === "BOE" || kind === "JOINT") {
+    const extras = await loadDecisionExtras();
+    const roll = await assigneeRoll();
+    const current = await prisma.boeDecision.findMany({ where: { id: { in: ids } }, include: { assignedTo: true } });
+    await saveDecisionExtras(
+      Object.fromEntries(
+        current.map((d) => [
+          d.id,
+          {
+            joint: kind === "JOINT",
+            assignees: extras[d.id]?.assignees?.length
+              ? extras[d.id].assignees
+              : readAssignees(d.assignedTo ? [displayName(d.assignedTo)] : [], roll).names,
+          } satisfies DecisionExtra,
+        ]),
+      ),
+    );
+  }
+
+  await recordAudit(
+    auth.session.userId, "updated", "BoeDecision", null,
+    `Amended the meeting of ${from}${to !== from ? `, now dated ${to}` : ""}${kind === "JOINT" ? " (joint)" : kind === "BOE" ? " (body of elders)" : ""}`,
+  );
+  revalidatePath("/boe", "layout");
+  revalidatePath("/dashboard");
+  if (to !== from) redirect(`/boe/meetings/${to}`);
+  revalidatePath(`/boe/meetings/${from}`);
+  return { ok: "Meeting details saved." };
 }
