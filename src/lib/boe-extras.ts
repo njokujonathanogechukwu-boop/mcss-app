@@ -48,6 +48,18 @@ export async function saveDecisionExtras(entries: Record<string, DecisionExtra>)
   });
 }
 
+/** Drops the extras of decisions taken off file. */
+export async function removeDecisionExtras(ids: string[]) {
+  const all = await loadDecisionExtras();
+  for (const id of ids) delete all[id];
+  const value = JSON.stringify(all);
+  await prisma.congregationSetting.upsert({
+    where: { key: DECISION_EXTRAS_KEY },
+    update: { value },
+    create: { key: DECISION_EXTRAS_KEY, value },
+  });
+}
+
 /** The names assigned to a decision, falling back to its single assignee for one recorded before. */
 export function assigneesOf(
   item: { id: string; assignedTo: { firstName: string; lastName: string } | null },

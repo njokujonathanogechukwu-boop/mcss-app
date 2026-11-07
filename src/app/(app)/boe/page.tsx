@@ -28,7 +28,7 @@ export default async function BoePage() {
       where: { status: "COMPLETED" },
       include: { assignedTo: true },
       orderBy: { completedAt: "desc" },
-      take: 15,
+      take: 50,
     }),
     assigneeRoll(),
     prisma.boeDecision.groupBy({
@@ -172,7 +172,12 @@ export default async function BoePage() {
           <ul className="divide-y divide-rule rounded border border-rule bg-surface text-sm">
             {closed.map((item) => (
               <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
-                <span className="text-ink-soft">{item.agendaItem}</span>
+                <span className="min-w-0">
+                  <span className="block text-ink-soft">{item.agendaItem}</span>
+                  {item.decision && (
+                    <span className="mt-0.5 block whitespace-pre-wrap text-xs text-ink-faint">{item.decision}</span>
+                  )}
+                </span>
                 <span className="flex items-center gap-2.5 text-xs text-ink-faint">
                   <span>
                     {names(item) ? `${names(item)} · ` : ""}
@@ -186,6 +191,10 @@ export default async function BoePage() {
                     </button>
                   </form>
                 </span>
+                <DecisionEdit
+                  item={{ ...item, assignees: assigneesOf(item, extras), joint: extras[item.id]?.joint ?? false }}
+                  suggestions={suggestions}
+                />
               </li>
             ))}
           </ul>

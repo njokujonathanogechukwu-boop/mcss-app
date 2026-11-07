@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { guard, recordAudit } from "@/lib/auth";
 import { decisionSchema, fieldErrors } from "@/lib/validation";
-import { assigneeRoll, readAssignees, saveDecisionExtras, type DecisionExtra } from "@/lib/boe-extras";
+import { assigneeRoll, readAssignees, removeDecisionExtras, saveDecisionExtras, type DecisionExtra } from "@/lib/boe-extras";
 
 export type DecisionState = { error?: string; errors?: Record<string, string>; ok?: string };
 
@@ -154,4 +154,25 @@ export async function setDecisionStatus(formData: FormData) {
   await recordAudit(auth.session.userId, "updated", "BoeDecision", id, `Marked ${status.toLowerCase()}`);
   revalidatePath("/boe");
   revalidatePath("/dashboard");
+}
+
+/**
+ * Takes a recorded item off file altogether, for an entry made in error or a
+ * duplicate. Its joint-meeting flag and names go with it.
+ */
+export async function deleteDecision(formData: FormData) {
+  const auth = await guard("boe:write");
+  if (!auth.ok) return;
+
+  const id = String(formData.get("id"));
+  const item = await prisma.boeDecision.findUnique({ where: { id }, select: { agendaItem: true } });
+  if (!item) return;
+
+  await prisma.boeDecision.delete({ where: { id } });
+  await removeDecisionExtras([id]);
+
+  await recordAudit(auth.session.userId, "deleted", "BoeDecision", id, `Deleted "${item.agendaItem}"`);
+  revalidatePath("/boe");
+  revalidatePath("/dashboard");
+  revalidatePath("/bookings");
 }
