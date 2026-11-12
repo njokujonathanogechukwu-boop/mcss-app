@@ -6,6 +6,7 @@ import {
   getPeriod, lateReportDetails, outstandingLateReports, parseLateKeys, type LateReportDetail,
 } from "@/lib/report-periods";
 import { statusFacts, statusForMonth } from "@/lib/pioneer-status";
+import { reviewedKeys } from "@/lib/report-audit-review";
 
 /**
  * The audit of one month's congregation report before it goes to the branch:
@@ -41,6 +42,12 @@ export type AuditRow = {
   /** The months before, newest first, matching `AuditResult.history`. */
   history: AuditCell[];
   flags: Flag[];
+  /** The category the pioneer records give for this month. */
+  expected: string;
+  /** The category the month's report is filed under, when there is one. */
+  filed: string | null;
+  /** Marked by the secretary as looked at and in order. */
+  reviewed: boolean;
 };
 
 export type Tally = { reports: number; hours: number; studies: number };
@@ -85,7 +92,7 @@ export async function auditMonth(year: number, month: number, back = 6): Promise
   });
   const months = [{ year, month }, ...history];
 
-  const [period, s1, reports, publishers] = await Promise.all([
+  const [period, s1, reports, publishers, reviewed] = await Promise.all([
     getPeriod(year, month),
     congregationSummary(year, month),
     prisma.serviceReport.findMany({
@@ -101,6 +108,7 @@ export async function auditMonth(year: number, month: number, back = 6): Promise
         group: { select: { number: true } },
       },
     }),
+    reviewedKeys(),
   ]);
 
   const byKey = new Map(reports.map((r) => [`${r.publisherId}|${r.year}|${r.month}`, r]));
@@ -226,6 +234,9 @@ export async function auditMonth(year: number, month: number, back = 6): Promise
       notCounted,
       history: past,
       flags,
+      expected,
+      filed: report && report.outcome !== "NO_REPORT" ? report.status : null,
+      reviewed: Boolean(reviewed[`${p.id}|${year}|${month}`]),
     };
   });
 

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { requirePermission } from "@/lib/auth";
+import { can } from "@/lib/rbac";
+import { RowFixes } from "./row-fixes";
 import { collectingMonth } from "@/lib/report-periods";
 import { currentServiceYear, monthLabel, serviceYearMonths } from "@/lib/service-year";
 import { auditMonth, BUCKET_LABEL, type AuditCell, type AuditRow, type Bucket, type Flag } from "@/lib/report-audit";
@@ -26,12 +28,12 @@ function Cell({ c, against }: { c: AuditCell; against?: string }) {
   );
 }
 
-function Flags({ flags }: { flags: Flag[] }) {
+function Flags({ flags, reviewed }: { flags: Flag[]; reviewed: boolean }) {
   if (!flags.length) return <span className="text-ink-faint">—</span>;
   return (
-    <ul className="space-y-0.5">
+    <ul className={`space-y-0.5 ${reviewed ? "opacity-60" : ""}`}>
       {flags.map((f, i) => (
-        <li key={i} className={f.level === "warn" ? "text-clay" : "text-ink-soft"}>
+        <li key={i} className={f.level === "warn" && !reviewed ? "text-clay" : "text-ink-soft"}>
           {f.level === "warn" ? "⚠ " : "· "}
           {f.text}
         </li>
@@ -62,12 +64,14 @@ const td = "border-b border-rule px-3 py-2 align-top";
 
 /** A table of publishers, this month's report first and the months before beside it. */
 function AuditTable({
-  rows, history, hours, subtotal,
+  rows, history, hours, subtotal, fix,
 }: {
   rows: AuditRow[];
   history: { label: string }[];
   hours: boolean;
   subtotal?: boolean;
+  /** Who may put things right, and the month being audited. */
+  fix: { year: number; month: number; canReports: boolean; canPublishers: boolean };
 }) {
   const sum = (pick: (r: AuditRow) => number) => rows.reduce((t, r) => t + pick(r), 0);
   return (
@@ -88,7 +92,7 @@ function AuditTable({
         </thead>
         <tbody>
           {rows.map((r) => {
-            const warn = r.flags.some((f) => f.level === "warn");
+            const warn = !r.reviewed && r.flags.some((f) => f.level === "warn");
             return (
               <tr key={r.publisherId} className={warn ? "bg-clay-light/30" : undefined}>
                 <td className={td}>
@@ -109,7 +113,19 @@ function AuditTable({
                     <Cell c={c} against={r.report?.outcome === "SHARED" ? r.report.status : undefined} />
                   </td>
                 ))}
-                <td className={`${td} text-xs`}><Flags flags={r.flags} /></td>
+                <td className={`${td} text-xs`}>
+                  <Flags flags={r.flags} reviewed={r.reviewed} />
+                  {r.reviewed && <p className="mt-0.5 text-xxs text-pine">Reviewed</p>}
+                  {(fix.canReports || fix.canPublishers) && (
+                    <RowFixes
+                      publisherId={r.publisherId} name={r.name} year={fix.year} month={fix.month}
+                      filed={r.filed} expected={r.expected} reviewed={r.reviewed}
+                      hasFlags={r.flags.some((f) => f.level === "warn")}
+                      gone={["TRANSFERRED_OUT", "DECEASED"].includes(r.publisherStatus)}
+                      canReports={fix.canReports} canPublishers={fix.canPublishers}
+                    />
+                  )}
+                </td>
               </tr>
             );
           })}
@@ -134,7 +150,7 @@ export default async function AuditPage({
 }: {
   searchParams: Promise<{ period?: string; back?: string; show?: string; group?: string }>;
 }) {
-  await requirePermission("report:read");
+  const user = await requirePermission("report:read");
   const sp = await searchParams;
 
   const fallback = await collectingMonth();
@@ -146,15 +162,20 @@ export default async function AuditPage({
   const groupFilter = sp.group ? Number(sp.group) : null;
 
   const a = await auditMonth(year, month, back);
+  const fix = {
+    year, month,
+    canReports: can(user.role, "report:write"),
+    canPublishers: can(user.role, "publisher:write"),
+  };
 
   const visible = a.rows.filter(
-    (r) => (!flaggedOnly || r.flags.length > 0) && (groupFilter === null || r.group === groupFilter),
+    (r) => (!flaggedOnly || (!r.reviewed && r.flags.some((f) => f.level === "warn"))) && (groupFilter === null || r.group === groupFilter),
   );
   const groups = [...new Set(a.rows.map((r) => r.group).filter((g): g is number => g !== null))].sort((x, y) => x - y);
   const by = (b: Bucket) => visible.filter((r) => r.counted === b);
   const notCounted = visible.filter((r) => r.counted === null);
   const special = by("SPECIAL");
-  const warnings = a.rows.filter((r) => r.flags.some((f) => f.level === "warn")).length;
+  const warnings = a.rows.filter((r) => !r.reviewed && r.flags.some((f) => f.level === "warn")).length;
   const mismatches = a.check.filter(
     (c) => c.audit.reports !== c.s1.reports || c.audit.studies !== c.s1.studies || (c.hoursCount && c.audit.hours !== c.s1.hours),
   );
@@ -177,7 +198,7 @@ export default async function AuditPage({
         meta={`${rows.length} report${rows.length === 1 ? "" : "s"}${hours ? ` · ${rows.reduce((t, r) => t + (r.report?.hours ?? 0), 0)} hours` : ""} · ${rows.reduce((t, r) => t + (r.report?.studies ?? 0), 0)} studies${check && !filtered && a.late.some((l) => l.counted === b) ? " · late reports listed below" : ""}`}
       >
         {rows.length ? (
-          <AuditTable rows={rows} history={a.history} hours={hours} subtotal />
+          <AuditTable fix={fix} rows={rows} history={a.history} hours={hours} subtotal />
         ) : (
           <p className="px-4 py-4 text-sm text-ink-faint">None{filtered ? " match the filter" : ""}.</p>
         )}
@@ -364,17 +385,17 @@ export default async function AuditPage({
 
       {special.length > 0 && (
         <Fold title="Special pioneers" meta="left off the S-1; they report to the branch">
-          <AuditTable rows={special} history={a.history} hours />
+          <AuditTable fix={fix} rows={special} history={a.history} hours />
         </Fold>
       )}
 
       <Fold
         title="Not counted this month"
         meta={`${notCounted.length} · not yet recorded, did not share, no report, or came in after submission`}
-        tone={notCounted.some((r) => r.flags.some((f) => f.level === "warn")) ? "warn" : undefined}
+        tone={notCounted.some((r) => !r.reviewed && r.flags.some((f) => f.level === "warn")) ? "warn" : undefined}
       >
         {notCounted.length ? (
-          <AuditTable rows={notCounted} history={a.history} hours />
+          <AuditTable fix={fix} rows={notCounted} history={a.history} hours />
         ) : (
           <p className="px-4 py-4 text-sm text-ink-faint">Everyone is counted.</p>
         )}
