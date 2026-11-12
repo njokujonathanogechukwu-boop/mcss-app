@@ -99,7 +99,7 @@ function AuditTable({
                   <Link href={`/publishers/${r.publisherId}`} className="text-ink hover:text-pine hover:underline">
                     {r.name}
                   </Link>
-                  {r.notCounted && r.report && <p className="text-xs text-ink-faint">{r.notCounted}</p>}
+                  {r.notCounted && (r.report || r.publisherStatus === "TRANSFERRED_OUT") && <p className="text-xs text-ink-faint">{r.notCounted}</p>}
                   {r.remarks && <p className="text-xs italic text-ink-faint">{r.remarks}</p>}
                 </td>
                 <td className={`${td} text-ink-soft`}>{r.group ?? "—"}</td>
@@ -319,6 +319,8 @@ export default async function AuditPage({
             <dd className="font-serif text-xl text-ink">{a.s1.activePublishers}</dd>
             <p className="text-xs text-ink-faint">
               Reported at least once in the last 6 months.
+              {a.s1.movedOutActive > 0 &&
+                ` Includes ${a.s1.movedOutActive} who moved to another congregation in that time.`}
               {a.activeByNoShare > 0 &&
                 ` ${a.activeByNoShare} of them only through "did not share" reports, with no month of sharing.`}
             </p>

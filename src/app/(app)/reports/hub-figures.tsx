@@ -36,7 +36,11 @@ export function HubFigures({ s, outstanding }: { s: S1Summary; outstanding: numb
       <div className="grid gap-3 lg:grid-cols-2">
         <div className="rounded border border-rule bg-paper p-3">
           <dl className="grid grid-cols-2 gap-3">
-            {box("All active publishers", s.activePublishers, "Reported at least once in the last 6 months")}
+            {box(
+              "All active publishers",
+              s.activePublishers,
+              `Reported at least once in the last 6 months${s.movedOutActive ? `, including ${s.movedOutActive} who moved out since` : ""}`,
+            )}
             {box(
               "Average weekend meeting attendance",
               s.weekendAverage ?? null,

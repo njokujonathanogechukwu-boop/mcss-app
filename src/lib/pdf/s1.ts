@@ -15,6 +15,8 @@ export type S1Summary = S1FillData & {
   closedAt: Date | null;
   /** Weekend meetings with attendance on file this month, behind the average. */
   weekendMeetings: number;
+  /** Of the active publishers, those who have since moved to another congregation. */
+  movedOutActive: number;
 };
 
 /**
@@ -41,14 +43,16 @@ export async function congregationSummary(year: number, month: number): Promise<
   const [source, reportedRecently, memorial, weekends] = await Promise.all([
     reportsForS1(year, month),
     // A NO_REPORT row records that no report came, so it is not one. People
-    // who have since left the congregation are no longer counted in it.
+    // who have since left are no longer counted, except a publisher who moved
+    // to another congregation within these six months: they stay active here
+    // for the months they reported, though no report is expected of them now.
     prisma.serviceReport.findMany({
       where: {
         outcome: { in: ["SHARED", "DID_NOT_PREACH"] },
         OR: window,
-        publisher: { status: { notIn: ["TRANSFERRED_OUT", "DECEASED", "DISFELLOWSHIPPED", "DISASSOCIATED"] } },
+        publisher: { status: { notIn: ["DECEASED", "DISFELLOWSHIPPED", "DISASSOCIATED"] } },
       },
-      select: { publisherId: true },
+      select: { publisherId: true, publisher: { select: { status: true } } },
       distinct: ["publisherId"],
     }),
     prisma.memorialRecord.findFirst({
@@ -59,7 +63,24 @@ export async function congregationSummary(year: number, month: number): Promise<
       select: { inPerson: true, zoom: true },
     }),
   ]);
-  const activePublishers = reportedRecently.length;
+  // A move recorded before the six months began takes them out of the count.
+  const windowStart = new Date(Date.UTC(window[5].year, window[5].month - 1, 1));
+  const movedIds = reportedRecently.filter((r) => r.publisher.status === "TRANSFERRED_OUT").map((r) => r.publisherId);
+  const movedLongAgo = new Set(
+    movedIds.length
+      ? (
+          await prisma.transferLog.groupBy({
+            by: ["publisherId"],
+            where: { publisherId: { in: movedIds }, toGroupId: null },
+            _max: { effectiveDate: true },
+          })
+        )
+          .filter((t) => t._max.effectiveDate && t._max.effectiveDate < windowStart)
+          .map((t) => t.publisherId)
+      : [],
+  );
+  const activePublishers = reportedRecently.filter((r) => !movedLongAgo.has(r.publisherId)).length;
+  const movedOutActive = movedIds.filter((id) => !movedLongAgo.has(id)).length;
   const weekendAverage = weekends.length
     ? Math.round(weekends.reduce((t, w) => t + w.inPerson + w.zoom, 0) / weekends.length)
     : null;
@@ -86,6 +107,7 @@ export async function congregationSummary(year: number, month: number): Promise<
     activePublishers,
     weekendAverage,
     weekendMeetings: weekends.length,
+    movedOutActive,
     rows: {
       publishers: { reports: publishers.reports, studies: publishers.studies },
       auxiliary,

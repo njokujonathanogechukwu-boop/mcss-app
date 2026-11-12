@@ -144,6 +144,8 @@ export async function auditMonth(year: number, month: number, back = 6): Promise
       notCounted = "Did not share in the ministry";
     } else if (report?.outcome === "NO_REPORT") {
       notCounted = "Marked no report";
+    } else if (p.status === "TRANSFERRED_OUT") {
+      notCounted = "Moved out; no report expected";
     } else {
       notCounted = "Not recorded yet";
     }
@@ -219,7 +221,7 @@ export async function auditMonth(year: number, month: number, back = 6): Promise
     if (report?.outcome === "DID_NOT_PREACH" && (expected === "REGULAR" || expected === "SPECIAL")) {
       flags.push({ level: "warn", text: "A pioneer recorded as not sharing in the ministry" });
     }
-    if (!shared && last?.outcome === "SHARED" && !report) {
+    if (!shared && last?.outcome === "SHARED" && !report && p.status !== "TRANSFERRED_OUT") {
       flags.push({ level: "info", text: "Not recorded yet; shared last month" });
     }
 
