@@ -165,6 +165,9 @@ export default async function ReportsPage({
                 <Button size="sm">Download S-1 for {monthLabel(year, month)}</Button>
               </a>
             )}
+            <Link href={`/reports/audit?period=${year}-${month}`}>
+              <Button variant="secondary" size="sm">Audit before submitting</Button>
+            </Link>
             <Link href={`/reports/reminders?period=${year}-${month}`}>
               <Button variant="secondary" size="sm">Who has not reported</Button>
             </Link>
