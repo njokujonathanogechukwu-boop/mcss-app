@@ -25,7 +25,7 @@ export async function GET(
   if (!publisher) return new NextResponse("No such publisher.", { status: 404 });
 
   const pdf = await buildS21(id, sy);
-  const filename = `S-21 ${publisher.lastName} ${publisher.firstName} ${sy}.pdf`.replace(/\s+/g, "_");
+  const filename = `S-21 ${publisher.lastName} ${publisher.firstName} ${sy - 2}-${sy}.pdf`.replace(/\s+/g, "_");
 
   return new NextResponse(Buffer.from(pdf), {
     headers: {

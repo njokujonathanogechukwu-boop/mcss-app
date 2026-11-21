@@ -28,7 +28,17 @@ export async function buildS21(
   const publisher = await loadPublisher(publisherId);
   if (!publisher) throw new Error("No such publisher.");
   const form = template === undefined ? await getTemplate("S21") : template;
-  if (form) return fillS21(form, await s21FillData(publisher, serviceYear, form));
+  if (form) {
+    // One copy of the form for each service year: the current year first,
+    // the previous year after it on the next page.
+    const out = await PDFDocument.create();
+    for (const sy of CARD_YEARS(serviceYear)) {
+      const filled = await PDFDocument.load(await fillS21(form, await s21FillData(publisher, sy)));
+      const pages = await out.copyPages(filled, filled.getPageIndices());
+      pages.forEach((pg) => out.addPage(pg));
+    }
+    return out.save();
+  }
   return drawS21(publisher, serviceYear);
 }
 
@@ -99,7 +109,7 @@ export async function buildS21Zip(
   const template = await getTemplate("S21");
   const JSZip = (await import("jszip")).default;
   const zip = new JSZip();
-  const yearTag = serviceYearLabel(serviceYear).replace("/", "-");
+  const yearTag = `${serviceYearLabel(serviceYear)} and ${serviceYearLabel(serviceYear - 1)}`.replaceAll("/", "-");
   const used = new Set<string>();
 
   for (const p of publishers) {
@@ -115,37 +125,9 @@ export async function buildS21Zip(
   return { zip: zipBytes, count: publishers.length };
 }
 
-/** How many twelve-row tables the uploaded form has: fill that many consecutive service years. */
-const tableCounts = new WeakMap<Buffer, Promise<number>>();
-function tableCount(form: Buffer): Promise<number> {
-  // A batch fills the same form for every card, so it is read once.
-  let count = tableCounts.get(form);
-  if (!count) {
-    count = countTables(form);
-    tableCounts.set(form, count);
-  }
-  return count;
-}
-
-async function countTables(form: Buffer): Promise<number> {
-  const { collectWidgets, groupRows, pagesOf } = await import("@/lib/pdf/fields");
-  const pdf = await PDFDocument.load(form, { ignoreEncryption: true, updateMetadata: false });
-  const widgets = collectWidgets(pdf);
-  let n = 0;
-  for (const page of pagesOf(widgets)) {
-    const rows = groupRows(widgets.filter((w) => w.page === page)).filter(
-      (r) => r.filter((w) => w.kind === "check").length >= 2 && r.filter((w) => w.kind === "text").length >= 2,
-    );
-    n += Math.floor(rows.length / 12);
-  }
-  return Math.max(1, n);
-}
-
-async function s21FillData(publisher: PublisherWithGroup, serviceYear: number, form: Buffer): Promise<S21FillData> {
-  const tables = await tableCount(form);
+async function s21FillData(publisher: PublisherWithGroup, serviceYear: number): Promise<S21FillData> {
   const years: S21FillData["years"] = [];
-  for (let t = 0; t < tables; t++) {
-    const sy = serviceYear + t;
+  for (const sy of [serviceYear]) {
     const months = serviceYearMonths(sy);
     const reports = await prisma.serviceReport.findMany({
       where: { publisherId: publisher.id, OR: months.map((m) => ({ year: m.year, month: m.month })) },
@@ -175,13 +157,17 @@ async function s21FillData(publisher: PublisherWithGroup, serviceYear: number, f
   };
 }
 
+/** The service years a card carries: the one asked for first, then the one before it on the next page. */
+const CARD_YEARS = (serviceYear: number) => [serviceYear, serviceYear - 1];
+
 async function drawS21(publisher: PublisherWithGroup, serviceYear: number): Promise<Uint8Array> {
   const publisherId = publisher.id;
-  const months = serviceYearMonths(serviceYear);
+  const years = CARD_YEARS(serviceYear);
+  const allMonths = years.flatMap((sy) => serviceYearMonths(sy));
   const reports = await prisma.serviceReport.findMany({
     where: {
       publisherId,
-      OR: months.map((m) => ({ year: m.year, month: m.month })),
+      OR: allMonths.map((m) => ({ year: m.year, month: m.month })),
     },
   });
   const byKey = new Map(reports.map((r) => [`${r.year}-${r.month}`, r]));
@@ -189,40 +175,7 @@ async function drawS21(publisher: PublisherWithGroup, serviceYear: number): Prom
   const doc = await newDoc("portrait");
   const L = 42;
   const R = doc.width - 42;
-  let y = doc.height - 54;
 
-  text(doc, "Congregation Publisher Record", L, y, { size: 15, bold: true });
-  textRight(doc, "S-21", R, y, { size: 12, bold: true, color: PINE });
-  y -= 14;
-  text(doc, `Maitama Congregation  ·  Service year ${serviceYearLabel(serviceYear)}`, L, y, {
-    size: 8.5,
-    color: SOFT,
-  });
-  y -= 12;
-  rule(doc, L, R, y, 1, INK);
-  y -= 22;
-
-  // Identity block, two columns
-  const col2 = L + (R - L) / 2;
-  const field = (x: number, label: string, value: string, dy: number) => {
-    text(doc, label, x, y - dy, { size: 7.5, color: SOFT });
-    text(doc, value || "—", x + 96, y - dy, { size: 9, bold: false, maxWidth: (R - L) / 2 - 104 });
-  };
-
-  field(L, "Name", `${publisher.lastName}, ${publisher.firstName}`, 0);
-  field(col2, "Service group", publisher.group ? `${publisher.group.number} — ${publisher.group.name}` : "Unassigned", 0);
-  field(L, "Date of birth", formatDate(publisher.dateOfBirth), 15);
-  field(col2, "Appointment", APPOINTMENT_LABELS[publisher.appointment], 15);
-  field(L, "Date of baptism", formatDate(publisher.baptismDate), 30);
-  field(col2, "Pioneer", PIONEER_LABELS[publisher.pioneerStatus], 30);
-  field(L, "Sex", publisher.gender === "MALE" ? "Male" : "Female", 45);
-  field(col2, "Hope", publisher.isAnointed ? "Anointed" : "Other sheep", 45);
-
-  y -= 66;
-  rule(doc, L, R, y, 0.5);
-  y -= 24;
-
-  // Ledger
   const cols = [
     { label: "Month", x: L, w: 96, align: "left" as const },
     { label: "Shared", x: L + 100, w: 52, align: "left" as const },
@@ -232,71 +185,109 @@ async function drawS21(publisher: PublisherWithGroup, serviceYear: number): Prom
     { label: "Remarks", x: L + 366, w: R - (L + 366), align: "left" as const },
   ];
 
-  band(doc, L, y - 6, R - L, 18);
-  for (const c of cols) {
-    if (c.align === "right") textRight(doc, c.label, c.x + c.w, y, { size: 7.5, bold: true, color: SOFT });
-    else text(doc, c.label, c.x, y, { size: 7.5, bold: true, color: SOFT });
-  }
-  y -= 10;
-  rule(doc, L, R, y, 0.7, INK);
-  y -= 15;
+  // A page for each service year, the current one first.
+  years.forEach((sy, index) => {
+    if (index > 0) doc.page = doc.pdf.addPage([doc.width, doc.height]);
+    let y = doc.height - 54;
 
-  let totalStudies = 0;
-  let totalHours = 0;
-  let monthsShared = 0;
-  let monthsReported = 0;
+    text(doc, "Congregation Publisher Record", L, y, { size: 15, bold: true });
+    textRight(doc, "S-21", R, y, { size: 12, bold: true, color: PINE });
+    y -= 14;
+    text(doc, `Maitama Congregation  ·  Service year ${serviceYearLabel(sy)}${index > 0 ? "  ·  previous year" : ""}`, L, y, {
+      size: 8.5,
+      color: SOFT,
+    });
+    y -= 12;
+    rule(doc, L, R, y, 1, INK);
+    y -= 22;
 
-  for (const m of months) {
-    const r = byKey.get(`${m.year}-${m.month}`);
-    text(doc, m.label, cols[0].x, y, { size: 8.5 });
+    // Identity block, two columns
+    const col2 = L + (R - L) / 2;
+    const field = (x: number, label: string, value: string, dy: number) => {
+      text(doc, label, x, y - dy, { size: 7.5, color: SOFT });
+      text(doc, value || "—", x + 96, y - dy, { size: 9, bold: false, maxWidth: (R - L) / 2 - 104 });
+    };
 
-    if (!r) {
-      text(doc, "not reported", cols[1].x, y, { size: 8, color: SOFT });
-    } else if (r.outcome === "NO_REPORT") {
-      text(doc, "no report", cols[1].x, y, { size: 8, color: SOFT });
-      if (cardRemarks(r)) text(doc, cardRemarks(r)!, cols[5].x, y, { size: 8, maxWidth: cols[5].w });
-    } else {
-      monthsReported++;
-      const shared = r.outcome === "SHARED";
-      text(doc, shared ? "Yes" : "No", cols[1].x, y, { size: 8.5 });
-      if (shared) monthsShared++;
-      textRight(doc, String(r.bibleStudies), cols[2].x + cols[2].w, y, { size: 8.5 });
-      totalStudies += r.bibleStudies;
-      text(doc, r.pioneerStatusUsed === "AUXILIARY" ? "Yes" : "", cols[3].x, y, { size: 8.5 });
-      if (r.hours != null) {
-        textRight(doc, String(r.hours), cols[4].x + cols[4].w, y, { size: 8.5 });
-        totalHours += r.hours;
+    field(L, "Name", `${publisher.lastName}, ${publisher.firstName}`, 0);
+    field(col2, "Service group", publisher.group ? `${publisher.group.number} — ${publisher.group.name}` : "Unassigned", 0);
+    field(L, "Date of birth", formatDate(publisher.dateOfBirth), 15);
+    field(col2, "Appointment", APPOINTMENT_LABELS[publisher.appointment], 15);
+    field(L, "Date of baptism", formatDate(publisher.baptismDate), 30);
+    field(col2, "Pioneer", PIONEER_LABELS[publisher.pioneerStatus], 30);
+    field(L, "Sex", publisher.gender === "MALE" ? "Male" : "Female", 45);
+    field(col2, "Hope", publisher.isAnointed ? "Anointed" : "Other sheep", 45);
+
+    y -= 66;
+    rule(doc, L, R, y, 0.5);
+    y -= 24;
+
+    text(doc, `Service year ${serviceYearLabel(sy)}`, L, y, { size: 10, bold: true, color: PINE });
+    y -= 16;
+    band(doc, L, y - 6, R - L, 18);
+    for (const c of cols) {
+      if (c.align === "right") textRight(doc, c.label, c.x + c.w, y, { size: 7.5, bold: true, color: SOFT });
+      else text(doc, c.label, c.x, y, { size: 7.5, bold: true, color: SOFT });
+    }
+    y -= 10;
+    rule(doc, L, R, y, 0.7, INK);
+    y -= 15;
+
+    let totalStudies = 0;
+    let totalHours = 0;
+    let monthsShared = 0;
+    let monthsReported = 0;
+
+    for (const m of serviceYearMonths(sy)) {
+      const r = byKey.get(`${m.year}-${m.month}`);
+      text(doc, m.label, cols[0].x, y, { size: 8.5 });
+
+      if (!r) {
+        text(doc, "not reported", cols[1].x, y, { size: 8, color: SOFT });
+      } else if (r.outcome === "NO_REPORT") {
+        text(doc, "no report", cols[1].x, y, { size: 8, color: SOFT });
+        if (cardRemarks(r)) text(doc, cardRemarks(r)!, cols[5].x, y, { size: 8, maxWidth: cols[5].w });
       } else {
-        textRight(doc, "—", cols[4].x + cols[4].w, y, { size: 8.5, color: SOFT });
+        monthsReported++;
+        const shared = r.outcome === "SHARED";
+        text(doc, shared ? "Yes" : "No", cols[1].x, y, { size: 8.5 });
+        if (shared) monthsShared++;
+        textRight(doc, String(r.bibleStudies), cols[2].x + cols[2].w, y, { size: 8.5 });
+        totalStudies += r.bibleStudies;
+        text(doc, r.pioneerStatusUsed === "AUXILIARY" ? "Yes" : "", cols[3].x, y, { size: 8.5 });
+        if (r.hours != null) {
+          textRight(doc, String(r.hours), cols[4].x + cols[4].w, y, { size: 8.5 });
+          totalHours += r.hours;
+        } else {
+          textRight(doc, "—", cols[4].x + cols[4].w, y, { size: 8.5, color: SOFT });
+        }
+        if (cardRemarks(r)) text(doc, cardRemarks(r)!, cols[5].x, y, { size: 8, maxWidth: cols[5].w });
       }
-      if (cardRemarks(r)) text(doc, cardRemarks(r)!, cols[5].x, y, { size: 8, maxWidth: cols[5].w });
+
+      y -= 6;
+      rule(doc, L, R, y, 0.4);
+      y -= 15;
     }
 
-    y -= 6;
-    rule(doc, L, R, y, 0.4);
-    y -= 15;
-  }
+    y -= 4;
+    rule(doc, L, R, y + 10, 0.7, INK);
+    text(doc, "Service year totals", cols[0].x, y, { size: 8.5, bold: true });
+    textRight(doc, String(totalStudies), cols[2].x + cols[2].w, y, { size: 8.5, bold: true });
+    textRight(doc, totalHours === 0 ? "—" : String(totalHours), cols[4].x + cols[4].w, y, { size: 8.5, bold: true });
+    text(doc, `${monthsShared} of ${monthsReported} reported months active`, cols[5].x, y, { size: 8 });
 
-  y -= 4;
-  rule(doc, L, R, y + 10, 0.7, INK);
-  text(doc, "Service year totals", cols[0].x, y, { size: 8.5, bold: true });
-  textRight(doc, String(totalStudies), cols[2].x + cols[2].w, y, { size: 8.5, bold: true });
-  textRight(doc, publisher.pioneerStatus === "NONE" && totalHours === 0 ? "—" : String(totalHours),
-    cols[4].x + cols[4].w, y, { size: 8.5, bold: true });
-  text(doc, `${monthsShared} of ${monthsReported} reported months active`, cols[5].x, y, { size: 8 });
-
-  y -= 30;
-  text(
-    doc,
-    "Hours are recorded for pioneers only. Publishers report participation and Bible studies.",
-    L,
-    y,
-    { size: 7.5, color: SOFT },
-  );
-  y -= 11;
-  text(doc, `Generated ${formatDate(new Date())} · Maitama Congregation Secretary System`, L, y, {
-    size: 7.5,
-    color: SOFT,
+    y -= 30;
+    text(
+      doc,
+      "Hours are recorded for pioneers only. Publishers report participation and Bible studies.",
+      L,
+      y,
+      { size: 7.5, color: SOFT },
+    );
+    y -= 11;
+    text(doc, `Generated ${formatDate(new Date())} · Maitama Congregation Secretary System · page ${index + 1} of ${years.length}`, L, y, {
+      size: 7.5,
+      color: SOFT,
+    });
   });
 
   return doc.pdf.save();
@@ -334,7 +325,7 @@ export async function buildS21FoldersZip(serviceYear: number): Promise<{ zip: Ui
   const template = await getTemplate("S21");
   const JSZip = (await import("jszip")).default;
   const zip = new JSZip();
-  const yearTag = serviceYearLabel(serviceYear).replace("/", "-");
+  const yearTag = `${serviceYearLabel(serviceYear)} and ${serviceYearLabel(serviceYear - 1)}`.replaceAll("/", "-");
   const used = new Set<string>();
 
   for (const p of publishers) {
